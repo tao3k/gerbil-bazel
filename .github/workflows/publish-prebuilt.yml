@@ -1,0 +1,131 @@
+name: Publish prebuilt Gerbil capability
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful main-branch CI run containing the Linux capability
+        required: true
+        type: string
+      head_sha:
+        description: Expected source run commit SHA
+        required: true
+        type: string
+      release_tag:
+        description: New immutable capability release tag
+        default: gerbil-v0.18.2-07c84815-linux-x86_64
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: prebuilt-capability-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  ARTIFACT_NAME: gerbil-prebuilt-v0.18.2-07c84815-linux-x86_64
+  CAPABILITY_ID: gerbil-07c8481588a8b07dbf05832687817cd398902ac0-linux-x86_64
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Authorize the source run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        shell: bash
+        run: |
+          conclusion="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .conclusion)"
+          event="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .event)"
+          head_branch="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .head_branch)"
+          head_sha="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .head_sha)"
+          workflow_name="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .name)"
+          artifact_count="$(
+            gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" \
+              | jq -r --arg name "$ARTIFACT_NAME" \
+                '[.artifacts[] | select(.name == $name and .expired == false)] | length'
+          )"
+          if [[ "$workflow_name" != CI ||
+                "$conclusion" != success ||
+                "$head_branch" != main ||
+                "$head_sha" != "$EXPECTED_HEAD_SHA" ||
+                "$artifact_count" != 1 ||
+                ( "$event" != push && "$event" != workflow_dispatch ) ]]; then
+            printf 'source run %s is not an authorized main-branch capability producer\n' \
+              "$SOURCE_RUN_ID" >&2
+            exit 1
+          fi
+
+      - name: Download the verified capability
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: capability
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate immutable release inputs
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          archives=(capability/*.tar.gz)
+          manifests=(capability/*.manifest.json)
+          receipts=(capability/*.receipt.json)
+          digests=(capability/*.sha256)
+          if (( ${#archives[@]} != 1 ||
+                ${#manifests[@]} != 1 ||
+                ${#receipts[@]} != 1 ||
+                ${#digests[@]} != 1 )); then
+            printf 'capability release requires one archive, manifest, receipt, and digest\n' >&2
+            exit 1
+          fi
+
+          archive="${archives[0]}"
+          manifest="${manifests[0]}"
+          receipt="${receipts[0]}"
+          expected_sha256="$(awk 'NR == 1 {print $1}' "${digests[0]}")"
+          observed_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          if [[ "$expected_sha256" != "$observed_sha256" ||
+                "$(jq -r .archiveSha256 "$receipt")" != "$observed_sha256" ||
+                "$(jq -r .schema "$receipt")" != gerbil-bazel.prebuilt-capability-package-receipt.v1 ||
+                "$(jq -r .outcome "$receipt")" != ready ||
+                "$(jq -r .relocationVerified "$receipt")" != true ||
+                "$(jq -r .schema "$manifest")" != gerbil-bazel.prebuilt-capability-manifest.v1 ||
+                "$(jq -r .capabilityId "$manifest")" != "$CAPABILITY_ID" ||
+                "$(jq -r .platform.os "$manifest")" != linux ||
+                "$(jq -r .platform.arch "$manifest")" != x86_64 ]]; then
+            printf 'capability release evidence is inconsistent or incomplete\n' >&2
+            exit 1
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            printf 'immutable capability release already exists: %s\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+
+      - name: Publish the immutable capability release
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          assets=(capability/*)
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$REPOSITORY" \
+            --target "$EXPECTED_HEAD_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes "Immutable relocatable Linux Gerbil capability. Consume only with the published SHA-256 through gerbil.prebuilt(...)."

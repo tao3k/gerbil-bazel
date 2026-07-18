@@ -7,6 +7,35 @@ description of module topology and project semantics.
 
 ## Bzlmod setup
 
+Use native host discovery for local development:
+
+```starlark
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+gerbil.host(name = "local_gerbil")
+use_repo(gerbil, "local_gerbil")
+register_toolchains("@local_gerbil//:registered_toolchain")
+```
+
+Use an immutable prebuilt capability when Linux CI must not compile Gerbil:
+
+```starlark
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+gerbil.prebuilt(
+    name = "gerbil_linux_x86_64",
+    expected_version_prefixes = ["0.18.2"],
+    sha256 = "<archive-sha256>",
+    urls = ["<immutable-release-archive-url>"],
+)
+use_repo(gerbil, "gerbil_linux_x86_64")
+register_toolchains("@gerbil_linux_x86_64//:registered_toolchain")
+```
+
+The prebuilt provider validates the archive digest, embedded manifest, execution
+platform, runtime version, and native ABI shape. It fails closed and never
+falls back to a source build. See
+[RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
+release, receipt, and performance contracts.
+
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")
 bazel_dep(name = "platforms", version = "1.0.0")

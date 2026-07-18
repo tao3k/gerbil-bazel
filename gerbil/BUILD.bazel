@@ -21,6 +21,8 @@ exports_files([
     "local_toolchain.BUILD.bazel.tpl",
     "native_scheme_env.sh.tpl",
     "native_tool.sh.tpl",
+    "prebuilt_repository.bzl",
+    "prebuilt_toolchain.BUILD.bazel.tpl",
     "project.bzl",
     "repository.bzl",
     "toolchain.bzl",

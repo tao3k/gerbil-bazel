@@ -126,10 +126,33 @@ jobs:
           repository-cache: true
           disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}
 
+      - name: Validate the prebuilt repository provider
+        run: tools/ci/test_prebuilt_repository.sh
+
       - name: Validate the public Bazel API
         env:
           RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json
         run: tools/ci/validate.sh
+
+      - name: Package the relocatable Linux capability
+        if: matrix.gerbil_source == 'source'
+        env:
+          GERBIL_CAPABILITY_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64.tar.gz
+        run: tools/ci/package_prebuilt_capability.sh
+
+      - name: Validate the packaged Linux capability as a consumer
+        if: matrix.gerbil_source == 'source'
+        env:
+          GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64.tar.gz
+        run: tools/ci/test_prebuilt_repository.sh
+
+      - name: Upload the Linux capability
+        if: matrix.gerbil_source == 'source'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gerbil-prebuilt-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64
+          path: .ci/capabilities/*
+          if-no-files-found: error
 
       - name: Upload validation receipt
         if: always()

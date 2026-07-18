@@ -1,0 +1,3 @@
+# The integration driver generates a standalone Bzlmod consumer beside this
+# file. Keeping a package here makes the fixture visible to source inventories.
+exports_files(["MODULE.bazel.tpl"])
