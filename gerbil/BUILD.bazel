@@ -18,6 +18,7 @@ exports_files([
     "defs.bzl",
     "extensions.bzl",
     "host_system.bzl",
+    "install_gerbil_dependencies.sh.tpl",
     "local_toolchain.BUILD.bazel.tpl",
     "native_scheme_env.sh.tpl",
     "native_tool.sh.tpl",

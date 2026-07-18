@@ -5,6 +5,15 @@ package(default_visibility = ["//visibility:public"])
 
 sh_binary(name = "native_scheme_env", srcs = ["native_scheme_env.sh"])
 
+sh_binary(
+    name = "install_dependencies",
+    srcs = ["install_gerbil_dependencies.sh"],
+    data = [
+        "bin/gxpkg_raw",
+        "native_abi.txt",
+    ],
+)
+
 {{TOOL_RULES}}
 
 filegroup(
