@@ -127,7 +127,10 @@ jobs:
           disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}
 
       - name: Validate the prebuilt repository provider
-        run: tools/ci/test_prebuilt_repository.sh
+        run: tools/ci/test_repository_provider.sh prebuilt
+
+      - name: Validate the platform-adaptive repository provider
+        run: tools/ci/test_repository_provider.sh auto
 
       - name: Validate the public Bazel API
         env:
@@ -144,7 +147,7 @@ jobs:
         if: matrix.gerbil_source == 'source'
         env:
           GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64.tar.gz
-        run: tools/ci/test_prebuilt_repository.sh
+        run: tools/ci/test_repository_provider.sh prebuilt
 
       - name: Upload the Linux capability
         if: matrix.gerbil_source == 'source'
