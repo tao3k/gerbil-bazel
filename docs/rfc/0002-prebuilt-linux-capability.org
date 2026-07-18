@@ -5,7 +5,7 @@
 * Status
 
 - Decision: Accepted
-- Implementation: Validated; immutable release pending
+- Implementation: Prebuilt provider published; auto provider validated on Linux and Darwin
 - Scope: =gerbil-bazel= library and its Linux release pipeline
 - Consumer: Bzlmod projects, including =poo-flow=
 
@@ -31,6 +31,13 @@ capability manifest, matches the archive to the execution platform, and
 registers the same public Gerbil toolchain contract used by the native host
 path.
 
+The ordinary cross-platform consumer API SHALL be =gerbil.auto(...)=. The
+module extension reads =module_ctx.os= and selects exactly one repository
+provider before repository creation: native =host= on Darwin and immutable
+=prebuilt= on Linux. It SHALL reject unknown systems and a declared Linux
+archive architecture that does not match the consumer host. It SHALL NOT
+instantiate both providers and defer selection to toolchain resolution.
+
 Homebrew remains the macOS distribution path. Linux capability production and
 consumption belong to =gerbil-bazel=. =poo-flow= SHALL consume the registered
 library capability and SHALL NOT implement another source bootstrap, direct
@@ -42,17 +49,38 @@ flowchart LR
   PROD --> RELOC["Relocation and runtime verification"]
   RELOC --> ARC["Archive + SHA-256 + manifest"]
   ARC --> RELEASE["Immutable release asset"]
-  RELEASE --> REPO["gerbil.prebuilt repository rule"]
+  RELEASE --> AUTO["gerbil.auto extension selection"]
+  AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
   REPO --> CACHE["Bazel repository cache"]
   CACHE --> TC["Registered GerbilToolchainInfo"]
   TC --> RULES["Library compile / test / dev rules"]
   RULES --> BUILDSS["build.ss semantic owner"]
 
-  HOST["Native host installation"] --> LOCAL["gerbil.host local development"]
+  HOST["Native host installation"] --> AUTO
+  AUTO -->|"Darwin"| LOCAL["gerbil.host repository rule"]
   LOCAL --> TC
 #+end_src
 
 * Public Bzlmod API
+
+Cross-platform consumers declare one capability repository:
+
+#+begin_src starlark
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+gerbil.auto(
+    name = "local_gerbil",
+    expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_urls = [
+        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+    ],
+)
+use_repo(gerbil, "local_gerbil")
+register_toolchains("@local_gerbil//:registered_toolchain")
+#+end_src
+
+The explicit Linux-only provider remains available:
 
 #+begin_src starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
@@ -68,10 +96,11 @@ use_repo(gerbil, "gerbil_linux_x86_64")
 register_toolchains("@gerbil_linux_x86_64//:registered_toolchain")
 #+end_src
 
-The =host= and =prebuilt= tags are distinct capability providers. Repository
-names are unique across both tag classes. The prebuilt tag never falls back to
-host discovery or a source build when download, digest, manifest, platform, or
-runtime validation fails.
+The =auto=, =host=, and =prebuilt= tags are distinct capability declarations.
+Repository names are unique across all tag classes. The =auto= tag instantiates
+one of the existing repository providers; it does not add another toolchain
+contract. The prebuilt path never falls back to host discovery or a source
+build when download, digest, manifest, platform, or runtime validation fails.
 
 * Archive and manifest contract
 
@@ -146,10 +175,11 @@ never an expiring workflow artifact.
 
 * Compatibility and migration
 
-The existing =gerbil.host(...)= API is unchanged. Projects may continue using
-it for local development. Linux CI migrates by changing only module-extension
-registration; compile, test, and development targets remain unchanged because
-they resolve the same toolchain provider.
+The existing =gerbil.host(...)= and =gerbil.prebuilt(...)= APIs are unchanged.
+Projects may use them for explicitly single-provider environments. A
+cross-platform project migrates to one =gerbil.auto(...)= registration;
+compile, test, and development targets remain unchanged because every path
+resolves the same toolchain provider.
 
 The migration is complete when a published Linux archive passes relocation,
 the =gerbil.prebuilt(...)= consumer test, and =poo-flow= compile/test receipts
@@ -171,8 +201,34 @@ GitHub Actions run =29661470401= on 2026-07-18 validated the implementation:
 - archive SHA-256:
   =958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197=.
 
+Pull-request run =29663716390= validated the auto provider on the independent
+commit =3980afa53d219328d2791baf5aa9c1bfde8ad396=:
+
+- Linux auto consumer: =selectedProvider=prebuilt=, provider registration 7
+  seconds, runtime probe 3 seconds, total 10 seconds;
+- Darwin auto consumer: =selectedProvider=host=, provider registration 13
+  seconds, runtime probe 2 seconds, total 15 seconds;
+- Linux published-capability consumer: =selectedProvider=prebuilt=, provider
+  registration 9 seconds, runtime probe 2 seconds, total 11 seconds;
+- Linux job: 1 minute 44 seconds; macOS Homebrew job: 1 minute 37 seconds.
+
+The Linux fixture poisons the host =gxi= path, and the Darwin fixture poisons
+the prebuilt archive URL and digest. Therefore each auto consumer can pass only
+when selection happens before the inactive repository provider is instantiated.
+
 The packaged consumer receipt proves the library import path and is well below
 the 120-second consumer gate. This run does not prove a faster Linux source
 cache miss because the existing installation cache was restored. Source
 production cost therefore remains a separate controlled receipt and MUST NOT be
 reported as consumer cold-start time.
+
+The trusted =main= run =29662476210= subsequently passed Linux in 1 minute 37
+seconds and macOS Homebrew in 1 minute 51 seconds. The guarded publication run
+=29662545980= authorized that exact main-branch commit and published the
+immutable release:
+
+- release tag: =gerbil-v0.18.2-07c84815-linux-x86_64=;
+- target commit: =9686b69f78b721a90921a1b606d6fc84ea7b1475=;
+- archive size: 86,082,949 bytes;
+- archive SHA-256:
+  =958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197=.

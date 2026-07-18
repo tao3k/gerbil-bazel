@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+provider="${1:-prebuilt}"
+case "$provider" in
+  auto | prebuilt) ;;
+  *)
+    printf 'usage: %s [auto|prebuilt]\n' "$0" >&2
+    exit 64
+    ;;
+esac
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
@@ -88,37 +97,53 @@ else
   fi
 fi
 
-expected_version="$(jq -er '.version' "$manifest")"
 archive_sha256="$(sha256_file "$archive")"
 archive_url="file://$archive"
+repository_name="${provider}_gerbil"
+template="$repo_root/tests/$provider/MODULE.bazel.tpl"
+expected_version="$(jq -er '.version' "$manifest")"
+host_tool_paths='{"gxi": "/gerbil-auto-provider-must-not-use-host"}'
+selected_provider=prebuilt
+if [[ "$provider" == auto && "$system" == darwin ]]; then
+  # A Darwin auto provider must never touch the Linux-only archive inputs.
+  archive_sha256="$(printf '0%.0s' {1..64})"
+  archive_url="file:///gerbil-auto-provider-must-not-fetch-linux-archive"
+  expected_version="$(gxi --version)"
+  host_tool_paths='{}'
+  selected_provider=host
+fi
 
 sed \
   -e "s|@@GERBIL_BAZEL_PATH@@|$repo_root|g" \
+  -e "s|@@ARCHITECTURE@@|$architecture|g" \
   -e "s|@@ARCHIVE_URL@@|$archive_url|g" \
   -e "s|@@ARCHIVE_SHA256@@|$archive_sha256|g" \
-  "$repo_root/tests/prebuilt/MODULE.bazel.tpl" \
+  -e "s|@@HOST_TOOL_PATHS@@|$host_tool_paths|g" \
+  "$template" \
   >"$test_root/consumer/MODULE.bazel"
-cp "$repo_root/tests/prebuilt/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
+cp "$repo_root/tests/$provider/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
 
 (
   cd "$test_root/consumer"
   provider_started_at="$SECONDS"
   bazel --output_user_root="$test_root/bazel" query \
-    @prebuilt_gerbil//:registered_toolchain
+    "@$repository_name//:registered_toolchain"
   provider_seconds="$((SECONDS - provider_started_at))"
   tool_started_at="$SECONDS"
   observed_version="$(
     bazel --output_user_root="$test_root/bazel" run \
-      @prebuilt_gerbil//:gxi -- --version 2>/dev/null
+      "@$repository_name//:gxi" -- --version 2>/dev/null
   )"
   if [[ "$observed_version" != "$expected_version" ]]; then
-    printf 'prebuilt repository runtime probe mismatch: expected %s, got %s\n' \
-      "$expected_version" "$observed_version" >&2
+    printf '%s repository runtime probe mismatch: expected %s, got %s\n' \
+      "$provider" "$expected_version" "$observed_version" >&2
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
   jq -cn \
-    --arg schema gerbil-bazel.prebuilt-repository-test-receipt.v1 \
+    --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
+    --arg provider "$provider" \
+    --arg selected_provider "$selected_provider" \
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
     --argjson provider_seconds "$provider_seconds" \
@@ -126,6 +151,8 @@ cp "$repo_root/tests/prebuilt/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
     '{
       schema: $schema,
       outcome: "passed",
+      provider: $provider,
+      selectedProvider: $selected_provider,
       fixture: $fixture,
       version: $version,
       providerSeconds: $provider_seconds,

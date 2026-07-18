@@ -21,10 +21,13 @@ test:
 dev:
     {{bazel}} run //tests/smoke:dev
 
-check: query build test prebuilt-test
+check: query build test auto-test prebuilt-test
 
 mod-tidy:
     {{bazel}} mod tidy
 
 prebuilt-test:
-    tools/ci/test_prebuilt_repository.sh
+    tools/ci/test_repository_provider.sh prebuilt
+
+auto-test:
+    tools/ci/test_repository_provider.sh auto

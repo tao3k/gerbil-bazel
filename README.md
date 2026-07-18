@@ -7,7 +7,31 @@ description of module topology and project semantics.
 
 ## Bzlmod setup
 
-Use native host discovery for local development:
+Use one platform-adaptive declaration when Darwin should resolve the native
+Homebrew installation and Linux should import an immutable prebuilt capability:
+
+```starlark
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+gerbil.auto(
+    name = "local_gerbil",
+    expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_urls = [
+        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+    ],
+)
+use_repo(gerbil, "local_gerbil")
+register_toolchains("@local_gerbil//:registered_toolchain")
+```
+
+The extension resolves `auto` before repository creation and instantiates
+exactly one provider. Darwin uses native host discovery; Linux validates that
+the declared archive architecture matches the runner and instantiates the
+prebuilt provider. Unsupported systems and architecture mismatches fail closed.
+
+Use explicit native host discovery when the consumer does not need automatic
+cross-platform selection:
 
 ```starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
@@ -16,7 +40,7 @@ use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
 ```
 
-Use an immutable prebuilt capability when Linux CI must not compile Gerbil:
+Use the explicit immutable provider for a Linux-only consumer:
 
 ```starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
