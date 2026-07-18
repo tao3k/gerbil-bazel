@@ -1,0 +1,63 @@
+#+title: RFC 0001: Gerbil Bazel Public API
+#+status: Accepted
+#+language: en
+
+* Decision
+
+Gerbil Bazel is a framework-neutral Bazel library for Gerbil projects. It owns
+host capability discovery, native Gerbil toolchain registration, isolated
+project actions, test launchers, and development launchers. It does not own a
+consumer's Scheme module graph, application semantics, generated application
+artifacts, or =build.ss= semantics.
+
+#+begin_src mermaid
+flowchart LR
+  Host[Darwin or Linux host] --> Discovery[Gerbil host extension]
+  Discovery --> Toolchain[Registered Gerbil toolchain]
+  Toolchain --> Rules[Generic project rules]
+  BuildSS[Consumer build.ss] --> Rules
+  Sources[Consumer Scheme sources] --> Rules
+  Rules --> Artifacts[Isolated artifacts and JSON receipt]
+#+end_src
+
+* Public surface
+
+- =gerbil.host=: declares one native host toolchain repository.
+- =gerbil_project_compile=: executes =build.ss= in an isolated declared tree.
+- =gerbil_project_dev=: runs the same build truth in the source workspace for
+  deliberate developer iteration.
+- =gerbil_project_test=: compiles through =build.ss= and then executes declared
+  test files with the registered =gxtest= capability.
+- =GerbilToolchainInfo=: exposes resolved tools, environment, native ABI,
+  dependency roots, logical CPU count, and physical memory to downstream Bazel
+  rules.
+
+The public API is loaded from =@gerbil_bazel//gerbil:defs.bzl=. Internal files
+may evolve without creating an application-framework dependency.
+
+The host declaration may constrain accepted Gerbil version prefixes and provide
+an explicit tool-path map. Declared paths take precedence over environment
+overrides, which take precedence over =PATH= discovery.
+
+* Host model
+
+Darwin and Linux are selected declaratively by the repository host. CPU count,
+physical memory, compiler, assembler, linker, SDK, and developer directory are
+never fixed to one machine. Environment variables are explicit capability
+overrides, not repeated command-line cleanup. On Darwin, installed Homebrew
+formulae may contribute include, library, linker, and pkg-config paths; Homebrew
+itself is not required by the API.
+
+* Hermeticity boundary
+
+=gerbil_project_compile= copies declared source inputs into a tree artifact and
+runs the consumer build script there. =gerbil_project_dev= is intentionally
+non-hermetic and is only meaningful through =bazel run=, where Bazel supplies the
+source workspace directory.
+
+* Non-goals
+
+- Replacing or interpreting =build.ss=.
+- Encoding a particular Gerbil library dependency set.
+- Defining application-specific build semantics or generated artifacts.
+- Building Gerbil itself from source in this first API slice.

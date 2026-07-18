@@ -1,0 +1,20 @@
+module(
+    name = "gerbil_bazel",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
+gerbil = use_extension(
+    "//gerbil:extensions.bzl",
+    "gerbil",
+    dev_dependency = True,
+)
+gerbil.host(name = "local_gerbil")
+use_repo(gerbil, "local_gerbil")
+
+register_toolchains(
+    "@local_gerbil//:registered_toolchain",
+    dev_dependency = True,
+)

@@ -1,0 +1,27 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+toolchain_type(name = "toolchain_type")
+
+sh_binary(
+    name = "native_abi_fingerprint",
+    srcs = ["native_abi_fingerprint.sh"],
+)
+
+sh_binary(
+    name = "run_project",
+    srcs = ["run_project.sh"],
+)
+
+exports_files([
+    "defs.bzl",
+    "extensions.bzl",
+    "host_system.bzl",
+    "local_toolchain.BUILD.bazel.tpl",
+    "native_scheme_env.sh.tpl",
+    "native_tool.sh.tpl",
+    "project.bzl",
+    "repository.bzl",
+    "toolchain.bzl",
+])
