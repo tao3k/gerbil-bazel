@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GERBIL_REF: 07c8481588a8b07dbf05832687817cd398902ac0
+  GERBIL_VERSION_LABEL: v0.18.2-07c84815
+
+jobs:
+  bazel:
+    name: Bazel (${{ matrix.runner }}, ${{ matrix.gerbil_source }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            gerbil_source: source
+            timeout_minutes: 30
+          - runner: macos-26
+            gerbil_source: homebrew-bottle
+            timeout_minutes: 15
+
+    steps:
+      - name: Check out gerbil-bazel
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Linux build dependencies
+        if: matrix.gerbil_source == 'source'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            ccache \
+            git \
+            jq \
+            libsqlite3-dev \
+            libssl-dev \
+            openssl \
+            pkg-config \
+            sqlite3 \
+            zlib1g-dev
+
+      - name: Restore Linux compiler cache
+        if: matrix.gerbil_source == 'source'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci/ccache
+          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}-
+
+      - name: Restore Linux Gerbil installation
+        if: matrix.gerbil_source == 'source'
+        id: gerbil-install-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci/gerbil-prefix
+          key: gerbil-install-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ env.GERBIL_REF }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}
+
+      - name: Build Gerbil on Linux
+        if: matrix.gerbil_source == 'source' && steps.gerbil-install-cache.outputs.cache-hit != 'true'
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ci/ccache
+          CCACHE_MAXSIZE: 2G
+          GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
+          GERBIL_REQUIRE_CCACHE: "1"
+          GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
+        run: tools/ci/bootstrap_gerbil.sh
+
+      - name: Set up Homebrew
+        if: matrix.gerbil_source == 'homebrew-bottle'
+        uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
+
+      - name: Install the tao3k Gerbil bottle
+        if: matrix.gerbil_source == 'homebrew-bottle'
+        timeout-minutes: 2
+        env:
+          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew install --force-bottle "$GERBIL_FORMULA"
+          brew info --json=v2 "$GERBIL_FORMULA" \
+            | jq -e '.formulae[0].installed | any(.poured_from_bottle == true)'
+
+      - name: Activate Gerbil
+        env:
+          GERBIL_SOURCE: ${{ matrix.gerbil_source }}
+          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme
+        run: |
+          if [[ "$GERBIL_SOURCE" == source ]]; then
+            gerbil_prefix="$GITHUB_WORKSPACE/.ci/gerbil-prefix"
+          else
+            gerbil_prefix="$(brew --prefix "$GERBIL_FORMULA")"
+          fi
+          echo "$gerbil_prefix/bin" >> "$GITHUB_PATH"
+          echo "GERBIL_PREFIX=$gerbil_prefix" >> "$GITHUB_ENV"
+
+      - name: Verify Gerbil capability
+        run: |
+          command -v gxi
+          command -v gxc
+          gxi --version | tee .ci/gerbil-version.txt
+          grep -E 'Gerbil (v0\.18\.2|07c8481)' .ci/gerbil-version.txt
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}
+
+      - name: Validate the public Bazel API
+        env:
+          RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json
+        run: tools/ci/validate.sh
+
+      - name: Upload validation receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-receipt
+          path: |
+            .ci/gerbil-version.txt
+            .ci/receipts/*.json
+            .ci/gerbil-prefix/bootstrap.receipt.json
+          if-no-files-found: warn
+
