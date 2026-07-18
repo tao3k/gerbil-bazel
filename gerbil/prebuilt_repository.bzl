@@ -31,6 +31,12 @@ def _environment_exports(environment):
         for key in sorted(environment.keys())
     ])
 
+def _environment_args(environment):
+    return " ".join([
+        _shell_quote("{}={}".format(key, environment[key]))
+        for key in sorted(environment.keys())
+    ])
+
 def _environment_dict(environment):
     entries = [
         "        {}: {},".format(repr(key), repr(environment[key]))
@@ -200,6 +206,34 @@ def _link_dependency_roots(repository_ctx, manifest):
         relative_roots.append(relative)
     return relative_roots
 
+def _link_project_dependencies(repository_ctx):
+    packages = repository_ctx.attr.project_dependency_packages
+    if not packages:
+        return {}
+    if not repository_ctx.attr.project_root_marker:
+        fail("project_root_marker is required when project_dependency_packages are declared")
+
+    project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
+    library_relative = _safe_relative_path(
+        repository_ctx.attr.project_library_relative_path,
+        "project_library_relative_path",
+    )
+    library_root = repository_ctx.path("{}/{}".format(project_root, library_relative))
+    state = {}
+    for package in packages:
+        package = _safe_relative_path(package, "project dependency package")
+        if package in state:
+            fail("duplicate project dependency package: {}".format(package))
+        dependency = repository_ctx.path("{}/{}".format(library_root, package))
+        repository_ctx.watch(dependency)
+        if dependency.exists:
+            repository_ctx.watch_tree(dependency)
+            repository_ctx.symlink(dependency, "lib/{}".format(package))
+            state[package] = "ready"
+        else:
+            state[package] = "missing"
+    return state
+
 def _tool_rules():
     return "\n\n".join([
         """sh_binary(
@@ -274,13 +308,23 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
 
     version = _version(repository_ctx, manifest, tools.absolute, environment)
     dependency_roots = _link_dependency_roots(repository_ctx, manifest)
+    project_dependency_state = _link_project_dependencies(repository_ctx)
+    dependency_policy = "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots"
     substitutions = {
         "{{ENVIRONMENT}}": _environment_exports(environment),
+        "{{GXPKG}}": _shell_quote(tools.absolute["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(native_abi),
+        "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
         repository_ctx.attr._native_scheme_env_template,
+        substitutions,
+        executable = True,
+    )
+    repository_ctx.template(
+        "install_gerbil_dependencies.sh",
+        repository_ctx.attr._install_dependencies_template,
         substitutions,
         executable = True,
     )
@@ -301,7 +345,9 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         json.encode_indent({
             "archiveSha256": archive_sha256,
             "capabilityId": capability_id,
+            "dependencyPolicy": dependency_policy,
             "dependencyRoots": dependency_roots,
+            "dependencyState": project_dependency_state,
             "environment": environment,
             "gerbilHome": gerbil_home_relative,
             "nativeAbiFingerprint": native_abi,
@@ -344,12 +390,19 @@ prebuilt_gerbil_repository = repository_rule(
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
         "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
+        "project_dependency_packages": attr.string_list(),
+        "project_library_relative_path": attr.string(default = ".gerbil/lib"),
+        "project_root_marker": attr.label(allow_single_file = True),
         "sha256": attr.string(mandatory = True),
         "strip_prefix": attr.string(),
         "urls": attr.string_list(mandatory = True),
         "_build_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:prebuilt_toolchain.BUILD.bazel.tpl",
+        ),
+        "_install_dependencies_template": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
         ),
         "_native_scheme_env_template": attr.label(
             allow_single_file = True,

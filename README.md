@@ -20,6 +20,8 @@ gerbil.auto(
     linux_prebuilt_urls = [
         "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
     ],
+    project_dependency_packages = ["clan", "gslph"],
+    project_root_marker = "//:MODULE.bazel",
 )
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
@@ -59,6 +61,14 @@ platform, runtime version, and native ABI shape. It fails closed and never
 falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
+
+Both `auto` providers and the explicit `prebuilt` provider support the same
+project-library view as `host`. Declare `project_root_marker`,
+`project_library_relative_path`, and `project_dependency_packages`; the
+repository projects ready packages into `lib/<package>` and records every
+package as `ready` or `missing` in `toolchain.receipt.json`. This keeps the
+downstream BUILD graph identical on Darwin and Linux while leaving dependency
+installation under the separate `install_dependencies` capability.
 
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")

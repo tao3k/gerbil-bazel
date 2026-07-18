@@ -121,7 +121,15 @@ sed \
   -e "s|@@HOST_TOOL_PATHS@@|$host_tool_paths|g" \
   "$template" \
   >"$test_root/consumer/MODULE.bazel"
-cp "$repo_root/tests/$provider/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
+provider_fixture="$repo_root/tests/repository-provider"
+sed \
+  -e "s|@@REPOSITORY_NAME@@|$repository_name|g" \
+  "$provider_fixture/consumer.BUILD.bazel.tpl" \
+  >"$test_root/consumer/BUILD.bazel"
+cp "$provider_fixture/project-root.marker" "$test_root/consumer/project-root.marker"
+cp "$provider_fixture/project_library_view_test.sh" \
+  "$test_root/consumer/project_library_view_test.sh"
+cp -R "$provider_fixture/project-library" "$test_root/consumer/project-library"
 
 (
   cd "$test_root/consumer"
@@ -140,6 +148,9 @@ cp "$repo_root/tests/$provider/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
+  project_view_started_at="$SECONDS"
+  bazel --output_user_root="$test_root/bazel" build //:project_library_view_test
+  project_view_seconds="$((SECONDS - project_view_started_at))"
   jq -cn \
     --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
     --arg provider "$provider" \
@@ -147,6 +158,7 @@ cp "$repo_root/tests/$provider/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
     --argjson provider_seconds "$provider_seconds" \
+    --argjson project_view_seconds "$project_view_seconds" \
     --argjson tool_seconds "$tool_seconds" \
     '{
       schema: $schema,
@@ -156,7 +168,8 @@ cp "$repo_root/tests/$provider/BUILD.bazel" "$test_root/consumer/BUILD.bazel"
       fixture: $fixture,
       version: $version,
       providerSeconds: $provider_seconds,
+      projectViewSeconds: $project_view_seconds,
       toolSeconds: $tool_seconds,
-      totalSeconds: ($provider_seconds + $tool_seconds)
+      totalSeconds: ($provider_seconds + $project_view_seconds + $tool_seconds)
     }'
 )

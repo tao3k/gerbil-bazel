@@ -9,6 +9,9 @@ local_path_override(
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
     name = "prebuilt_gerbil",
+    project_dependency_packages = ["clan", "gslph", "missing-package"],
+    project_library_relative_path = "project-library",
+    project_root_marker = "//:project-root.marker",
     sha256 = "@@ARCHIVE_SHA256@@",
     urls = ["@@ARCHIVE_URL@@"],
 )
