@@ -25,6 +25,25 @@ def _which(repository_ctx, candidates, capability):
         ", ".join(candidates),
     ))
 
+def _darwin_checked(
+        repository_ctx,
+        argv,
+        description,
+        developer_dir = "",
+        sdkroot = ""):
+    command = [
+        "/usr/bin/env",
+        "-u",
+        "DEVELOPER_DIR",
+        "-u",
+        "SDKROOT",
+    ]
+    if developer_dir:
+        command.append("DEVELOPER_DIR=" + developer_dir)
+    if sdkroot:
+        command.append("SDKROOT=" + sdkroot)
+    return _checked(repository_ctx, command + argv, description)
+
 def _join_host_path(repository_ctx, key, discovered):
     values = list(discovered)
     inherited = repository_ctx.os.environ.get(key, "")
@@ -74,26 +93,29 @@ def _darwin_homebrew_environment(repository_ctx, formulae):
     return environment
 
 def _darwin_environment(repository_ctx, homebrew_formulae):
-    developer_dir = repository_ctx.os.environ.get("DEVELOPER_DIR", "")
+    developer_dir = repository_ctx.os.environ.get("GERBIL_DEVELOPER_DIR", "")
     if not developer_dir:
-        developer_dir = _checked(
+        developer_dir = _darwin_checked(
             repository_ctx,
             ["/usr/bin/xcode-select", "-p"],
             "xcode-select",
         )
 
-    sdkroot = repository_ctx.os.environ.get("SDKROOT", "")
+    sdkroot = repository_ctx.os.environ.get("GERBIL_SDKROOT", "")
     if not sdkroot:
-        sdkroot = _checked(
+        sdkroot = _darwin_checked(
             repository_ctx,
             ["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"],
             "macOS SDK discovery",
+            developer_dir = developer_dir,
         )
 
-    linker = _checked(
+    linker = _darwin_checked(
         repository_ctx,
         ["/usr/bin/xcrun", "--sdk", "macosx", "--find", "ld"],
         "macOS linker discovery",
+        developer_dir = developer_dir,
+        sdkroot = sdkroot,
     )
     memory = _checked(
         repository_ctx,

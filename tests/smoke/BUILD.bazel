@@ -4,6 +4,7 @@ load(
     "gerbil_project_dev",
     "gerbil_project_test",
 )
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 gerbil_project_compile(
     name = "compile",
@@ -22,4 +23,11 @@ gerbil_project_dev(
     name = "dev",
     build_script = "build.ss",
     args = ["compile"],
+)
+
+sh_test(
+    name = "toolchain_environment_test",
+    srcs = ["toolchain_environment_test.sh"],
+    args = ["$(rlocationpath @local_gerbil//:toolchain.receipt.json)"],
+    data = ["@local_gerbil//:toolchain.receipt.json"],
 )

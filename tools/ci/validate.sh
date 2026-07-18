@@ -56,7 +56,10 @@ run_phase() {
 
 run_phase query bazel query //...
 run_phase build bazel build //tests/smoke:compile
-run_phase test bazel test //tests/smoke:test --test_output=errors
+run_phase test bazel test \
+  //tests/smoke:test \
+  //tests/smoke:toolchain_environment_test \
+  --test_output=errors
 run_phase dev bazel run //tests/smoke:dev
 write_receipt passed 0
 jq -c . "$receipt_path"
