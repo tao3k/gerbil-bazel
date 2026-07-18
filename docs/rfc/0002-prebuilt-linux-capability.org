@@ -138,6 +138,11 @@ re-evaluates the repository and the receipt changes that package from =missing=
 to =ready=. This lifecycle is validated by an isolated synthetic prebuilt
 consumer; consumers do not need provider-specific install scripts.
 
+The provider environment SHALL be applied by the host =env= executable before
+the first raw =gxpkg= process starts. Only then may the standard =gxpkg env env=
+handoff run. This ordering is required for relocated prebuilts because
+=GERBIL_HOME= must already be visible while =gxpkg= imports =:gerbil/core=.
+
 * Archive and manifest contract
 
 The archive root contains =gerbil-bazel-capability.json= and a relocatable

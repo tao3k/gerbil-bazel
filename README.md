@@ -77,7 +77,10 @@ installation under the separate `install_dependencies` capability.
 Every host and prebuilt repository publishes `//:install_dependencies`. The
 launcher enters the consumer workspace, uses its workspace-local `.gerbil`
 root, and runs the standard `gxpkg deps --install` and `gxpkg list` lifecycle
-through the selected provider environment. A dependency installation can make
+through the selected provider environment. The environment is injected before
+the first raw `gxpkg` process starts, so a relocated prebuilt can resolve
+`:gerbil/core` before delegating to `gxpkg env`. A dependency installation can
+make
 previously missing project packages ready; the next Bazel command then
 re-evaluates the watched project-library view.
 

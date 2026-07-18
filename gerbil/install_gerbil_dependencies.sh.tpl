@@ -20,6 +20,8 @@ cd "$workspace"
 mkdir -p "${gerbil_root%/}/pkg"
 
 phase=install
-"$gxpkg" env env "${native_environment[@]}" "$gxpkg" deps --install
+/usr/bin/env "${native_environment[@]}" \
+  "$gxpkg" env env "${native_environment[@]}" "$gxpkg" deps --install
 phase=list
-"$gxpkg" env env "${native_environment[@]}" "$gxpkg" list
+/usr/bin/env "${native_environment[@]}" \
+  "$gxpkg" env env "${native_environment[@]}" "$gxpkg" list

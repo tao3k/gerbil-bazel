@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+bazel_bin="${BAZEL:-bazel}"
+
 provider="${1:-prebuilt}"
 case "$provider" in
   auto | prebuilt) ;;
@@ -66,6 +68,7 @@ if [[ -z "$archive" ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
+        ': "${GERBIL_HOME:?GERBIL_HOME is required before gxpkg startup}"' \
         'if [[ "${1:-}" == env ]]; then' \
         '  shift' \
         '  [[ "${1:-}" == env ]] || exit 64' \
@@ -165,12 +168,12 @@ fi
 (
   cd "$test_root/consumer"
   provider_started_at="$SECONDS"
-  bazel --output_user_root="$test_root/bazel" query \
+  "$bazel_bin" --output_user_root="$test_root/bazel" query \
     "@$repository_name//:registered_toolchain"
   provider_seconds="$((SECONDS - provider_started_at))"
   tool_started_at="$SECONDS"
   observed_version="$(
-    bazel --output_user_root="$test_root/bazel" run \
+    "$bazel_bin" --output_user_root="$test_root/bazel" run \
       "@$repository_name//:gxi" -- --version 2>/dev/null
   )"
   if [[ "$observed_version" != "$expected_version" ]]; then
@@ -182,10 +185,10 @@ fi
   install_seconds=0
   dependency_transition=false
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
-    bazel --output_user_root="$test_root/bazel" build \
+    "$bazel_bin" --output_user_root="$test_root/bazel" build \
       //:project_dependency_state_missing_test
     install_started_at="$SECONDS"
-    bazel --output_user_root="$test_root/bazel" run \
+    "$bazel_bin" --output_user_root="$test_root/bazel" run \
       "@$repository_name//:install_dependencies"
     install_seconds="$((SECONDS - install_started_at))"
     install_receipt="$test_root/consumer/.gerbil/install-dependencies.receipt"
@@ -202,7 +205,7 @@ fi
     dependency_transition=true
   fi
   project_view_started_at="$SECONDS"
-  bazel --output_user_root="$test_root/bazel" build //:project_library_view_test
+  "$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
   project_view_seconds="$((SECONDS - project_view_started_at))"
   jq -cn \
     --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
