@@ -1,6 +1,7 @@
 exports_files([
     "consumer.BUILD.bazel.tpl",
     "project-root.marker",
+    "project_dependency_state_test.sh",
     "project-library/clan/ready.txt",
     "project-library/gslph/ready.txt",
     "project_library_view_test.sh",

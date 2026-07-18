@@ -11,8 +11,15 @@ case "$provider" in
 esac
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-test_root="$(mktemp -d)"
-trap 'rm -rf "$test_root"' EXIT
+test_root="$(cd "$(mktemp -d)" && pwd -P)"
+cleanup() {
+  if [[ "${GERBIL_PROVIDER_TEST_KEEP_ROOT:-0}" == 1 ]]; then
+    printf 'preserved repository-provider test root: %s\n' "$test_root" >&2
+  else
+    rm -rf "$test_root"
+  fi
+}
+trap cleanup EXIT
 
 normalize_system() {
   case "$1" in
@@ -54,6 +61,25 @@ if [[ -z "$archive" ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'if [[ "${1:-}" == --version ]]; then printf "Gerbil v0.prebuilt-test\\n"; fi' \
+        'exit 0' >"$payload/prefix/bin/$tool"
+    elif [[ "$tool" == gxpkg ]]; then
+      printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        'if [[ "${1:-}" == env ]]; then' \
+        '  shift' \
+        '  [[ "${1:-}" == env ]] || exit 64' \
+        '  shift' \
+        '  while [[ "${1:-}" == *=* ]]; do export "$1"; shift; done' \
+        '  exec "$@"' \
+        'fi' \
+        'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
+        '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
+        '  mkdir -p "$GERBIL_PATH/lib/clan" "$GERBIL_PATH/lib/gslph"' \
+        '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
+        '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \
+        '  printf "command=deps --install\\nGERBIL_PATH=%s\\n" "$GERBIL_PATH" >"$GERBIL_PATH/install-dependencies.receipt"' \
+        'fi' \
         'exit 0' >"$payload/prefix/bin/$tool"
     else
       printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$payload/prefix/bin/$tool"
@@ -129,7 +155,12 @@ sed \
 cp "$provider_fixture/project-root.marker" "$test_root/consumer/project-root.marker"
 cp "$provider_fixture/project_library_view_test.sh" \
   "$test_root/consumer/project_library_view_test.sh"
-cp -R "$provider_fixture/project-library" "$test_root/consumer/project-library"
+cp "$provider_fixture/project_dependency_state_test.sh" \
+  "$test_root/consumer/project_dependency_state_test.sh"
+if [[ "$selected_provider" != prebuilt || "$fixture" != synthetic ]]; then
+  mkdir -p "$test_root/consumer/.gerbil/lib"
+  cp -R "$provider_fixture/project-library/." "$test_root/consumer/.gerbil/lib/"
+fi
 
 (
   cd "$test_root/consumer"
@@ -148,6 +179,28 @@ cp -R "$provider_fixture/project-library" "$test_root/consumer/project-library"
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
+  install_seconds=0
+  dependency_transition=false
+  if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+    bazel --output_user_root="$test_root/bazel" build \
+      //:project_dependency_state_missing_test
+    install_started_at="$SECONDS"
+    bazel --output_user_root="$test_root/bazel" run \
+      "@$repository_name//:install_dependencies"
+    install_seconds="$((SECONDS - install_started_at))"
+    install_receipt="$test_root/consumer/.gerbil/install-dependencies.receipt"
+    if [[ ! -f "$install_receipt" ]]; then
+      printf 'synthetic dependency installer did not emit %s\n' \
+        "$install_receipt" >&2
+      find "$test_root/consumer/.gerbil" -maxdepth 3 -print >&2 || true
+      exit 1
+    fi
+    grep -Fx 'command=deps --install' "$install_receipt" >/dev/null
+    expected_gerbil_path="$(cd "$test_root/consumer/.gerbil" && pwd -P)"
+    grep -Fx "GERBIL_PATH=$expected_gerbil_path" \
+      "$install_receipt" >/dev/null
+    dependency_transition=true
+  fi
   project_view_started_at="$SECONDS"
   bazel --output_user_root="$test_root/bazel" build //:project_library_view_test
   project_view_seconds="$((SECONDS - project_view_started_at))"
@@ -157,6 +210,8 @@ cp -R "$provider_fixture/project-library" "$test_root/consumer/project-library"
     --arg selected_provider "$selected_provider" \
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
+    --argjson dependency_transition "$dependency_transition" \
+    --argjson install_seconds "$install_seconds" \
     --argjson provider_seconds "$provider_seconds" \
     --argjson project_view_seconds "$project_view_seconds" \
     --argjson tool_seconds "$tool_seconds" \
@@ -167,9 +222,11 @@ cp -R "$provider_fixture/project-library" "$test_root/consumer/project-library"
       selectedProvider: $selected_provider,
       fixture: $fixture,
       version: $version,
+      dependencyTransition: $dependency_transition,
+      installSeconds: $install_seconds,
       providerSeconds: $provider_seconds,
       projectViewSeconds: $project_view_seconds,
       toolSeconds: $tool_seconds,
-      totalSeconds: ($provider_seconds + $project_view_seconds + $tool_seconds)
+      totalSeconds: ($provider_seconds + $install_seconds + $project_view_seconds + $tool_seconds)
     }'
 )

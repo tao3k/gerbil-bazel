@@ -122,6 +122,14 @@ It does not bake downstream packages into the archive and it does not perform
 an implicit =gxpkg= installation. Dependency installation remains an explicit,
 separate capability.
 
+Every provider repository publishes =install_dependencies=. Its launcher uses
+the selected provider environment, enters the consumer workspace, and runs the
+standard =gxpkg deps --install= followed by =gxpkg list=. When installation
+changes a watched project package from absent to present, the next Bazel command
+re-evaluates the repository and the receipt changes that package from =missing=
+to =ready=. This lifecycle is validated by an isolated synthetic prebuilt
+consumer; consumers do not need provider-specific install scripts.
+
 * Archive and manifest contract
 
 The archive root contains =gerbil-bazel-capability.json= and a relocatable

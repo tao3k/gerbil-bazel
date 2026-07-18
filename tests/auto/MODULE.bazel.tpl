@@ -13,7 +13,7 @@ gerbil.auto(
     linux_prebuilt_sha256 = "@@ARCHIVE_SHA256@@",
     linux_prebuilt_urls = ["@@ARCHIVE_URL@@"],
     project_dependency_packages = ["clan", "gslph", "missing-package"],
-    project_library_relative_path = "project-library",
+    project_library_relative_path = ".gerbil/lib",
     project_root_marker = "//:project-root.marker",
     tool_paths = @@HOST_TOOL_PATHS@@,
 )

@@ -70,6 +70,13 @@ package as `ready` or `missing` in `toolchain.receipt.json`. This keeps the
 downstream BUILD graph identical on Darwin and Linux while leaving dependency
 installation under the separate `install_dependencies` capability.
 
+Every host and prebuilt repository publishes `//:install_dependencies`. The
+launcher enters the consumer workspace, uses its workspace-local `.gerbil`
+root, and runs the standard `gxpkg deps --install` and `gxpkg list` lifecycle
+through the selected provider environment. A dependency installation can make
+previously missing project packages ready; the next Bazel command then
+re-evaluates the watched project-library view.
+
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")
 bazel_dep(name = "platforms", version = "1.0.0")
