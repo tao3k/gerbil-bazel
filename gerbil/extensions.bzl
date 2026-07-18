@@ -165,6 +165,8 @@ def _gerbil_extension_impl(module_ctx):
 
 gerbil = module_extension(
     implementation = _gerbil_extension_impl,
+    arch_dependent = True,
+    os_dependent = True,
     tag_classes = {
         "auto": _auto,
         "host": _host,

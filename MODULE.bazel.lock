@@ -190,8 +190,8 @@
   "selectedYankedVersions": {},
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
-      "general": {
-        "bzlTransitiveDigest": "AkiCWEX5KcRNZW8xyLeztfvaMlPkG/MxMFVg0+fdUC0=",
+      "os:osx": {
+        "bzlTransitiveDigest": "9AUEAjY5dk7P0bGEay3F8fzUhNXbUTZVmBbXF72zrns=",
         "usagesDigest": "c6Rj0Y853Xj+U5g9I2xjfbndpWxtm7U5m+UiJbRIlhg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

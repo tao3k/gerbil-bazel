@@ -31,6 +31,10 @@ The extension resolves `auto` before repository creation and instantiates
 exactly one provider. Darwin uses native host discovery; Linux validates that
 the declared archive architecture matches the runner and instantiates the
 prebuilt provider. Unsupported systems and architecture mismatches fail closed.
+The module extension is declared `os_dependent` and `arch_dependent`, so Bazel
+records separate operating-system and architecture evaluations instead of
+reusing a Darwin-generated provider graph on Linux or a Linux prebuilt graph
+across incompatible architectures through `MODULE.bazel.lock`.
 
 Use explicit native host discovery when the consumer does not need automatic
 cross-platform selection:

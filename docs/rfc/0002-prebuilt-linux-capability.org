@@ -38,6 +38,14 @@ provider before repository creation: native =host= on Darwin and immutable
 archive architecture that does not match the consumer host. It SHALL NOT
 instantiate both providers and defer selection to toolchain resolution.
 
+Because provider selection observes both =module_ctx.os.name= and
+=module_ctx.os.arch=, the public module extension SHALL be declared
+=os_dependent=True= and =arch_dependent=True=. A checked-in Bzlmod lockfile
+must retain operating-system- and architecture-specific extension evaluations;
+it must never replay a Darwin host repository specification on Linux, a Linux
+prebuilt repository specification on Darwin, or a Linux prebuilt repository
+specification across incompatible architectures.
+
 Homebrew remains the macOS distribution path. Linux capability production and
 consumption belong to =gerbil-bazel=. =poo-flow= SHALL consume the registered
 library capability and SHALL NOT implement another source bootstrap, direct
