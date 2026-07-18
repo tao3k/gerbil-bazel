@@ -57,6 +57,13 @@ def _environment_exports(environment):
         lines.append("export {}={}".format(key, _shell_quote(environment[key])))
     return "\n".join(lines)
 
+def _environment_args(environment):
+    return " ".join([
+        _shell_quote("{}={}".format(key, environment[key]))
+        for key in sorted(environment.keys())
+    ])
+
+
 def _environment_dict(environment):
     entries = []
     for key in sorted(environment.keys()):
@@ -165,11 +172,19 @@ def _local_gerbil_repository_impl(repository_ctx):
 
     substitutions = {
         "{{ENVIRONMENT}}": _environment_exports(environment),
+        "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
+        "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
         repository_ctx.attr._native_scheme_env_template,
+        substitutions,
+        executable = True,
+    )
+    repository_ctx.template(
+        "install_gerbil_dependencies.sh",
+        repository_ctx.attr._install_dependencies_template,
         substitutions,
         executable = True,
     )
@@ -237,6 +252,10 @@ local_gerbil_repository = repository_rule(
         "_build_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:local_toolchain.BUILD.bazel.tpl",
+        ),
+        "_install_dependencies_template": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
         ),
         "_native_abi_probe": attr.label(
             allow_single_file = True,

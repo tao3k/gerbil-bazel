@@ -53,6 +53,19 @@ register_toolchains("@local_gerbil//:registered_toolchain")
 During local development, add a `local_path_override` for `gerbil_bazel` in the
 consumer module. Published consumers should use a registry release instead.
 
+## Project dependency installation
+
+Each discovered host repository publishes a workspace-aware dependency target:
+
+```bash
+bazel run @local_gerbil//:install_dependencies
+```
+
+The target enters `BUILD_WORKSPACE_DIRECTORY`, defaults `GERBIL_PATH` to
+`$BUILD_WORKSPACE_DIRECTORY/.gerbil`, runs the standard
+`gxpkg deps --install` workflow through the normalized native tool
+environment, and finishes with `gxpkg list` as an executable verification.
+
 ## Project rules
 
 ```starlark

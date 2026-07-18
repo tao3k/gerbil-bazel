@@ -12,6 +12,7 @@ build:
 
 test:
     {{bazel}} test \
+      //tests/smoke:install_dependencies_test \
       //tests/smoke:project_library_view_test \
       //tests/smoke:test \
       //tests/smoke:toolchain_environment_test \
