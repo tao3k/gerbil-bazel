@@ -102,6 +102,11 @@ def _fingerprint(repository_ctx, host, tools):
         fail("Gerbil native ABI fingerprint must be 40 hexadecimal characters")
     return fingerprint
 
+def _safe_relative_path(value, field):
+    if not value or value.startswith("/") or value == ".." or value.startswith("../") or "/../" in value or value.endswith("/.."):
+        fail("{} must be a non-empty relative path without parent traversal: {}".format(field, value))
+    return value
+
 def _link_dependency_roots(repository_ctx):
     repository_ctx.file("lib/.root", "gerbil-bazel dependency root\n")
     for index, root in enumerate(repository_ctx.attr.dependency_roots):
@@ -109,6 +114,36 @@ def _link_dependency_roots(repository_ctx):
         if not path.exists:
             fail("Gerbil dependency root does not exist: {}".format(root))
         repository_ctx.symlink(path, "lib/dependency-{}".format(index))
+
+def _link_project_dependencies(repository_ctx):
+    packages = repository_ctx.attr.project_dependency_packages
+    if not packages:
+        return {}
+    if repository_ctx.attr.project_root_marker == None:
+        fail("project_root_marker is required when project_dependency_packages is set")
+
+    relative_path = _safe_relative_path(
+        repository_ctx.attr.project_library_relative_path,
+        "project_library_relative_path",
+    )
+    project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
+    library_root = repository_ctx.path(str(project_root) + "/" + relative_path)
+    state = {}
+    names = {}
+    for package in packages:
+        package = _safe_relative_path(package, "project dependency package")
+        if package in names:
+            fail("duplicate project dependency package: {}".format(package))
+        names[package] = True
+        dependency = repository_ctx.path(str(library_root) + "/" + package)
+        repository_ctx.watch(dependency)
+        if dependency.exists:
+            repository_ctx.watch_tree(dependency)
+            repository_ctx.symlink(dependency, "lib/" + package)
+            state[package] = "ready"
+        else:
+            state[package] = "missing"
+    return state
 
 def _local_gerbil_repository_impl(repository_ctx):
     host = resolve_host_environment(
@@ -151,11 +186,14 @@ def _local_gerbil_repository_impl(repository_ctx):
         )
 
     _link_dependency_roots(repository_ctx)
+    project_dependency_state = _link_project_dependencies(repository_ctx)
     repository_ctx.file("native_abi.txt", fingerprint + "\n")
     repository_ctx.file(
         "toolchain.receipt.json",
         json.encode_indent({
             "environment": environment,
+            "dependencyPolicy": "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots" if repository_ctx.attr.dependency_roots else "host-only",
+            "dependencyState": project_dependency_state,
             "nativeAbiFingerprint": fingerprint,
             "schema": "gerbil-bazel.local-toolchain-receipt.v1",
             "system": host.system,
@@ -192,6 +230,9 @@ local_gerbil_repository = repository_rule(
         "dependency_roots": attr.string_list(),
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
+        "project_dependency_packages": attr.string_list(),
+        "project_library_relative_path": attr.string(default = ".gerbil/lib"),
+        "project_root_marker": attr.label(allow_single_file = True),
         "tool_paths": attr.string_dict(),
         "_build_template": attr.label(
             allow_single_file = True,

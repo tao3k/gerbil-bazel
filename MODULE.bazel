@@ -12,7 +12,16 @@ gerbil = use_extension(
     dev_dependency = True,
 )
 gerbil.host(name = "local_gerbil")
-use_repo(gerbil, "local_gerbil")
+gerbil.host(
+    name = "project_gerbil",
+    project_dependency_packages = [
+        "clan",
+        "gslph",
+    ],
+    project_library_relative_path = "project-library",
+    project_root_marker = "//tests/smoke:project-root.marker",
+)
+use_repo(gerbil, "local_gerbil", "project_gerbil")
 
 register_toolchains(
     "@local_gerbil//:registered_toolchain",

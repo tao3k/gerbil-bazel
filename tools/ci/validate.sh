@@ -57,6 +57,7 @@ run_phase() {
 run_phase query bazel query //...
 run_phase build bazel build //tests/smoke:compile
 run_phase test bazel test \
+  //tests/smoke:project_library_view_test \
   //tests/smoke:test \
   //tests/smoke:toolchain_environment_test \
   --test_output=errors

@@ -11,7 +11,11 @@ build:
     {{bazel}} build //tests/smoke:compile
 
 test:
-    {{bazel}} test //tests/smoke:test //tests/smoke:toolchain_environment_test --test_output=errors
+    {{bazel}} test \
+      //tests/smoke:project_library_view_test \
+      //tests/smoke:test \
+      //tests/smoke:toolchain_environment_test \
+      --test_output=errors
 
 dev:
     {{bazel}} run //tests/smoke:dev

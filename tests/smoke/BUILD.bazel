@@ -6,6 +6,8 @@ load(
 )
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
+exports_files(["project-root.marker"])
+
 gerbil_project_compile(
     name = "compile",
     build_script = "build.ss",
@@ -30,4 +32,14 @@ sh_test(
     srcs = ["toolchain_environment_test.sh"],
     args = ["$(rlocationpath @local_gerbil//:toolchain.receipt.json)"],
     data = ["@local_gerbil//:toolchain.receipt.json"],
+)
+
+sh_test(
+    name = "project_library_view_test",
+    srcs = ["project_library_view_test.sh"],
+    args = ["$(rlocationpath @project_gerbil//:toolchain.receipt.json)"],
+    data = [
+        "@project_gerbil//:dependency_libraries",
+        "@project_gerbil//:toolchain.receipt.json",
+    ],
 )

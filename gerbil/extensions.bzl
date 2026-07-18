@@ -12,6 +12,9 @@ _host = tag_class(attrs = {
     "environment": attr.string_dict(),
     "expected_version_prefixes": attr.string_list(),
     "name": attr.string(default = "local_gerbil"),
+    "project_dependency_packages": attr.string_list(),
+    "project_library_relative_path": attr.string(default = ".gerbil/lib"),
+    "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
 })
 
@@ -28,6 +31,9 @@ def _gerbil_extension_impl(module_ctx):
                 dependency_roots = host.dependency_roots,
                 environment = host.environment,
                 expected_version_prefixes = host.expected_version_prefixes,
+                project_dependency_packages = host.project_dependency_packages,
+                project_library_relative_path = host.project_library_relative_path,
+                project_root_marker = host.project_root_marker,
                 tool_paths = host.tool_paths,
             )
 
