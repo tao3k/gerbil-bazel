@@ -41,8 +41,10 @@ gerbil_project_test(
 gerbil_project_test(
     name = "source_root_test",
     project = ":compile",
-    source_root_marker = "project-root.marker",
-    srcs = ["source-root-support.ss"],
+    srcs = [
+        "source-root-fixture.json",
+        "source-root-support.ss",
+    ],
     tests = ["source-root-test.ss"],
 )
 

@@ -8,6 +8,7 @@ GerbilProjectInfo = provider(
         "log": "complete project build log",
         "project_root": "tree artifact containing the isolated built project",
         "receipt": "machine-readable build receipt",
+        "source_root_marker": "build script anchoring the declared project source root",
     },
 )
 
@@ -95,6 +96,7 @@ def _gerbil_project_compile_impl(ctx):
         log = log,
         project_root = project_root,
         receipt = receipt,
+        source_root_marker = ctx.file.build_script,
     )
     return [
         DefaultInfo(files = depset([project_root, receipt, log])),
@@ -237,13 +239,8 @@ def _gerbil_project_test_impl(ctx):
     gxtest_key = _runfile_key(ctx, toolchain.gxtest.executable)
     native_env_key = _runfile_key(ctx, toolchain.native_scheme_env.executable)
     dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
-    source_root_setup = ""
-    source_root_suffix = ""
-    if ctx.file.source_root_marker:
-        source_root_setup = """source_root_marker=$(rlocation {})
-source_root=$(dirname "$source_root_marker")
-""".format(repr(_runfile_key(ctx, ctx.file.source_root_marker)))
-        source_root_suffix = ":$source_root"
+    source_root_marker = ctx.file.source_root_marker or project.source_root_marker
+    source_root_key = _runfile_key(ctx, source_root_marker)
     test_keys = " ".join([
         repr(_runfile_key(ctx, test_file))
         for test_file in ctx.files.test_files
@@ -260,13 +257,15 @@ gxtest=$(rlocation {gxtest_key})
 native_env=$(rlocation {native_env_key})
 dependency_root_marker=$(rlocation {dependency_root_key})
 dependency_root=$(dirname "$dependency_root_marker")
-{source_root_setup}test_files=()
+source_root_marker=$(rlocation {source_root_key})
+source_root=$(dirname "$source_root_marker")
+test_files=()
 for key in {test_keys}; do
   test_files+=("$(rlocation "$key")")
 done
 export GERBIL_PATH="$project_root/.gerbil"
-export GERBIL_LOADPATH="$GERBIL_PATH/lib{source_root_suffix}:$dependency_root"
-cd "$project_root"
+export GERBIL_LOADPATH="$GERBIL_PATH/lib:$source_root:$dependency_root"
+cd "$source_root"
 exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxtest" {test_args} "${{test_files[@]}}"
 """.format(
             dependency_root_key = repr(dependency_root_key),
@@ -274,8 +273,7 @@ exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADP
             native_env_key = repr(native_env_key),
             project_key = repr(project_key),
             runfiles_init = _runfiles_init(),
-            source_root_suffix = source_root_suffix,
-            source_root_setup = source_root_setup,
+            source_root_key = repr(source_root_key),
             test_args = test_args,
             test_keys = test_keys,
         ),
@@ -286,12 +284,11 @@ exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADP
     runfile_files = [
         project.project_root,
         project.receipt,
+        source_root_marker,
         toolchain.dependency_library_root,
         toolchain.gxtest.executable,
         toolchain.native_scheme_env.executable,
     ]
-    if ctx.file.source_root_marker:
-        runfile_files.append(ctx.file.source_root_marker)
     return [DefaultInfo(
         executable = executable,
         runfiles = ctx.runfiles(

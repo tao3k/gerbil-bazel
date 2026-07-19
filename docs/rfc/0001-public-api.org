@@ -23,7 +23,8 @@ flowchart LR
   Dev --> DevTests[Optional source-workspace gxtest]
   Compile --> Project[GerbilProjectInfo: tree, log, JSON receipt]
   Project --> Tests[Declared gxtest matrix]
-  SourceRoot[Optional declared source root] --> Tests
+  Compile --> SourceRoot[Provider-owned project source root]
+  SourceRoot --> Tests
   Project --> Consumers[Downstream artifact rules]
 #+end_src
 
@@ -36,8 +37,10 @@ flowchart LR
   once and then runs =gxtest= against those source-workspace test files.
 - =gerbil_project_test=: executes declared test entrypoints against one
   explicit =GerbilProjectInfo= build, so a test matrix reuses one compile
-  action. An optional =source_root_marker= adds its containing declared runfiles
-  directory as a source-only fallback after the compiled project library.
+  action. The project provider carries the build script as the source-root
+  anchor, so tests automatically receive the declared source tree without a
+  second downstream root declaration. A test may override that anchor only
+  when its source root intentionally differs from the compiled project root.
 - =GerbilToolchainInfo=: exposes resolved tools, environment, native ABI,
   dependency roots, logical CPU count, and physical memory to downstream Bazel
   rules.
@@ -71,9 +74,11 @@ JSON receipt or a build-script-owned JSON receipt selected by a declared line
 prefix. Both receipt paths are validated by a declared Scheme action input
 using Gerbil's JSON reader and must contain exactly one JSON value. Test
 launchers carry the small receipt, but not the complete build log, in their
-runfiles. When declared, the source-root marker is a runfile and its directory
+runfiles. The provider-owned source-root marker is a runfile and its directory
 follows =$GERBIL_PATH/lib= on =GERBIL_LOADPATH=, so source modules cannot shadow
-the compiled project under test. =gerbil_project_dev= is intentionally
+the compiled project under test. Test launchers use that source root as their
+working directory, preserving declared relative fixtures while keeping all
+source files inside Bazel runfiles. =gerbil_project_dev= is intentionally
 non-hermetic and is only meaningful through =bazel run=, where Bazel supplies
 the source workspace directory.
 
