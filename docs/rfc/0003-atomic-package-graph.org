@@ -23,6 +23,8 @@ Each immutable Gerbil package is a separate Bazel action and tree artifact.
 script, and direct package dependencies. =GerbilProjectInfo= propagates the
 transitive dependency roots to compilers, tests, and downstream artifact rules.
 
+The runner MUST execute each staged build script with its containing staged source directory as the current working directory. This preserves the standard Gerbil =defbuild-script= contract for source discovery without changing the isolated absolute =GERBIL_PATH= output root. A successful =gerbil_package_compile= action MUST publish at least one regular library file below =.gerbil/lib=. An empty directory layout is a failed package build, not an atomic package result; executable-only projects use =gerbil_project_compile= instead.
+
 #+begin_src mermaid
 flowchart LR
   U[gerbil-utils at revision U] --> P[gerbil-poo at revision P]
@@ -37,6 +39,10 @@ flowchart LR
   P --> PR[isolated tree plus JSON receipt]
   H --> HR[isolated tree plus JSON receipt]
   Root --> RR[project tree plus JSON receipt]
+  Sources[Declared package sources] --> Stage[Staged source root]
+  Stage --> Build[Build script current directory]
+  Build --> OutputGuard{Library files present}
+  OutputGuard --> UR
 #+end_src
 
 The effective package action key is owned by Bazel and includes declared source

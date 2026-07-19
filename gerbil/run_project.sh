@@ -61,10 +61,12 @@ while IFS=$'\t' read -r source relative; do
 done < "$manifest"
 rm -f "$staged_paths"
 
-if [[ ! -f "$project_root/$build_script" ]]; then
+staged_build_script="$project_root/$build_script"
+if [[ ! -f "$staged_build_script" ]]; then
   printf 'staged build script is missing: %s\n' "$build_script" >&2
   exit 66
 fi
+build_source_root=$(dirname "$staged_build_script")
 
 export GERBIL_PATH="$project_root/.gerbil"
 mkdir -p "$GERBIL_PATH/lib"
@@ -107,8 +109,8 @@ trap cleanup_tool_bin EXIT
 started_at=$(date +%s)
 set +e
 (
-  cd "$project_root"
-  "$gxi" "$build_script" "$@"
+  cd "$build_source_root"
+  "$gxi" "$staged_build_script" "$@"
 ) >"$log" 2>&1
 status=$?
 set -e
@@ -119,6 +121,23 @@ if (( status != 0 )); then
   tail -n 200 "$log" >&2
   exit "$status"
 fi
+
+library_output_required=${GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT:-0}
+case "$library_output_required" in
+  0) ;;
+  1)
+    if ! find "$GERBIL_PATH/lib" -mindepth 1 -type f -print -quit | grep -q .; then
+      printf 'Gerbil package build produced no library files: %s\n' \
+        "$GERBIL_PATH/lib" >&2
+      exit 66
+    fi
+    ;;
+  *)
+    printf 'GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT must be 0 or 1, got %s\n' \
+      "$library_output_required" >&2
+    exit 64
+    ;;
+esac
 
 if [[ -n "$receipt_line_prefix" ]]; then
   receipt_payload=
@@ -135,8 +154,9 @@ if [[ -n "$receipt_line_prefix" ]]; then
   fi
   printf '%s\n' "$receipt_payload" >"$receipt"
 else
-  printf '{"durationSeconds":%d,"packageIdentity":%s,"packageRevision":%s,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
+  printf '{"durationSeconds":%d,"libraryOutputRequired":%s,"packageIdentity":%s,"packageRevision":%s,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
     "$((finished_at - started_at))" \
+    "$(if [[ "$library_output_required" == 1 ]]; then printf true; else printf false; fi)" \
     "${GERBIL_BAZEL_PACKAGE_IDENTITY_JSON:-\"\"}" \
     "${GERBIL_BAZEL_PACKAGE_REVISION_JSON:-\"\"}" \
     >"$receipt"

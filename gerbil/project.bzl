@@ -107,6 +107,7 @@ def _gerbil_project_compile_impl(ctx):
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode(ctx.attr.package_identity)
     environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode(ctx.attr.package_revision)
+    environment["GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT"] = "1" if ctx.attr.require_library_output else "0"
     environment["GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS"] = ":".join([
         root.path
         for root in dependency_roots.to_list()
@@ -168,6 +169,7 @@ gerbil_project_compile = rule(
         "package_identity": attr.string(),
         "package_revision": attr.string(),
         "receipt_line_prefix": attr.string(),
+        "require_library_output": attr.bool(default = False),
         "srcs": attr.label_list(allow_files = True),
         "_runner": attr.label(
             cfg = "exec",
@@ -203,6 +205,7 @@ def gerbil_package_compile(
         deps = deps,
         package_identity = package,
         package_revision = revision,
+        require_library_output = True,
         srcs = srcs,
         **kwargs
     )

@@ -23,8 +23,8 @@ printf 'build owner\n' >"$source_root/build.ss"
 printf 'source owner\n' >"$source_root/src/module.ss"
 printf 'dependency marker\n' >"$dependency_root/.marker"
 printf '%s\t%s\n' \
-  "$source_root/build.ss" build.ss \
-  "$source_root/src/module.ss" src/module.ss \
+  "$source_root/build.ss" external/package/build.ss \
+  "$source_root/src/module.ss" external/package/src/module.ss \
   >"$manifest"
 printf '; fake validator identity\n' >"$validator"
 
@@ -46,7 +46,12 @@ printf '%s\n' \
   '[[ -n "${GERBIL_BAZEL_NATIVE_ABI:-}" ]]' \
   '[[ "$GERBIL_LOADPATH" == "$GERBIL_PATH/lib:"* ]]' \
   'project_root=$(cd "$(dirname "$build_script")" && pwd -P)' \
+  '[[ "$PWD" == "$project_root" ]]' \
   'printf "generated\n" >"$project_root/src/generated.c"' \
+  'if [[ "${FAKE_LIBRARY_OUTPUT:-0}" == 1 ]]; then' \
+  '  mkdir -p "$GERBIL_PATH/lib/example"' \
+  '  printf "compiled\n" >"$GERBIL_PATH/lib/example/module.o1"' \
+  'fi' \
   'case "${FAKE_RECEIPT_MODE:-generic}" in' \
   '  valid) printf '\''PROJECT_RECEIPT {"outcome":"passed","schema":"test.project-receipt.v1"}\n'\'' ;;' \
   '  invalid) printf '\''PROJECT_RECEIPT not-json\n'\'' ;;' \
@@ -71,7 +76,7 @@ run_fixture() {
       "$dependency_root/.marker" \
       "$manifest" \
       "$output_root" \
-      build.ss \
+      external/package/build.ss \
       "$root/$name.receipt.json" \
       "$root/$name.log" \
       "$prefix" \
@@ -82,11 +87,26 @@ run_fixture() {
 FAKE_RECEIPT_MODE=generic run_fixture generic ''
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' \
   "$root/generic.receipt.json" >/dev/null
+grep -F '"libraryOutputRequired":false' \
+  "$root/generic.receipt.json" >/dev/null
 grep -F '"packageIdentity":""' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
-[[ -f "$root/generic.project/src/generated.c" ]]
+[[ -f "$root/generic.project/external/package/src/generated.c" ]]
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]
+
+GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT=1 FAKE_LIBRARY_OUTPUT=1 \
+  run_fixture required-library ''
+grep -F '"libraryOutputRequired":true' \
+  "$root/required-library.receipt.json" >/dev/null
+[[ -f "$root/required-library.project/.gerbil/lib/example/module.o1" ]]
+
+set +e
+GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT=1 \
+  run_fixture missing-library ''
+missing_library_status=$?
+set -e
+[[ "$missing_library_status" -eq 66 ]]
 
 FAKE_RECEIPT_MODE=valid run_fixture prefixed 'PROJECT_RECEIPT '
 grep -Fx '{"outcome":"passed","schema":"test.project-receipt.v1"}' \
