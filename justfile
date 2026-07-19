@@ -8,12 +8,18 @@ query:
     {{bazel}} query //...
 
 build:
-    {{bazel}} build //tests/smoke:compile
+    {{bazel}} build \
+      //tests/smoke:compile \
+      //tests/smoke:receipt_compile
 
 test:
     {{bazel}} test \
+      //gerbil:run_project_test \
       //tests/smoke:install_dependencies_test \
+      //tests/smoke:project_receipt_test \
       //tests/smoke:project_library_view_test \
+      //tests/smoke:reuse_test_one \
+      //tests/smoke:reuse_test_two \
       //tests/smoke:test \
       //tests/smoke:toolchain_environment_test \
       --test_output=errors

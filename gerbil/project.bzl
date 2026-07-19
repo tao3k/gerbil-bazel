@@ -5,18 +5,19 @@ load(":toolchain.bzl", "GERBIL_TOOLCHAIN_TYPE", "resolved_gerbil_toolchain")
 GerbilProjectInfo = provider(
     doc = "Outputs of a Gerbil project build.",
     fields = {
+        "log": "complete project build log",
         "project_root": "tree artifact containing the isolated built project",
         "receipt": "machine-readable build receipt",
     },
 )
 
-def _strip_external_prefix(path):
+def _staged_path(path):
     if path.startswith("../"):
-        return path[3:]
+        return "external/" + path[3:]
     return path
 
 def _manifest_entry(file):
-    return "{}\t{}".format(file.path, _strip_external_prefix(file.short_path))
+    return "{}\t{}".format(file.path, _staged_path(file.short_path))
 
 def _merged_environment(base, overrides):
     environment = dict(base)
@@ -27,6 +28,7 @@ def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
     project_root = ctx.actions.declare_directory(ctx.label.name + ".project")
     receipt = ctx.actions.declare_file(ctx.label.name + ".receipt.json")
+    log = ctx.actions.declare_file(ctx.label.name + ".log")
     manifest = ctx.actions.declare_file(ctx.label.name + ".sources")
     sources = depset(direct = [ctx.file.build_script] + ctx.files.srcs)
     ctx.actions.write(
@@ -35,28 +37,60 @@ def _gerbil_project_compile_impl(ctx):
     )
     args = ctx.actions.args()
     args.add(toolchain.gxi.executable.path)
+    args.add(toolchain.gxc.executable.path)
+    args.add(toolchain.gxpkg.executable.path)
+    args.add(toolchain.gerbil_cc)
+    args.add(toolchain.gerbil_as)
+    args.add(toolchain.gerbil_ld)
+    args.add(toolchain.dependency_library_root.path)
     args.add(manifest.path)
     args.add(project_root.path)
-    args.add(_strip_external_prefix(ctx.file.build_script.short_path))
+    args.add(_staged_path(ctx.file.build_script.short_path))
     args.add(receipt.path)
+    args.add(log.path)
+    args.add(ctx.attr.receipt_line_prefix)
     args.add_all(ctx.attr.args)
+    environment = dict(toolchain.environment)
+    environment.update(ctx.attr.env)
+    environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     ctx.actions.run(
         arguments = [args],
-        env = _merged_environment(toolchain.environment, ctx.attr.env),
+        env = environment,
         executable = ctx.executable._runner,
         inputs = depset(
-            direct = [manifest, toolchain.gxi.executable],
-            transitive = [sources, toolchain.runfiles],
+            direct = [
+                manifest,
+                toolchain.dependency_library_root,
+                toolchain.native_abi_fingerprint_file,
+            ],
+            transitive = [
+                sources,
+                toolchain.dependency_libraries,
+                toolchain.runfiles,
+            ],
         ),
         mnemonic = "GerbilProjectCompile",
-        outputs = [project_root, receipt],
+        outputs = [project_root, receipt, log],
         progress_message = "Building Gerbil project %{label}",
-        tools = [toolchain.gxi],
+        tools = [
+            toolchain.gxi,
+            toolchain.gxc,
+            toolchain.gxpkg,
+        ],
     )
-    info = GerbilProjectInfo(project_root = project_root, receipt = receipt)
+    info = GerbilProjectInfo(
+        log = log,
+        project_root = project_root,
+        receipt = receipt,
+    )
     return [
-        DefaultInfo(files = depset([project_root, receipt])),
+        DefaultInfo(files = depset([project_root, receipt, log])),
         info,
+        OutputGroupInfo(
+            log = depset([log]),
+            project_root = depset([project_root]),
+            receipt = depset([receipt]),
+        ),
     ]
 
 gerbil_project_compile = rule(
@@ -65,6 +99,7 @@ gerbil_project_compile = rule(
         "args": attr.string_list(),
         "build_script": attr.label(allow_single_file = True, mandatory = True),
         "env": attr.string_dict(),
+        "receipt_line_prefix": attr.string(),
         "srcs": attr.label_list(allow_files = True),
         "_runner": attr.label(
             cfg = "exec",
@@ -102,6 +137,27 @@ def _gerbil_project_dev_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
     executable = ctx.actions.declare_file(ctx.label.name)
     args = " ".join([repr(arg) for arg in ctx.attr.build_args])
+    native_env_key = _runfile_key(ctx, toolchain.native_scheme_env.executable)
+    dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
+    test_files = ctx.files.test_files
+    if test_files:
+        command = """"$native_env" "$gxi" "$workspace/{build_script}" {args}
+gxtest=$(rlocation {gxtest_key})
+exec "$native_env" "$gxtest" "$@" {tests}
+""".format(
+            args = args,
+            build_script = ctx.file.build_script.short_path,
+            gxtest_key = repr(_runfile_key(ctx, toolchain.gxtest.executable)),
+            tests = " ".join([
+                '"$workspace/{}"'.format(file.short_path)
+                for file in test_files
+            ]),
+        )
+    else:
+        command = 'exec "$native_env" "$gxi" "$workspace/{}" {} "$@"\n'.format(
+            ctx.file.build_script.short_path,
+            args,
+        )
     ctx.actions.write(
         output = executable,
         is_executable = True,
@@ -110,16 +166,27 @@ set -euo pipefail
 {runfiles_init}
 workspace=${{BUILD_WORKSPACE_DIRECTORY:?run this target with bazel run}}
 gxi=$(rlocation {gxi_key})
-exec "$gxi" "$workspace/{build_script}" {args} "$@"
+native_env=$(rlocation {native_env_key})
+dependency_root_marker=$(rlocation {dependency_root_key})
+dependency_root=$(dirname "$dependency_root_marker")
+export GERBIL_PATH="$workspace/.gerbil"
+export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
+{command}
 """.format(
-            args = args,
-            build_script = ctx.file.build_script.short_path,
+            command = command,
+            dependency_root_key = repr(dependency_root_key),
             gxi_key = repr(_runfile_key(ctx, toolchain.gxi.executable)),
+            native_env_key = repr(native_env_key),
             runfiles_init = _runfiles_init(),
         ),
     )
     runfiles = ctx.runfiles(
-        files = [ctx.file.build_script],
+        files = [
+            ctx.file.build_script,
+            toolchain.dependency_library_root,
+            toolchain.gxtest.executable,
+            toolchain.native_scheme_env.executable,
+        ] + test_files,
         transitive_files = toolchain.runfiles,
     )
     return [DefaultInfo(executable = executable, runfiles = runfiles)]
@@ -129,17 +196,19 @@ _gerbil_project_dev = rule(
     attrs = {
         "build_args": attr.string_list(),
         "build_script": attr.label(allow_single_file = True, mandatory = True),
+        "test_files": attr.label_list(allow_files = True),
     },
     executable = True,
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
 
-def gerbil_project_dev(name, build_script, args = [], **kwargs):
+def gerbil_project_dev(name, build_script, args = [], tests = [], **kwargs):
     """Declares a source-workspace development launcher for =bazel run=."""
     _gerbil_project_dev(
         name = name,
         build_args = args,
         build_script = build_script,
+        test_files = tests,
         **kwargs
     )
 
@@ -149,7 +218,12 @@ def _gerbil_project_test_impl(ctx):
     executable = ctx.actions.declare_file(ctx.label.name)
     project_key = _runfile_key(ctx, project.project_root)
     gxtest_key = _runfile_key(ctx, toolchain.gxtest.executable)
-    tests = " ".join([repr(test) for test in ctx.attr.test_files])
+    native_env_key = _runfile_key(ctx, toolchain.native_scheme_env.executable)
+    dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
+    test_keys = " ".join([
+        repr(_runfile_key(ctx, test_file))
+        for test_file in ctx.files.test_files
+    ])
     test_args = " ".join([repr(arg) for arg in ctx.attr.test_args])
     ctx.actions.write(
         output = executable,
@@ -159,26 +233,42 @@ set -euo pipefail
 {runfiles_init}
 project_root=$(rlocation {project_key})
 gxtest=$(rlocation {gxtest_key})
+native_env=$(rlocation {native_env_key})
+dependency_root_marker=$(rlocation {dependency_root_key})
+dependency_root=$(dirname "$dependency_root_marker")
+test_files=()
+for key in {test_keys}; do
+  test_files+=("$(rlocation "$key")")
+done
 export GERBIL_PATH="$project_root/.gerbil"
+export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
 cd "$project_root"
-exec "$gxtest" {test_args} {tests}
+exec "$native_env" "$gxtest" {test_args} "${{test_files[@]}}"
 """.format(
+            dependency_root_key = repr(dependency_root_key),
             gxtest_key = repr(gxtest_key),
+            native_env_key = repr(native_env_key),
             project_key = repr(project_key),
             runfiles_init = _runfiles_init(),
             test_args = test_args,
-            tests = tests,
+            test_keys = test_keys,
         ),
     )
+    transitive_files = [toolchain.runfiles]
+    for srcs in ctx.attr.srcs:
+        transitive_files.append(srcs[DefaultInfo].files)
     return [DefaultInfo(
         executable = executable,
         runfiles = ctx.runfiles(
             files = [
+                project.log,
                 project.project_root,
                 project.receipt,
+                toolchain.dependency_library_root,
                 toolchain.gxtest.executable,
-            ],
-            transitive_files = toolchain.runfiles,
+                toolchain.native_scheme_env.executable,
+            ] + ctx.files.test_files,
+            transitive_files = depset(transitive = transitive_files),
         ),
     )]
 
@@ -186,35 +276,57 @@ _gerbil_project_test = rule(
     implementation = _gerbil_project_test_impl,
     attrs = {
         "project": attr.label(mandatory = True, providers = [GerbilProjectInfo]),
+        "srcs": attr.label_list(allow_files = True),
         "test_args": attr.string_list(),
-        "test_files": attr.string_list(mandatory = True),
+        "test_files": attr.label_list(allow_files = True, mandatory = True),
     },
     test = True,
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
 
+def _normalize_test_label(value):
+    if type(value) != "string":
+        return value
+    if value.startswith("@") or value.startswith("//") or value.startswith(":"):
+        return value
+    package = native.package_name()
+    package_prefix = package + "/" if package else ""
+    if package_prefix and value.startswith(package_prefix):
+        return ":" + value[len(package_prefix):]
+    return value
+
 def gerbil_project_test(
         name,
-        build_script,
         tests,
+        project = None,
+        build_script = None,
         srcs = [],
         build_args = ["compile"],
         test_args = [],
         **kwargs):
-    """Builds a Gerbil project, then executes its test files with gxtest."""
-    compile_name = name + "_compile"
-    gerbil_project_compile(
-        name = compile_name,
-        args = build_args,
-        build_script = build_script,
-        srcs = srcs,
-        testonly = True,
-        visibility = ["//visibility:private"],
-    )
+    """Executes tests against an existing project or a private compile."""
+    declared_srcs = srcs if type(srcs) == "list" else [srcs]
+    declared_tests = [_normalize_test_label(test) for test in tests]
+    if project == None:
+        if build_script == None:
+            fail("build_script is required when project is not provided")
+        compile_name = name + "_compile"
+        gerbil_project_compile(
+            name = compile_name,
+            args = build_args,
+            build_script = build_script,
+            srcs = declared_srcs,
+            testonly = True,
+            visibility = ["//visibility:private"],
+        )
+        project = ":" + compile_name
+    elif build_script != None:
+        fail("gerbil_project_test accepts project or build_script, not both")
     _gerbil_project_test(
         name = name,
-        project = ":" + compile_name,
+        project = project,
+        srcs = declared_srcs,
         test_args = test_args,
-        test_files = tests,
+        test_files = declared_tests,
         **kwargs
     )

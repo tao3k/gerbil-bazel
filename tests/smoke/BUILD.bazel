@@ -10,21 +10,73 @@ exports_files(["project-root.marker"])
 
 gerbil_project_compile(
     name = "compile",
-    build_script = "build.ss",
     args = ["compile"],
+    build_script = "build.ss",
+)
+
+gerbil_project_compile(
+    name = "receipt_compile",
+    build_script = "receipt-build.ss",
+    receipt_line_prefix = "PROJECT_RECEIPT ",
 )
 
 gerbil_project_test(
     name = "test",
-    build_script = "build.ss",
     srcs = ["smoke-test.ss"],
-    tests = ["tests/smoke/smoke-test.ss"],
+    project = ":compile",
+    tests = ["smoke-test.ss"],
+)
+
+gerbil_project_test(
+    name = "reuse_test_one",
+    srcs = ["smoke-test.ss"],
+    project = ":compile",
+    tests = ["smoke-test.ss"],
+)
+
+gerbil_project_test(
+    name = "reuse_test_two",
+    srcs = ["smoke-test.ss"],
+    project = ":compile",
+    tests = ["smoke-test.ss"],
 )
 
 gerbil_project_dev(
     name = "dev",
-    build_script = "build.ss",
     args = ["compile"],
+    build_script = "build.ss",
+)
+
+gerbil_project_dev(
+    name = "dev_test",
+    args = ["compile"],
+    build_script = "build.ss",
+    tests = ["smoke-test.ss"],
+)
+
+filegroup(
+    name = "receipt_compile_log",
+    srcs = [":receipt_compile"],
+    output_group = "log",
+)
+
+filegroup(
+    name = "receipt_compile_receipt",
+    srcs = [":receipt_compile"],
+    output_group = "receipt",
+)
+
+sh_test(
+    name = "project_receipt_test",
+    srcs = ["project_receipt_test.sh"],
+    args = [
+        "$(rlocationpath :receipt_compile_receipt)",
+        "$(rlocationpath :receipt_compile_log)",
+    ],
+    data = [
+        ":receipt_compile_log",
+        ":receipt_compile_receipt",
+    ],
 )
 
 sh_test(

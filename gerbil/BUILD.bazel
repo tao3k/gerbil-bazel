@@ -1,4 +1,5 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,6 +13,13 @@ sh_binary(
 sh_binary(
     name = "run_project",
     srcs = ["run_project.sh"],
+)
+
+sh_test(
+    name = "run_project_test",
+    srcs = ["run_project_test.sh"],
+    args = ["$(rlocationpath :run_project)"],
+    data = [":run_project"],
 )
 
 exports_files([
