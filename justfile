@@ -21,6 +21,7 @@ test:
       //tests/smoke:project_library_view_test \
       //tests/smoke:reuse_test_one \
       //tests/smoke:reuse_test_two \
+      //tests/smoke:source_root_test \
       //tests/smoke:test \
       //tests/smoke:toolchain_environment_test \
       --test_output=errors

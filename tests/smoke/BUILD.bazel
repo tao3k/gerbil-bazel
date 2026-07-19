@@ -38,6 +38,14 @@ gerbil_project_test(
     tests = ["smoke-test.ss"],
 )
 
+gerbil_project_test(
+    name = "source_root_test",
+    project = ":compile",
+    source_root_marker = "project-root.marker",
+    srcs = ["source-root-support.ss"],
+    tests = ["source-root-test.ss"],
+)
+
 gerbil_project_dev(
     name = "dev",
     args = ["compile"],
