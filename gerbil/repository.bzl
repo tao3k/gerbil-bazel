@@ -2,7 +2,7 @@
 
 load(
     ":gambit_runtime.bzl",
-    "discover_gambit_compiler",
+    "discover_gambit_compiler_command",
     "discover_gambit_home",
     "normalized_gambit_runtime",
 )
@@ -91,7 +91,7 @@ def _tool_rules():
         ))
     return "\n\n".join(rules)
 
-def _fingerprint(repository_ctx, host, tools, gerbil_cc):
+def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
     override = repository_ctx.os.environ.get("GERBIL_NATIVE_ABI", "")
     if override:
         return override
@@ -102,6 +102,7 @@ def _fingerprint(repository_ctx, host, tools, gerbil_cc):
             tools["gxpkg"],
             tools["gxtest"],
             gerbil_cc,
+            gerbil_cc_identity,
             host.gerbil_as,
             host.gerbil_ld,
         ],
@@ -164,19 +165,27 @@ def _local_gerbil_repository_impl(repository_ctx):
     )
     tools = _resolve_tools(repository_ctx)
     gambit_home = discover_gambit_home(repository_ctx, tools["gxi"])
-    gerbil_cc = host.gerbil_cc
+    compiler_command = host.gerbil_cc
     if not repository_ctx.os.environ.get("GERBIL_CC", ""):
-        gerbil_cc = discover_gambit_compiler(repository_ctx, gambit_home)
-    version = _gerbil_version(repository_ctx, tools)
-    fingerprint = _fingerprint(repository_ctx, host, tools, gerbil_cc)
-    environment = dict(host.environment)
-    environment.update(repository_ctx.attr.environment)
-    environment = normalized_gambit_runtime(
+        compiler_command = discover_gambit_compiler_command(repository_ctx, gambit_home)
+    declared_environment = dict(host.environment)
+    declared_environment.update(repository_ctx.attr.environment)
+    runtime = normalized_gambit_runtime(
         repository_ctx,
         gambit_home,
-        gerbil_cc,
-        environment,
+        compiler_command,
+        declared_environment,
     )
+    gerbil_cc = str(runtime.compiler_path)
+    version = _gerbil_version(repository_ctx, tools)
+    fingerprint = _fingerprint(
+        repository_ctx,
+        host,
+        tools,
+        gerbil_cc,
+        str(runtime.compiler_identity_path),
+    )
+    environment = runtime.environment
     environment["GERBIL_BAZEL_CPU_COUNT"] = host.system_cpu_count
     environment["GERBIL_BAZEL_MEMORY_BYTES"] = host.system_memory_bytes
     tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
@@ -231,6 +240,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "dependencyPolicy": "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots" if repository_ctx.attr.dependency_roots else "host-only",
             "dependencyState": project_dependency_state,
             "nativeAbiFingerprint": fingerprint,
+            "producerCompilerCommand": runtime.compiler_command,
             "schema": "gerbil-bazel.local-toolchain-receipt.v1",
             "system": host.system,
             "systemCpuCount": int(host.system_cpu_count),
@@ -246,7 +256,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-            "{{GERBIL_CC}}": repr(gerbil_cc),
+            "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(fingerprint),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),

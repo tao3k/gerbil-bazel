@@ -102,6 +102,8 @@ def _gerbil_project_compile_impl(ctx):
     args.add_all(ctx.attr.args)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
+    environment["CC"] = toolchain.gerbil_cc
+    environment["GERBIL_GCC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode(ctx.attr.package_identity)
     environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode(ctx.attr.package_revision)

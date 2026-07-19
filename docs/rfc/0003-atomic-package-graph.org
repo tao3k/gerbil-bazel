@@ -100,10 +100,13 @@ Gambit producer flags.  A Darwin host is not sufficient evidence that Apple
 Clang is compatible with an installed Gerbil capability: a capability produced
 with Homebrew GCC can carry GCC-only flags in =gambuild-C=.
 
-For a local toolchain, gerbil-bazel therefore discovers the literal producer
-compiler from the selected Gambit home unless =GERBIL_CC= is an explicit user
-override.  Darwin SDK, developer directory, assembler, archiver, and linker
-discovery remain Xcode-owned.  Linux continues to use the upstream host
+For a local toolchain, gerbil-bazel therefore discovers the complete literal
+producer compiler command from the selected Gambit home unless =GERBIL_CC= is
+an explicit user override.  Commands such as =/usr/bin/ccache cc= and
+=/usr/bin/xcrun --sdk macosx clang= are materialized as declared Bazel
+executables; their command text and version identity participate in the native
+ABI fingerprint.  Darwin SDK, developer directory, assembler, archiver, and
+linker discovery remain Xcode-owned.  Linux continues to use the upstream host
 toolchain and build path.
 
 gerbil-bazel publishes a repository-owned Gambit bin overlay.  The overlay

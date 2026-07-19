@@ -295,12 +295,13 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     environment = dict(host.environment)
     environment.update(declared_environment)
     environment.update(repository_ctx.attr.environment)
-    environment = normalized_gambit_runtime(
+    runtime = normalized_gambit_runtime(
         repository_ctx,
         gerbil_home,
         host.gerbil_cc,
         environment,
     )
+    environment = runtime.environment
     environment.update({
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
@@ -365,6 +366,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
                 "arch": platform.architecture,
                 "os": platform.system,
             },
+            "producerCompilerCommand": runtime.compiler_command,
             "schema": "gerbil-bazel.prebuilt-toolchain-receipt.v1",
             "sourceUrls": repository_ctx.attr.urls,
             "systemCpuCount": int(host.system_cpu_count),
@@ -380,7 +382,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINTS}}": _string_list(platform.constraints),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-            "{{GERBIL_CC}}": repr(host.gerbil_cc),
+            "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(native_abi),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),

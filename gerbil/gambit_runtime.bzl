@@ -69,8 +69,8 @@ def discover_gambit_home(repository_ctx, gxi):
         fail("Gambit home must be an absolute path; got {!r}".format(home))
     return home.rstrip("/")
 
-def discover_gambit_compiler(repository_ctx, gerbil_home):
-    """Returns the literal producer compiler declared by Gambit's build driver."""
+def discover_gambit_compiler_command(repository_ctx, gerbil_home):
+    """Returns the literal producer compiler command declared by Gambit."""
     gambuild = repository_ctx.path("{}/bin/gambuild-C".format(gerbil_home))
     if not gambuild.exists:
         fail("Gambit compiler driver does not exist: {}".format(gambuild))
@@ -89,18 +89,50 @@ def discover_gambit_compiler(repository_ctx, gerbil_home):
             len(compilers),
         ))
 
-    compiler = compilers[0]
-    if compiler.startswith("/"):
-        path = repository_ctx.path(compiler)
-        if not path.exists:
-            fail("Gambit producer compiler does not exist: {}".format(compiler))
-        return compiler
-    path = repository_ctx.which(compiler)
-    if not path:
-        fail("Gambit producer compiler is not available on PATH: {}".format(compiler))
-    return str(path)
+    return compilers[0]
 
-def normalized_gambit_runtime(repository_ctx, gerbil_home, gerbil_cc, environment):
+def _materialized_compiler(repository_ctx, compiler_command):
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:+-=, "
+    for character in compiler_command.elems():
+        if character not in allowed:
+            fail("Gambit producer compiler command contains an unsafe character: {!r}".format(
+                character,
+            ))
+
+    wrapper = "gerbil-cc"
+    repository_ctx.file(
+        wrapper,
+        "#!/usr/bin/env bash\nset -euo pipefail\nexec {} \"$@\"\n".format(
+            compiler_command,
+        ),
+        executable = True,
+    )
+    wrapper_path = repository_ctx.path(wrapper)
+    identity_result = repository_ctx.execute(
+        [str(wrapper_path), "--version"],
+        quiet = True,
+    )
+    if identity_result.return_code != 0:
+        fail("Gambit producer compiler identity probe failed for {!r}: {}".format(
+            compiler_command,
+            identity_result.stderr.strip(),
+        ))
+    identity = "gerbil-cc.identity.txt"
+    repository_ctx.file(
+        identity,
+        "command={}\n{}\n{}\n".format(
+            compiler_command,
+            identity_result.stdout.strip(),
+            identity_result.stderr.strip(),
+        ),
+    )
+    return struct(
+        command = compiler_command,
+        identity_path = repository_ctx.path(identity),
+        path = wrapper_path,
+    )
+
+def normalized_gambit_runtime(repository_ctx, gerbil_home, compiler_command, environment):
     """Returns an environment that consumes a compiler-only gambuild-C overlay."""
     gambit_bin = repository_ctx.path("{}/bin".format(gerbil_home))
     gambit_lib = repository_ctx.path("{}/lib".format(gerbil_home))
@@ -112,6 +144,7 @@ def normalized_gambit_runtime(repository_ctx, gerbil_home, gerbil_cc, environmen
     if not gerbil_gsc.exists:
         fail("Gerbil compiler driver does not exist: {}".format(gerbil_gsc))
 
+    compiler = _materialized_compiler(repository_ctx, compiler_command)
     runtime_bin = _normalized_gambit_bin(repository_ctx, gambit_bin)
     output = dict(environment)
     gambopt = output.get("GAMBOPT", repository_ctx.os.environ.get("GAMBOPT", ""))
@@ -119,10 +152,15 @@ def normalized_gambit_runtime(repository_ctx, gerbil_home, gerbil_cc, environmen
     gambopt = _append_runtime_option(gambopt, "~~bin={}".format(runtime_bin))
     gambopt = _append_runtime_option(gambopt, "~~lib={}".format(gambit_lib))
     output.update({
-        "CC": gerbil_cc,
+        "CC": str(compiler.path),
         "GAMBOPT": gambopt,
-        "GERBIL_GCC": gerbil_cc,
+        "GERBIL_GCC": str(compiler.path),
         "GERBIL_GSC": str(gerbil_gsc),
         "GERBIL_HOME": gerbil_home,
     })
-    return output
+    return struct(
+        compiler_command = compiler.command,
+        compiler_identity_path = compiler.identity_path,
+        compiler_path = compiler.path,
+        environment = output,
+    )
