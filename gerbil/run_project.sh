@@ -14,7 +14,8 @@ build_script=${10}
 receipt=${11}
 log=${12}
 receipt_line_prefix=${13}
-shift 13
+json_validator=${14}
+shift 14
 
 case "$gxi" in /*) ;; *) gxi="$PWD/$gxi" ;; esac
 case "$gxc" in /*) ;; *) gxc="$PWD/$gxc" ;; esac
@@ -27,6 +28,7 @@ case "$manifest" in /*) ;; *) manifest="$PWD/$manifest" ;; esac
 case "$project_root" in /*) ;; *) project_root="$PWD/$project_root" ;; esac
 case "$receipt" in /*) ;; *) receipt="$PWD/$receipt" ;; esac
 case "$log" in /*) ;; *) log="$PWD/$log" ;; esac
+case "$json_validator" in /*) ;; *) json_validator="$PWD/$json_validator" ;; esac
 
 case "$build_script" in
   ''|/*|..|../*|*/../*|*/..)
@@ -36,6 +38,8 @@ case "$build_script" in
 esac
 
 mkdir -p "$project_root"
+staged_paths="$project_root/.gerbil-bazel-staged-paths"
+: >"$staged_paths"
 while IFS=$'\t' read -r source relative; do
   [[ -n "$source" ]] || continue
   case "$source" in /*) ;; *) source="$PWD/$source" ;; esac
@@ -45,11 +49,17 @@ while IFS=$'\t' read -r source relative; do
       exit 64
       ;;
   esac
+  if grep -Fx "$relative" "$staged_paths" >/dev/null; then
+    printf 'duplicate staged project source path: %s\n' "$relative" >&2
+    exit 64
+  fi
+  printf '%s\n' "$relative" >>"$staged_paths"
   destination="$project_root/$relative"
   mkdir -p "$(dirname "$destination")"
   cp -pL "$source" "$destination"
   chmod u+w "$destination"
 done < "$manifest"
+rm -f "$staged_paths"
 
 if [[ ! -f "$project_root/$build_script" ]]; then
   printf 'staged build script is missing: %s\n' "$build_script" >&2
@@ -111,4 +121,14 @@ if [[ -n "$receipt_line_prefix" ]]; then
 else
   printf '{"durationSeconds":%d,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
     "$((finished_at - started_at))" >"$receipt"
+fi
+
+set +e
+"$gxi" "$json_validator" "$receipt" >>"$log" 2>&1
+validation_status=$?
+set -e
+if (( validation_status != 0 )); then
+  printf 'Gerbil project receipt is not exactly one valid JSON value\n' >&2
+  tail -n 200 "$log" >&2
+  exit 66
 fi

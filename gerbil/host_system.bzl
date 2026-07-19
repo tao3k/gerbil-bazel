@@ -25,6 +25,16 @@ def _which(repository_ctx, candidates, capability):
         ", ".join(candidates),
     ))
 
+def _environment_tool(repository_ctx, key, fallback, capability):
+    value = repository_ctx.os.environ.get(key, "")
+    if not value:
+        return fallback
+    if value.startswith("/"):
+        if not repository_ctx.path(value).exists:
+            fail("{} points to a missing {}: {}".format(key, capability, value))
+        return value
+    return _which(repository_ctx, [value], "{} from {}".format(capability, key))
+
 def _darwin_checked(
         repository_ctx,
         argv,
@@ -182,15 +192,32 @@ def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
     environment = dict(host.environment)
     environment["PATH"] = repository_ctx.os.environ.get("PATH", "")
     compiler = repository_ctx.os.environ.get("GERBIL_CC", "")
-    if not compiler:
+    if compiler:
+        compiler = _environment_tool(
+            repository_ctx,
+            "GERBIL_CC",
+            "",
+            "C compiler",
+        )
+    else:
         compiler = _which(repository_ctx, ["gcc-16", "cc", "clang", "gcc"], "C compiler")
 
     return struct(
         environment = environment,
         exec_constraint = _EXEC_CONSTRAINT_BY_SYSTEM[system],
-        gerbil_as = repository_ctx.os.environ.get("GERBIL_AS", host.gerbil_as),
+        gerbil_as = _environment_tool(
+            repository_ctx,
+            "GERBIL_AS",
+            host.gerbil_as,
+            "assembler",
+        ),
         gerbil_cc = compiler,
-        gerbil_ld = repository_ctx.os.environ.get("GERBIL_LD", host.gerbil_ld),
+        gerbil_ld = _environment_tool(
+            repository_ctx,
+            "GERBIL_LD",
+            host.gerbil_ld,
+            "linker",
+        ),
         system = system,
         system_cpu_count = host.system_cpu_count,
         system_memory_bytes = host.system_memory_bytes,

@@ -16,6 +16,7 @@ source_root=$root/source
 tools_root=$root/tools
 dependency_root=$root/dependency
 manifest=$root/sources
+validator=$root/validate_json.ss
 
 mkdir -p "$source_root/src" "$tools_root" "$dependency_root"
 printf 'build owner\n' >"$source_root/build.ss"
@@ -25,11 +26,17 @@ printf '%s\t%s\n' \
   "$source_root/build.ss" build.ss \
   "$source_root/src/module.ss" src/module.ss \
   >"$manifest"
+printf '; fake validator identity\n' >"$validator"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
-  'build_script=${1:?}' \
+  'script=${1:?}' \
+  'if [[ "$(basename "$script")" == validate_json.ss ]]; then' \
+  '  grep -Eq '\''^\{.*\}$'\'' "${2:?}"' \
+  '  exit 0' \
+  'fi' \
+  'build_script=$script' \
   '[[ "${2:-}" == compile ]]' \
   'command -v gxc >/dev/null' \
   'command -v gxpkg >/dev/null' \
@@ -42,6 +49,7 @@ printf '%s\n' \
   'printf "generated\n" >"$project_root/src/generated.c"' \
   'case "${FAKE_RECEIPT_MODE:-generic}" in' \
   '  valid) printf '\''PROJECT_RECEIPT {"outcome":"passed","schema":"test.project-receipt.v1"}\n'\'' ;;' \
+  '  invalid) printf '\''PROJECT_RECEIPT not-json\n'\'' ;;' \
   '  *) printf '\''build completed\n'\'' ;;' \
   'esac' \
   >"$tools_root/gxi"
@@ -67,6 +75,7 @@ run_fixture() {
       "$root/$name.receipt.json" \
       "$root/$name.log" \
       "$prefix" \
+      "$validator" \
       compile
 }
 
@@ -83,6 +92,12 @@ grep -Fx '{"outcome":"passed","schema":"test.project-receipt.v1"}' \
 grep -F 'PROJECT_RECEIPT ' "$root/prefixed.log" >/dev/null
 
 set +e
+FAKE_RECEIPT_MODE=invalid run_fixture invalid 'PROJECT_RECEIPT '
+invalid_status=$?
+set -e
+[[ "$invalid_status" -eq 66 ]]
+
+set +e
 FAKE_RECEIPT_MODE=missing run_fixture missing 'PROJECT_RECEIPT '
 missing_status=$?
 set -e
@@ -96,8 +111,24 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
     "$dependency_root/.marker" "$root/unsafe.sources" \
     "$root/unsafe.project" build.ss "$root/unsafe.receipt.json" \
-    "$root/unsafe.log" '' compile
+    "$root/unsafe.log" '' "$validator" compile
 unsafe_status=$?
 set -e
 [[ "$unsafe_status" -eq 64 ]]
 [[ ! -e "$root/escape.ss" ]]
+
+printf '%s\t%s\n' \
+  "$source_root/build.ss" build.ss \
+  "$source_root/src/module.ss" build.ss \
+  >"$root/duplicate.sources"
+set +e
+GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
+  "$runner" \
+    "$tools_root/gxi" "$tools_root/tool" "$tools_root/tool" \
+    "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
+    "$dependency_root/.marker" "$root/duplicate.sources" \
+    "$root/duplicate.project" build.ss "$root/duplicate.receipt.json" \
+    "$root/duplicate.log" '' "$validator" compile
+duplicate_status=$?
+set -e
+[[ "$duplicate_status" -eq 64 ]]

@@ -22,21 +22,18 @@ gerbil_project_compile(
 
 gerbil_project_test(
     name = "test",
-    srcs = ["smoke-test.ss"],
     project = ":compile",
     tests = ["smoke-test.ss"],
 )
 
 gerbil_project_test(
     name = "reuse_test_one",
-    srcs = ["smoke-test.ss"],
     project = ":compile",
     tests = ["smoke-test.ss"],
 )
 
 gerbil_project_test(
     name = "reuse_test_two",
-    srcs = ["smoke-test.ss"],
     project = ":compile",
     tests = ["smoke-test.ss"],
 )

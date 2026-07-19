@@ -13,16 +13,27 @@ GerbilProjectInfo = provider(
 
 def _staged_path(path):
     if path.startswith("../"):
-        return "external/" + path[3:]
+        return ".gerbil-bazel/external/" + path[3:]
+    if path.startswith(".gerbil-bazel/"):
+        fail("project source path uses reserved staging namespace: {}".format(path))
     return path
 
-def _manifest_entry(file):
-    return "{}\t{}".format(file.path, _staged_path(file.short_path))
-
-def _merged_environment(base, overrides):
-    environment = dict(base)
-    environment.update(overrides)
-    return environment
+def _manifest_entries(files):
+    sources_by_destination = {}
+    for file in files:
+        destination = _staged_path(file.short_path)
+        previous = sources_by_destination.get(destination)
+        if previous != None:
+            fail("staged project source collision at {}: {} and {}".format(
+                destination,
+                previous,
+                file.path,
+            ))
+        sources_by_destination[destination] = file.path
+    return [
+        "{}\t{}".format(sources_by_destination[destination], destination)
+        for destination in sorted(sources_by_destination.keys())
+    ]
 
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
@@ -33,7 +44,7 @@ def _gerbil_project_compile_impl(ctx):
     sources = depset(direct = [ctx.file.build_script] + ctx.files.srcs)
     ctx.actions.write(
         output = manifest,
-        content = "\n".join([_manifest_entry(file) for file in sources.to_list()]) + "\n",
+        content = "\n".join(_manifest_entries(sources.to_list())) + "\n",
     )
     args = ctx.actions.args()
     args.add(toolchain.gxi.executable.path)
@@ -49,6 +60,7 @@ def _gerbil_project_compile_impl(ctx):
     args.add(receipt.path)
     args.add(log.path)
     args.add(ctx.attr.receipt_line_prefix)
+    args.add(ctx.file._json_validator.path)
     args.add_all(ctx.attr.args)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
@@ -59,6 +71,7 @@ def _gerbil_project_compile_impl(ctx):
         executable = ctx.executable._runner,
         inputs = depset(
             direct = [
+                ctx.file._json_validator,
                 manifest,
                 toolchain.dependency_library_root,
                 toolchain.native_abi_fingerprint_file,
@@ -106,6 +119,10 @@ gerbil_project_compile = rule(
             default = "@gerbil_bazel//gerbil:run_project",
             executable = True,
         ),
+        "_json_validator": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:validate_json.ss",
+        ),
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
@@ -141,9 +158,9 @@ def _gerbil_project_dev_impl(ctx):
     dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
     test_files = ctx.files.test_files
     if test_files:
-        command = """"$native_env" "$gxi" "$workspace/{build_script}" {args}
+        command = """"$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxi" "$workspace/{build_script}" {args}
 gxtest=$(rlocation {gxtest_key})
-exec "$native_env" "$gxtest" "$@" {tests}
+exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxtest" "$@" {tests}
 """.format(
             args = args,
             build_script = ctx.file.build_script.short_path,
@@ -154,7 +171,7 @@ exec "$native_env" "$gxtest" "$@" {tests}
             ]),
         )
     else:
-        command = 'exec "$native_env" "$gxi" "$workspace/{}" {} "$@"\n'.format(
+        command = 'exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxi" "$workspace/{}" {} "$@"\n'.format(
             ctx.file.build_script.short_path,
             args,
         )
@@ -243,7 +260,7 @@ done
 export GERBIL_PATH="$project_root/.gerbil"
 export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
 cd "$project_root"
-exec "$native_env" "$gxtest" {test_args} "${{test_files[@]}}"
+exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxtest" {test_args} "${{test_files[@]}}"
 """.format(
             dependency_root_key = repr(dependency_root_key),
             gxtest_key = repr(gxtest_key),
@@ -261,7 +278,6 @@ exec "$native_env" "$gxtest" {test_args} "${{test_files[@]}}"
         executable = executable,
         runfiles = ctx.runfiles(
             files = [
-                project.log,
                 project.project_root,
                 project.receipt,
                 toolchain.dependency_library_root,
@@ -297,31 +313,16 @@ def _normalize_test_label(value):
 
 def gerbil_project_test(
         name,
+        project,
         tests,
-        project = None,
-        build_script = None,
         srcs = [],
-        build_args = ["compile"],
         test_args = [],
         **kwargs):
-    """Executes tests against an existing project or a private compile."""
+    """Executes tests against one explicit GerbilProjectInfo build."""
+    if not tests:
+        fail("gerbil_project_test requires at least one test file")
     declared_srcs = srcs if type(srcs) == "list" else [srcs]
     declared_tests = [_normalize_test_label(test) for test in tests]
-    if project == None:
-        if build_script == None:
-            fail("build_script is required when project is not provided")
-        compile_name = name + "_compile"
-        gerbil_project_compile(
-            name = compile_name,
-            args = build_args,
-            build_script = build_script,
-            srcs = declared_srcs,
-            testonly = True,
-            visibility = ["//visibility:private"],
-        )
-        project = ":" + compile_name
-    elif build_script != None:
-        fail("gerbil_project_test accepts project or build_script, not both")
     _gerbil_project_test(
         name = name,
         project = project,

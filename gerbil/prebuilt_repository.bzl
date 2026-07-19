@@ -115,6 +115,13 @@ def _payload_path(repository_ctx, relative, description):
     return path
 
 def _normalized_gambuild_compiler(source):
+    normalized_guard = "if test \"${GERBIL_GCC+set}\" = set; then"
+    normalized_binding = "  C_COMPILER=\"${GERBIL_GCC}\""
+    if normalized_guard in source:
+        if normalized_binding not in source:
+            fail("Gambit gambuild-C has an invalid GERBIL_GCC normalization guard")
+        return source
+
     output = []
     replacements = 0
     for line in source.split("\n"):

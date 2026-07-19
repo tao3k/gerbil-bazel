@@ -64,7 +64,11 @@ if [[ -z "$archive" ]]; then
   chmod +x "$payload/prefix/bin/gsc"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
-    'C_COMPILER=/producer-only/ccache' \
+    'if test "${GERBIL_GCC+set}" = set; then' \
+    '  C_COMPILER="${GERBIL_GCC}"' \
+    'else' \
+    '  C_COMPILER=/producer-only/ccache' \
+    'fi' \
     'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
     'exit 0' >"$payload/prefix/bin/gambuild-C"
   chmod +x "$payload/prefix/bin/gambuild-C"
@@ -107,8 +111,9 @@ if [[ -z "$archive" ]]; then
         'fi' \
         'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
         '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
-        '  command -v gxi >/dev/null' \
-        '  gxi --version >/dev/null' \
+        '  resolved_gxi=$(command -v gxi)' \
+        '  [[ "$(gxi --version)" == "Gerbil v0.prebuilt-test" ]]' \
+        '  [[ "$resolved_gxi" == "$GERBIL_HOME/bin/gxi" ]]' \
         '  mkdir -p "$GERBIL_PATH/lib/clan" "$GERBIL_PATH/lib/gslph"' \
         '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
         '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \
@@ -194,6 +199,17 @@ cp "$provider_fixture/project_dependency_state_test.sh" \
 if [[ "$selected_provider" != prebuilt || "$fixture" != synthetic ]]; then
   mkdir -p "$test_root/consumer/.gerbil/lib"
   cp -R "$provider_fixture/project-library/." "$test_root/consumer/.gerbil/lib/"
+fi
+if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+  ambient_bin="$test_root/ambient-bin"
+  mkdir -p "$ambient_bin"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "ambient gxi must not run\n" >&2' \
+    'exit 97' \
+    >"$ambient_bin/gxi"
+  chmod +x "$ambient_bin/gxi"
+  export PATH="$ambient_bin:$PATH"
 fi
 
 (
