@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.project-receipt.v1.schema.json",
+  "title": "Gerbil Bazel Project Receipt v1",
+  "description": "Stable action receipt for Gerbil project and immutable package builds.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "durationSeconds",
+    "libraryOutputRequired",
+    "packageIdentity",
+    "packageRevision"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.project-receipt.v1"
+    },
+    "status": {
+      "const": "ok"
+    },
+    "durationSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "libraryOutputRequired": {
+      "type": "boolean"
+    },
+    "packageIdentity": {
+      "type": "string"
+    },
+    "packageRevision": {
+      "type": "string"
+    },
+    "resourceGuard": {
+      "$ref": "#/$defs/resourceGuardReceiptV1"
+    },
+    "buildReceipt": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "resourceGuardReceiptV1": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema",
+        "version",
+        "label",
+        "outcome",
+        "exitCode",
+        "childExitCode",
+        "logicalCpuCount",
+        "runnableProcessCount",
+        "systemMemoryBytes",
+        "availableMemoryBytes",
+        "rssHeadroomBytes",
+        "maxRssBytes",
+        "peakRssBytes",
+        "processTreeRssAvailable",
+        "elapsedMs",
+        "timeoutMs",
+        "admissionOutcome",
+        "admissionAdvisories",
+        "admissionReasons"
+      ],
+      "properties": {
+        "kind": {
+          "const": "gerbil-bazel.resource-guard-receipt.v1"
+        },
+        "schema": {
+          "const": "gerbil-bazel.resource-guard-receipt.v1"
+        },
+        "version": {
+          "const": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "blocked-host-pressure",
+            "rss-limit-exceeded",
+            "timeout"
+          ]
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "childExitCode": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "const": false
+            }
+          ]
+        },
+        "logicalCpuCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runnableProcessCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "systemMemoryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "availableMemoryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rssHeadroomBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxRssBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "peakRssBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "processTreeRssAvailable": {
+          "type": "boolean"
+        },
+        "elapsedMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeoutMs": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "const": false
+            }
+          ]
+        },
+        "admissionOutcome": {
+          "enum": [
+            "ready",
+            "blocked-host-pressure"
+          ]
+        },
+        "admissionAdvisories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "admissionReasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

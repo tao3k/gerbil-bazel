@@ -1,0 +1,86 @@
+#+title: RFC 0004: Stable Gerbil Project Receipt v1
+#+startup: overview
+
+* Status
+
+Normative v1.
+
+* Decision
+
+=gerbil-bazel.project-receipt.v1= is the stable public receipt emitted by every
+Gerbil project action. Internal execution capabilities do not create a new
+project receipt version.
+
+The following six fields are required and retain their original meaning:
+
+- =schema=
+- =status=
+- =durationSeconds=
+- =libraryOutputRequired=
+- =packageIdentity=
+- =packageRevision=
+
+Two optional extension fields are reserved in v1:
+
+- =resourceGuard= contains a typed
+  =gerbil-bazel.resource-guard-receipt.v1= value when the action uses the
+  Scheme process guard.
+- =buildReceipt= contains the build-script-owned JSON value captured through
+  =receipt_line_prefix=.
+
+No producer-owned receipt replaces the outer Gerbil-Bazel receipt.
+
+* Canonical flow
+
+#+begin_src mermaid
+flowchart LR
+  A["Declared Gerbil action"] --> B["Scheme resource guard (optional)"]
+  B --> C["Build script"]
+  C --> D["Producer receipt (optional)"]
+  B --> E["Resource guard receipt"]
+  D --> F["Project receipt v1 envelope"]
+  E --> F
+  F --> G["Declared Bazel receipt artifact"]
+#+end_src
+
+* Compatibility contract
+
+| Concern | v1 rule |
+|---------+---------|
+| Required identity | The original six fields are always present. |
+| Producer JSON | Nested under =buildReceipt=; its schema remains producer-owned. |
+| Resource policy evidence | Nested under =resourceGuard=; absent when no guard runs. |
+| Unknown top-level fields | Rejected by the normative JSON Schema. |
+| New execution capability | Uses a reserved optional field or requires a separately approved project receipt version. |
+| Existing reader | A reader consuming only the six required fields remains valid. |
+
+* Atomic cache semantics
+
+The receipt is an output of the same immutable package action as the compiled
+tree. Package identity, package revision, declared sources, transitive package
+roots, toolchain capability, and guard implementation participate in the Bazel
+action key. Changing one dependency revision invalidates that package and its
+reverse-dependent closure; an independent package remains reusable.
+
+* Failure semantics
+
+Failed Bazel actions report their typed guard receipt in the action log because
+failed declared outputs are not cacheable. Successful actions store the same
+guard value under =resourceGuard=. Host-pressure admission failure, RSS limit,
+and deadline termination therefore remain observable without manufacturing a
+successful project receipt.
+
+* Normative artifacts
+
+- =schemas/gerbil-bazel.project-receipt.v1.schema.json=
+- =gerbil/write_project_receipt.ss=
+- =gerbil/resource_guard.ss=
+- =gerbil/run_project.sh=
+- =gerbil/project_receipt_schema_test.sh=
+- =tests/smoke/package_receipt_test.sh=
+
+* Versioning rule
+
+Version 2 is not introduced by this RFC. A future project receipt version needs
+a demonstrated incompatible semantic change, a migration plan, parallel reader
+coverage, and explicit approval. Field growth alone is not sufficient.

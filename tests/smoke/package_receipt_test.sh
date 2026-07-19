@@ -15,3 +15,5 @@ grep -F '"packageIdentity":"example.invalid/gerbil-bazel/dependency"' \
 grep -F '"packageRevision":"dependency-v1"' "$receipt" >/dev/null
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' "$receipt" >/dev/null
 grep -F '"status":"ok"' "$receipt" >/dev/null
+grep -F '"admissionOutcome":"ready"' "$receipt" >/dev/null
+grep -F '"schema":"gerbil-bazel.resource-guard-receipt.v1"' "$receipt" >/dev/null

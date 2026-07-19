@@ -15,7 +15,13 @@ receipt=${11}
 log=${12}
 receipt_line_prefix=${13}
 json_validator=${14}
-shift 14
+resource_guard=${15}
+receipt_writer=${16}
+process_guard=${17}
+process_guard_timeout_seconds=${18}
+package_identity=${19}
+package_revision=${20}
+shift 20
 
 case "$gxi" in /*) ;; *) gxi="$PWD/$gxi" ;; esac
 case "$gxc" in /*) ;; *) gxc="$PWD/$gxc" ;; esac
@@ -29,6 +35,30 @@ case "$project_root" in /*) ;; *) project_root="$PWD/$project_root" ;; esac
 case "$receipt" in /*) ;; *) receipt="$PWD/$receipt" ;; esac
 case "$log" in /*) ;; *) log="$PWD/$log" ;; esac
 case "$json_validator" in /*) ;; *) json_validator="$PWD/$json_validator" ;; esac
+
+case "$resource_guard" in
+  /*) ;;
+  *) resource_guard="$PWD/$resource_guard" ;;
+esac
+case "$receipt_writer" in
+  /*) ;;
+  *) receipt_writer="$PWD/$receipt_writer" ;;
+esac
+
+case "$process_guard" in
+  0 | 1) ;;
+  *)
+    printf 'process guard flag must be 0 or 1, got %s\n' "$process_guard" >&2
+    exit 64
+    ;;
+esac
+case "$process_guard_timeout_seconds" in
+  '' | *[!0-9]*)
+    printf 'process guard timeout must be a non-negative integer, got %s\n' \
+      "$process_guard_timeout_seconds" >&2
+    exit 64
+    ;;
+esac
 
 case "$build_script" in
   ''|/*|..|../*|*/../*|*/..)
@@ -108,10 +138,22 @@ trap cleanup_tool_bin EXIT
 
 started_at=$(date +%s)
 set +e
-(
-  cd "$build_source_root"
-  "$gxi" "$staged_build_script" "$@"
-) >"$log" 2>&1
+guard_receipt="$project_root/.gerbil-bazel-resource-guard.json"
+if [[ "$process_guard" == 1 ]]; then
+  (
+    cd "$build_source_root"
+    "$gxi" "$resource_guard" \
+      "$guard_receipt" \
+      "$package_identity@$package_revision" \
+      "$process_guard_timeout_seconds" \
+      "$gxi" "$staged_build_script" "$@"
+  ) >"$log" 2>&1
+else
+  (
+    cd "$build_source_root"
+    "$gxi" "$staged_build_script" "$@"
+  ) >"$log" 2>&1
+fi
 status=$?
 set -e
 finished_at=$(date +%s)
@@ -139,6 +181,7 @@ case "$library_output_required" in
     ;;
 esac
 
+build_receipt_path=-
 if [[ -n "$receipt_line_prefix" ]]; then
   receipt_payload=
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -152,14 +195,43 @@ if [[ -n "$receipt_line_prefix" ]]; then
     tail -n 200 "$log" >&2
     exit 65
   fi
-  printf '%s\n' "$receipt_payload" >"$receipt"
+  build_receipt_path="$project_root/.gerbil-bazel-build-receipt.json"
+  printf '%s\n' "$receipt_payload" >"$build_receipt_path"
 else
-  printf '{"durationSeconds":%d,"libraryOutputRequired":%s,"packageIdentity":%s,"packageRevision":%s,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
+  if [[ "$process_guard" == 0 ]]; then
+    printf '{"durationSeconds":%d,"libraryOutputRequired":%s,"packageIdentity":%s,"packageRevision":%s,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
+      "$((finished_at - started_at))" \
+      "$(if [[ "$library_output_required" == 1 ]]; then printf true; else printf false; fi)" \
+      "${GERBIL_BAZEL_PACKAGE_IDENTITY_JSON:-\"\"}" \
+      "${GERBIL_BAZEL_PACKAGE_REVISION_JSON:-\"\"}" \
+      >"$receipt"
+  fi
+fi
+
+resource_guard_path=-
+if [[ "$process_guard" == 1 ]]; then
+  resource_guard_path=$guard_receipt
+fi
+
+if [[ "$process_guard" == 1 || "$build_receipt_path" != - ]]; then
+  set +e
+  "$gxi" "$receipt_writer" \
+    "$receipt" \
     "$((finished_at - started_at))" \
-    "$(if [[ "$library_output_required" == 1 ]]; then printf true; else printf false; fi)" \
+    "$library_output_required" \
     "${GERBIL_BAZEL_PACKAGE_IDENTITY_JSON:-\"\"}" \
     "${GERBIL_BAZEL_PACKAGE_REVISION_JSON:-\"\"}" \
-    >"$receipt"
+    "$resource_guard_path" \
+    "$build_receipt_path" \
+    ok \
+    >>"$log" 2>&1
+  receipt_writer_status=$?
+  set -e
+  if ((receipt_writer_status != 0)); then
+    printf 'Gerbil project receipt envelope could not be generated\n' >&2
+    tail -n 200 "$log" >&2
+    exit 66
+  fi
 fi
 
 set +e

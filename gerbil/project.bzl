@@ -99,6 +99,12 @@ def _gerbil_project_compile_impl(ctx):
     args.add(log.path)
     args.add(ctx.attr.receipt_line_prefix)
     args.add(ctx.file._json_validator.path)
+    args.add(ctx.file._resource_guard.path)
+    args.add(ctx.file._receipt_writer.path)
+    args.add("1" if ctx.attr.process_guard else "0")
+    args.add(ctx.attr.process_guard_timeout_seconds)
+    args.add(ctx.attr.package_identity)
+    args.add(ctx.attr.package_revision)
     args.add_all(ctx.attr.args)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
@@ -119,6 +125,8 @@ def _gerbil_project_compile_impl(ctx):
         inputs = depset(
             direct = [
                 ctx.file._json_validator,
+                ctx.file._receipt_writer,
+                ctx.file._resource_guard,
                 manifest,
                 toolchain.dependency_library_root,
                 toolchain.native_abi_fingerprint_file,
@@ -168,6 +176,8 @@ gerbil_project_compile = rule(
         "env": attr.string_dict(),
         "package_identity": attr.string(),
         "package_revision": attr.string(),
+        "process_guard": attr.bool(default = False),
+        "process_guard_timeout_seconds": attr.int(default = 0),
         "receipt_line_prefix": attr.string(),
         "require_library_output": attr.bool(default = False),
         "srcs": attr.label_list(allow_files = True),
@@ -179,6 +189,14 @@ gerbil_project_compile = rule(
         "_json_validator": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:validate_json.ss",
+        ),
+        "_receipt_writer": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:write_project_receipt.ss",
+        ),
+        "_resource_guard": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard.ss",
         ),
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
@@ -198,6 +216,9 @@ def gerbil_package_compile(
         fail("gerbil_package_compile requires a package identity")
     if not revision:
         fail("gerbil_package_compile requires an immutable package revision")
+    if "process_guard" not in kwargs:
+        kwargs["process_guard"] = True
+
     gerbil_project_compile(
         name = name,
         args = args,

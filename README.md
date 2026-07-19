@@ -148,8 +148,13 @@ gerbil_project_test(
 The compile action stages every declared source in a writable tree before it
 executes `build.ss`. Tests always consume an explicit `GerbilProjectInfo`, so a
 matrix reuses one compile action. Set `receipt_line_prefix` when the build
-script emits a canonical JSON receipt; otherwise the rule emits the generic
-`gerbil-bazel.project-receipt.v1` receipt.
+script emits canonical JSON. Every action receipt keeps the stable outer
+`gerbil-bazel.project-receipt.v1` schema and its original six required fields.
+The validated producer value is nested under the optional `buildReceipt`
+field. Immutable package actions also expose their Scheme resource-guard
+evidence under the optional `resourceGuard` field. The normative contract is
+`schemas/gerbil-bazel.project-receipt.v1.schema.json`; execution capability
+changes do not create a new project receipt version.
 
 Host-specific paths, available logical CPUs, physical memory, compiler,
 assembler, linker, SDK, optional Homebrew native libraries, and Gerbil

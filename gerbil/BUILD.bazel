@@ -35,6 +35,34 @@ sh_test(
     ],
 )
 
+sh_test(
+    name = "resource_guard_test",
+    srcs = ["resource_guard_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :resource_guard.ss)",
+    ],
+    data = [
+        ":resource_guard.ss",
+        "@local_gerbil//:gxi",
+    ],
+)
+
+sh_test(
+    name = "project_receipt_schema_test",
+    srcs = ["project_receipt_schema_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :validate_json.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.project-receipt.v1.schema.json)",
+    ],
+    data = [
+        ":validate_json.ss",
+        "//schemas:gerbil-bazel.project-receipt.v1.schema.json",
+        "@local_gerbil//:gxi",
+    ],
+)
+
 exports_files([
     "defs.bzl",
     "extensions.bzl",
@@ -48,6 +76,8 @@ exports_files([
     "prebuilt_toolchain.BUILD.bazel.tpl",
     "project.bzl",
     "repository.bzl",
+    "resource_guard.ss",
     "toolchain.bzl",
     "validate_json.ss",
+    "write_project_receipt.ss",
 ])

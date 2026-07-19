@@ -17,6 +17,8 @@ tools_root=$root/tools
 dependency_root=$root/dependency
 manifest=$root/sources
 validator=$root/validate_json.ss
+resource_guard=$root/resource_guard.ss
+receipt_writer=$root/write_project_receipt.ss
 
 mkdir -p "$source_root/src" "$tools_root" "$dependency_root"
 printf 'build owner\n' >"$source_root/build.ss"
@@ -27,6 +29,8 @@ printf '%s\t%s\n' \
   "$source_root/src/module.ss" external/package/src/module.ss \
   >"$manifest"
 printf '; fake validator identity\n' >"$validator"
+printf '; fake resource guard identity\n' >"$resource_guard"
+printf '; fake receipt writer identity\n' >"$receipt_writer"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
@@ -35,6 +39,12 @@ printf '%s\n' \
   'if [[ "$(basename "$script")" == validate_json.ss ]]; then' \
   '  grep -Eq '\''^\{.*\}$'\'' "${2:?}"' \
   '  exit 0' \
+  'fi' \
+  'if [[ "$(basename "$script")" == write_project_receipt.ss ]]; then' \
+  ' grep -Eq '\''^\{.*\}$'\'' "${8:?}"' \
+  ' build_receipt=$(<"${8:?}")' \
+  ' printf '\''{"buildReceipt":%s,"durationSeconds":%s,"libraryOutputRequired":false,"packageIdentity":%s,"packageRevision":%s,"resourceGuard":null,"schema":"gerbil-bazel.project-receipt.v1","status":"%s"}\n'\'' "$build_receipt" "${3:?}" "${5:?}" "${6:?}" "${9:?}" >"${2:?}"' \
+  ' exit 0' \
   'fi' \
   'build_script=$script' \
   '[[ "${2:-}" == compile ]]' \
@@ -78,10 +88,16 @@ run_fixture() {
       "$output_root" \
       external/package/build.ss \
       "$root/$name.receipt.json" \
-      "$root/$name.log" \
-      "$prefix" \
-      "$validator" \
-      compile
+    "$root/$name.log" \
+    "$prefix" \
+    "$validator" \
+    "$resource_guard" \
+    "$receipt_writer" \
+    0 \
+    0 \
+    '' \
+    '' \
+    compile
 }
 
 FAKE_RECEIPT_MODE=generic run_fixture generic ''
@@ -109,7 +125,9 @@ set -e
 [[ "$missing_library_status" -eq 66 ]]
 
 FAKE_RECEIPT_MODE=valid run_fixture prefixed 'PROJECT_RECEIPT '
-grep -Fx '{"outcome":"passed","schema":"test.project-receipt.v1"}' \
+grep -F '"schema":"gerbil-bazel.project-receipt.v1"' \
+  "$root/prefixed.receipt.json" >/dev/null
+grep -F '"schema":"test.project-receipt.v1"' \
   "$root/prefixed.receipt.json" >/dev/null
 grep -F 'PROJECT_RECEIPT ' "$root/prefixed.log" >/dev/null
 
@@ -133,7 +151,8 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
     "$dependency_root/.marker" "$root/unsafe.sources" \
     "$root/unsafe.project" build.ss "$root/unsafe.receipt.json" \
-    "$root/unsafe.log" '' "$validator" compile
+  "$root/unsafe.log" '' "$validator" \
+  "$resource_guard" "$receipt_writer" 0 0 '' '' compile
 unsafe_status=$?
 set -e
 [[ "$unsafe_status" -eq 64 ]]
@@ -150,7 +169,8 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
     "$dependency_root/.marker" "$root/duplicate.sources" \
     "$root/duplicate.project" build.ss "$root/duplicate.receipt.json" \
-    "$root/duplicate.log" '' "$validator" compile
+  "$root/duplicate.log" '' "$validator" \
+  "$resource_guard" "$receipt_writer" 0 0 '' '' compile
 duplicate_status=$?
 set -e
 [[ "$duplicate_status" -eq 64 ]]
