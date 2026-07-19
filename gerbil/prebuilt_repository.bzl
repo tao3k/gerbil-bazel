@@ -46,6 +46,13 @@ def _environment_dict(environment):
         return "{}"
     return "{\n" + "\n".join(entries) + "\n    }"
 
+def _append_runtime_option(options, option):
+    if not options:
+        return option
+    if options.endswith(","):
+        return options + option
+    return options + "," + option
+
 def _string_list(values):
     return "[{}]".format(", ".join([repr(value) for value in values]))
 
@@ -280,7 +287,13 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home_relative,
         "Gerbil home",
     ))
-    gerbil_gsc = repository_ctx.path("{}/bin/gsc".format(gerbil_home))
+    gambit_bin = repository_ctx.path("{}/bin".format(gerbil_home))
+    gambit_lib = repository_ctx.path("{}/lib".format(gerbil_home))
+    if not gambit_bin.exists or not gambit_lib.exists:
+        fail("Gerbil home must contain relocatable Gambit bin and lib directories: {}".format(
+            gerbil_home,
+        ))
+    gerbil_gsc = repository_ctx.path("{}/gsc".format(gambit_bin))
     if not gerbil_gsc.exists:
         fail("Gerbil compiler driver does not exist in the prebuilt capability: {}".format(
             gerbil_gsc,
@@ -300,8 +313,16 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     environment = dict(host.environment)
     environment.update(declared_environment)
     environment.update(repository_ctx.attr.environment)
+    gambopt = environment.get(
+        "GAMBOPT",
+        repository_ctx.os.environ.get("GAMBOPT", ""),
+    )
+    gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))
+    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(gambit_bin))
+    gambopt = _append_runtime_option(gambopt, "~~lib={}".format(gambit_lib))
     environment.update({
         "CC": host.gerbil_cc,
+        "GAMBOPT": gambopt,
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
         "GERBIL_GCC": host.gerbil_cc,
@@ -432,6 +453,7 @@ prebuilt_gerbil_repository = repository_rule(
         "CC",
         "CPATH",
         "CXX",
+        "GAMBOPT",
         "GERBIL_AS",
         "GERBIL_CC",
         "GERBIL_DEVELOPER_DIR",

@@ -73,7 +73,11 @@ if [[ -z "$archive" ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
+        ': "${GAMBOPT:?GAMBOPT is required before gxc startup}"' \
         ': "${GERBIL_GSC:?GERBIL_GSC is required before gxc startup}"' \
+        '[[ ",$GAMBOPT," == *,"~~=$GERBIL_HOME",* ]]' \
+        '[[ ",$GAMBOPT," == *,"~~bin=$GERBIL_HOME/bin",* ]]' \
+        '[[ ",$GAMBOPT," == *,"~~lib=$GERBIL_HOME/lib",* ]]' \
         '[[ -x "$GERBIL_GSC" ]]' \
         '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"

@@ -6,8 +6,9 @@
 
 The provider environment prepends the selected capability's tool directory to
 =PATH= before the first raw =gxpkg= process starts.  It also derives
-=GERBIL_GSC= from the relocated =GERBIL_HOME= and =GERBIL_GCC= from the
-consumer host toolchain.  Dependency build scripts launched through
+=GERBIL_GSC= from the relocated =GERBIL_HOME=, appends Gambit =GAMBOPT=
+runtime mappings for =~~=, =~~bin=, and =~~lib=, and derives =GERBIL_GCC=
+from the consumer host toolchain.  Dependency build scripts launched through
 =/usr/bin/env gxi= and compiler processes launched by =gxc= therefore resolve
 the same immutable prebuilt capability instead of retaining producer-machine
 paths.  The synthetic prebuilt fixture requires the nested =gxi= lookup to
@@ -68,7 +69,7 @@ flowchart LR
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> COMPILE["Relocated gxc -> gsc compile verification"]
-  COMPILE --> ENV["Consumer derives GERBIL_GSC + GERBIL_GCC"]
+  COMPILE --> ENV["Consumer derives GAMBOPT + GERBIL_GSC + GERBIL_GCC"]
   ENV --> ARC["Archive + SHA-256 + manifest"]
   ARC --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]

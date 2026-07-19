@@ -152,20 +152,50 @@ relocated_home="$relocation_root/$gerbil_home"
 relocated_gsc="$relocated_home/bin/gsc"
 relocated_gxc="$relocation_root/$(jq -r '.gxc' <<<"$tools")"
 relocated_gxi="$relocation_root/$(jq -r '.gxi' <<<"$tools")"
+relocated_gambopt="~~=$relocated_home,~~bin=$relocated_home/bin,~~lib=$relocated_home/lib"
 if [[ ! -x "$relocated_gsc" ]]; then
   printf 'relocated Gerbil compiler driver is missing or not executable: %s\n' \
     "$relocated_gsc" >&2
   exit 69
 fi
-relocated_version="$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" --version)"
+relocated_version="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" --version)"
 if [[ "$relocated_version" != "$version" ]]; then
   printf 'relocated Gerbil version mismatch: expected %s, got %s\n' \
     "$version" "$relocated_version" >&2
   exit 69
 fi
-if [[ "$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" -e '(display "ready")')" != ready ]]; then
+if [[ "$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display "ready")')" != ready ]]; then
   printf 'relocated Gerbil runtime probe failed\n' >&2
   exit 70
+fi
+observed_gambit_home="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~"))')"
+if [[ "${observed_gambit_home%/}" != "${relocated_home%/}" ]]; then
+  printf 'relocated Gambit home mismatch: expected %s, got %s\n' \
+    "$relocated_home" "$observed_gambit_home" >&2
+  exit 71
+fi
+observed_gambit_bin="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~bin"))')"
+observed_gambit_lib="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~lib"))')"
+if [[ "${observed_gambit_bin%/}" != "${relocated_home%/}/bin" ||
+      "${observed_gambit_lib%/}" != "${relocated_home%/}/lib" ]]; then
+  printf 'relocated Gambit directory map mismatch: bin=%s lib=%s\n' \
+    "$observed_gambit_bin" "$observed_gambit_lib" >&2
+  exit 72
 fi
 relocation_probe_source="$relocation_root/relocation-probe.ss"
 relocation_probe_output="$relocation_root/relocation-probe-lib"
@@ -175,6 +205,7 @@ printf '%s\n' \
   "(def relocation-ready 'ready)" \
   >"$relocation_probe_source"
 env \
+  GAMBOPT="$relocated_gambopt" \
   GERBIL_GCC="$cc" \
   GERBIL_GSC="$relocated_gsc" \
   GERBIL_HOME="$relocated_home" \
