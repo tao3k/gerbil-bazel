@@ -127,8 +127,8 @@ load(
 gerbil_project_compile(
     name = "scheme",
     build_script = "build.ss",
-    srcs = glob(["src/**/*.ss"]),
     args = ["compile", "--tests"],
+    srcs = glob(["src/**/*.ss"]),
 )
 
 gerbil_project_dev(
@@ -139,12 +139,22 @@ gerbil_project_dev(
 
 gerbil_project_test(
     name = "scheme_test",
-    build_script = "build.ss",
-    srcs = glob(["src/**/*.ss", "test/**/*.ss"]),
-    build_args = ["compile", "--tests"],
-    tests = ["test/project-test.ss"],
+    project = ":scheme",
+    srcs = ":scheme_test_support",
+    test_files = ["test/project-test.ss"],
+)
+
+filegroup(
+    name = "scheme_test_support",
+    srcs = glob(["test/**/*.ss"]),
 )
 ```
+
+The compile action stages every declared source in a writable tree before it
+executes `build.ss`. A test matrix points at the resulting
+`GerbilProjectInfo` provider and therefore compiles the project only once.
+Set `receipt_line_prefix` when the build script emits its own canonical JSON
+receipt; otherwise the rule emits `gerbil-bazel.project-receipt.v1`.
 
 Host-specific paths, available logical CPUs, physical memory, compiler,
 assembler, linker, SDK, optional Homebrew native libraries, and Gerbil

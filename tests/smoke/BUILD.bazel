@@ -12,13 +12,25 @@ gerbil_project_compile(
     name = "compile",
     build_script = "build.ss",
     args = ["compile"],
+    srcs = [
+        "compile-target.ss",
+        "smoke-test.ss",
+    ],
 )
 
 gerbil_project_test(
     name = "test",
-    build_script = "build.ss",
-    srcs = ["smoke-test.ss"],
-    tests = ["tests/smoke/smoke-test.ss"],
+    project = ":compile",
+    srcs = ":smoke_test_sources",
+    test_files = ["smoke-test.ss"],
+)
+
+filegroup(
+    name = "smoke_test_sources",
+    srcs = [
+        "compile-target.ss",
+        "smoke-test.ss",
+    ],
 )
 
 gerbil_project_dev(
