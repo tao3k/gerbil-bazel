@@ -77,6 +77,8 @@ successful project receipt.
 - =gerbil/resource_guard.ss=
 - =gerbil/run_project.sh=
 - =gerbil/project_receipt_schema_test.sh=
+- =gerbil/project_receipt_v1_instances_test.sh=
+- =gerbil/validate_project_receipt_v1.ss=
 - =tests/smoke/package_receipt_test.sh=
 
 * Versioning rule

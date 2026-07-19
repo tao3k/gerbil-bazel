@@ -120,10 +120,13 @@
        (quotient total-memory +memory-share-denominator+)))
 
 (def (process-table-result)
-  (let (snapshot (getenv "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT" #f))
-    (if snapshot
-        (cons 0 snapshot)
-        (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))))
+  (cond
+   ((getenv "GERBIL_BAZEL_GUARD_FORCE_PROCESS_TABLE_UNAVAILABLE" #f)
+    (cons 126 ""))
+   ((getenv "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT" #f)
+    => (lambda (snapshot) (cons 0 snapshot)))
+   (else
+    (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))))
 
 (def (host-observation)
   (let* ((total-memory (system-memory-bytes))

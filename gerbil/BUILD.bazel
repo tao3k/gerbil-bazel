@@ -63,6 +63,27 @@ sh_test(
     ],
 )
 
+sh_test(
+    name = "project_receipt_v1_instances_test",
+    srcs = ["project_receipt_v1_instances_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :validate_project_receipt_v1.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.project-receipt.v1.schema.json)",
+        "$(rlocationpath //tests/smoke:compile_receipt)",
+        "$(rlocationpath //tests/smoke:receipt_compile_receipt)",
+        "$(rlocationpath //tests/smoke:dependency_compile_receipt)",
+    ],
+    data = [
+        ":validate_project_receipt_v1.ss",
+        "//schemas:gerbil-bazel.project-receipt.v1.schema.json",
+        "//tests/smoke:compile_receipt",
+        "//tests/smoke:dependency_compile_receipt",
+        "//tests/smoke:receipt_compile_receipt",
+        "@local_gerbil//:gxi",
+    ],
+)
+
 exports_files([
     "defs.bzl",
     "extensions.bzl",
@@ -79,5 +100,6 @@ exports_files([
     "resource_guard.ss",
     "toolchain.bzl",
     "validate_json.ss",
+    "validate_project_receipt_v1.ss",
     "write_project_receipt.ss",
 ])

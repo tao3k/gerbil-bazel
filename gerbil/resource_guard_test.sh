@@ -53,6 +53,19 @@ grep -F '"admissionReasons":["insufficient-memory-headroom"]' \
 
 set +e
 env "${common_environment[@]}" \
+  GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT= \
+  GERBIL_BAZEL_GUARD_FORCE_PROCESS_TABLE_UNAVAILABLE=1 \
+  "$gxi" "$guard" "$root/unobservable.json" unobservable 0 \
+  /bin/sh -c 'exit 99'
+unobservable_status=$?
+set -e
+[[ "$unobservable_status" -eq 72 ]]
+grep -F '"processTreeRssAvailable":false' "$root/unobservable.json" >/dev/null
+grep -F '"admissionReasons":["process-tree-rss-unavailable"]' \
+  "$root/unobservable.json" >/dev/null
+
+set +e
+env "${common_environment[@]}" \
   "$gxi" "$guard" "$root/timeout.json" timeout 1 \
   /bin/sleep 2
 timeout_status=$?

@@ -16,6 +16,7 @@ test:
     {{ bazel }} test \
       //gerbil:run_project_test \
       //gerbil:project_receipt_schema_test \
+      //gerbil:project_receipt_v1_instances_test \
       //gerbil:resource_guard_test \
       //gerbil:validate_json_test \
       //tests/smoke:install_dependencies_test \
