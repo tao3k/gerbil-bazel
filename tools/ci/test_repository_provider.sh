@@ -78,6 +78,8 @@ if [[ -z "$archive" ]]; then
         'fi' \
         'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
         '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
+        '  command -v gxi >/dev/null' \
+        '  gxi --version >/dev/null' \
         '  mkdir -p "$GERBIL_PATH/lib/clan" "$GERBIL_PATH/lib/gslph"' \
         '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
         '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \

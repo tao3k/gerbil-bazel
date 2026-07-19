@@ -2,6 +2,14 @@
 #+author: gerbil-bazel maintainers
 #+language: en
 
+* Nested tool discovery
+
+The provider environment prepends the selected capability's tool directory to
+=PATH= before the first raw =gxpkg= process starts.  Dependency build scripts
+launched through =/usr/bin/env gxi= therefore resolve the same immutable
+prebuilt capability instead of depending on a host Gerbil installation.  The
+synthetic prebuilt fixture requires this nested =gxi= lookup to succeed.
+
 * Status
 
 - Decision: Accepted

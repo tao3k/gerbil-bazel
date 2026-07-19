@@ -165,6 +165,12 @@ def _local_gerbil_repository_impl(repository_ctx):
     environment["CC"] = host.gerbil_cc
     environment["GERBIL_BAZEL_CPU_COUNT"] = host.system_cpu_count
     environment["GERBIL_BAZEL_MEMORY_BYTES"] = host.system_memory_bytes
+    tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
+    inherited_path = environment.get(
+        "PATH",
+        repository_ctx.os.environ.get("PATH", ""),
+    )
+    environment["PATH"] = tool_directory + (":" + inherited_path if inherited_path else "")
     for name in ["AR", "CXX"]:
         value = repository_ctx.os.environ.get(name, "")
         if value:

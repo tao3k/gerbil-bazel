@@ -301,6 +301,12 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
         "GERBIL_HOME": gerbil_home,
     })
+    tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
+    inherited_path = environment.get(
+        "PATH",
+        repository_ctx.os.environ.get("PATH", ""),
+    )
+    environment["PATH"] = tool_directory + (":" + inherited_path if inherited_path else "")
     for name in ["AR", "CXX"]:
         value = repository_ctx.os.environ.get(name, "")
         if value:
