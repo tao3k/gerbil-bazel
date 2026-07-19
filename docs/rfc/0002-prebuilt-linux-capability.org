@@ -72,6 +72,18 @@ consumption belong to =gerbil-bazel=. =poo-flow= SHALL consume the registered
 library capability and SHALL NOT implement another source bootstrap, direct
 =gxc= path, or Homebrew-based Linux adapter.
 
+Linux capability production SHALL retain the pinned upstream Gerbil build:
+=./configure=, parallel =make= using the discovered available CPU count, and
+=make install=.  A compiler cache may wrap the system compiler through the
+standard =CC= contract, but the producer SHALL NOT replace the upstream build
+graph or impose a versioned GCC preference.  Consumers honor an explicit
+=GERBIL_CC= override and otherwise select the platform =cc= capability.
+
+Darwin host consumption remains a distinct platform adapter.  It discovers a
+coherent =DEVELOPER_DIR= and =SDKROOT=, resolves the linker through =xcrun=,
+and projects Homebrew include, library, and pkg-config paths.  These Darwin
+requirements SHALL NOT be copied into the Linux source-build path.
+
 #+begin_src mermaid
 flowchart LR
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]

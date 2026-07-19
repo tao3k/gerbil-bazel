@@ -200,7 +200,7 @@ def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
             "C compiler",
         )
     else:
-        compiler = _which(repository_ctx, ["gcc-16", "cc", "clang", "gcc"], "C compiler")
+        compiler = _which(repository_ctx, ["cc", "clang", "gcc"], "C compiler")
 
     return struct(
         environment = environment,
