@@ -101,6 +101,7 @@ jobs:
                 "$(jq -r .schema "$receipt")" != gerbil-bazel.prebuilt-capability-package-receipt.v1 ||
                 "$(jq -r .outcome "$receipt")" != ready ||
                 "$(jq -r .relocationVerified "$receipt")" != true ||
+                "$(jq -r .compilerRelocationVerified "$receipt")" != true ||
                 "$(jq -r .schema "$manifest")" != gerbil-bazel.prebuilt-capability-manifest.v1 ||
                 "$(jq -r .capabilityId "$manifest")" != "$CAPABILITY_ID" ||
                 "$(jq -r .platform.os "$manifest")" != linux ||

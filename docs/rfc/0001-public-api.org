@@ -14,10 +14,16 @@ artifacts, or =build.ss= semantics.
 flowchart LR
   Host[Darwin or Linux host] --> Discovery[Gerbil host extension]
   Discovery --> Toolchain[Registered Gerbil toolchain]
-  Toolchain --> Rules[Generic project rules]
-  BuildSS[Consumer build.ss] --> Rules
-  Sources[Consumer Scheme sources] --> Rules
-  Rules --> Artifacts[Isolated artifacts and JSON receipt]
+  BuildSS[Consumer build.ss] --> Stage[Writable staged project tree]
+  Sources[Declared consumer sources] --> Stage
+  Toolchain --> Compile[Generic project compile action]
+  Stage --> Compile
+  BuildSS --> Dev[Non-hermetic bazel run launcher]
+  Sources --> Dev
+  Dev --> DevTests[Optional source-workspace gxtest]
+  Compile --> Project[GerbilProjectInfo: tree, log, JSON receipt]
+  Project --> Tests[Declared gxtest matrix]
+  Project --> Consumers[Downstream artifact rules]
 #+end_src
 
 * Public surface
@@ -25,9 +31,11 @@ flowchart LR
 - =gerbil.host=: declares one native host toolchain repository.
 - =gerbil_project_compile=: executes =build.ss= in an isolated declared tree.
 - =gerbil_project_dev=: runs the same build truth in the source workspace for
-  deliberate developer iteration.
-- =gerbil_project_test=: compiles through =build.ss= and then executes declared
-  test files with the registered =gxtest= capability.
+  deliberate developer iteration. When tests are declared, the launcher builds
+  once and then runs =gxtest= against those source-workspace test files.
+- =gerbil_project_test=: executes declared test entrypoints against one
+  explicit =GerbilProjectInfo= build, so a test matrix reuses one compile
+  action.
 - =GerbilToolchainInfo=: exposes resolved tools, environment, native ABI,
   dependency roots, logical CPU count, and physical memory to downstream Bazel
   rules.
@@ -38,6 +46,9 @@ may evolve without creating an application-framework dependency.
 The host declaration may constrain accepted Gerbil version prefixes and provide
 an explicit tool-path map. Declared paths take precedence over environment
 overrides, which take precedence over =PATH= discovery.
+Compiler overrides may be absolute paths or command names; command names are
+resolved through the repository discovery =PATH= before the toolchain is
+registered.
 
 * Host model
 
@@ -51,9 +62,16 @@ itself is not required by the API.
 * Hermeticity boundary
 
 =gerbil_project_compile= copies declared source inputs into a tree artifact and
-runs the consumer build script there. =gerbil_project_dev= is intentionally
-non-hermetic and is only meaningful through =bazel run=, where Bazel supplies the
-source workspace directory.
+runs the consumer build script there. Generated C intermediates therefore stay
+inside the writable action tree instead of writing beside read-only source
+inputs. The action exposes the project tree, complete log, and either a generic
+JSON receipt or a build-script-owned JSON receipt selected by a declared line
+prefix. Both receipt paths are validated by a declared Scheme action input
+using Gerbil's JSON reader and must contain exactly one JSON value. Test
+launchers carry the small receipt, but not the complete build log, in their
+runfiles. =gerbil_project_dev= is intentionally non-hermetic and is only
+meaningful through =bazel run=, where Bazel supplies the source workspace
+directory.
 
 * Non-goals
 

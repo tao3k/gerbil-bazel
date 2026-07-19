@@ -1,4 +1,5 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,6 +15,26 @@ sh_binary(
     srcs = ["run_project.sh"],
 )
 
+sh_test(
+    name = "run_project_test",
+    srcs = ["run_project_test.sh"],
+    args = ["$(rlocationpath :run_project)"],
+    data = [":run_project"],
+)
+
+sh_test(
+    name = "validate_json_test",
+    srcs = ["validate_json_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :validate_json.ss)",
+    ],
+    data = [
+        ":validate_json.ss",
+        "@local_gerbil//:gxi",
+    ],
+)
+
 exports_files([
     "defs.bzl",
     "extensions.bzl",
@@ -27,4 +48,5 @@ exports_files([
     "project.bzl",
     "repository.bzl",
     "toolchain.bzl",
+    "validate_json.ss",
 ])

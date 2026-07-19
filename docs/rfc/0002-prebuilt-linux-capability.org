@@ -2,6 +2,27 @@
 #+author: gerbil-bazel maintainers
 #+language: en
 
+* Nested tool discovery
+
+The provider environment prepends the selected capability's tool directory to
+=PATH= before the first raw =gxpkg= process starts.  It also derives
+=GERBIL_GSC= from the relocated =GERBIL_HOME=, appends Gambit =GAMBOPT=
+runtime mappings for =~~=, =~~bin=, and =~~lib=, and derives =GERBIL_GCC=
+from the consumer host toolchain.  The producer normalizes Gambit's installed
+=gambuild-C= to retain upstream object, dynamic, and linker flags while reading
+the compiler command from =GERBIL_GCC=.  The prebuilt repository applies the
+same normalization through a generated =~~bin= overlay for already published
+archives, so producer-only compiler launchers such as =/usr/bin/ccache= are
+never required by consumers.  This normalization is idempotent: an archive
+that already contains the complete =GERBIL_GCC= guard passes unchanged, while
+a partial or unknown guarded shape is rejected.  Dependency build scripts
+launched through
+=/usr/bin/env gxi= and compiler processes launched by =gxc= therefore resolve
+the same immutable prebuilt capability instead of retaining producer-machine
+paths.  The synthetic prebuilt fixture requires the nested =gxi= lookup to
+succeed, while capability production requires a relocated =gxc -> gsc=
+compilation to succeed.
+
 * Status
 
 - Decision: Accepted
@@ -54,8 +75,11 @@ library capability and SHALL NOT implement another source bootstrap, direct
 #+begin_src mermaid
 flowchart LR
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
-  PROD --> RELOC["Relocation and runtime verification"]
-  RELOC --> ARC["Archive + SHA-256 + manifest"]
+  PROD --> RELOC["Relocated gxi runtime verification"]
+  RELOC --> COMPILE["Relocated gxc -> gsc compile verification"]
+  COMPILE --> NORMALIZE["Normalize gambuild-C compiler binding"]
+  NORMALIZE --> ENV["Consumer derives GAMBOPT + GERBIL_GCC"]
+  ENV --> ARC["Archive + SHA-256 + manifest"]
   ARC --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
@@ -193,7 +217,9 @@ producer:
 4. creates a deterministic archive;
 5. extracts it at a different path;
 6. runs the relocated interpreter and a runtime expression;
-7. emits the archive, SHA-256, manifest, and JSON packaging receipt.
+7. compiles a fresh Gerbil module with the relocated =gxc= and =gsc= through
+   the same derived environment contract used by consumers;
+8. emits the archive, SHA-256, manifest, and JSON packaging receipt.
 
 Pull-request CI uploads these files only as verification evidence. A release
 workflow may publish them only after the relocation and synthetic consumer

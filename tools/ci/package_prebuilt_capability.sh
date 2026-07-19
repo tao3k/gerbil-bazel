@@ -31,6 +31,33 @@ normalize_arch() {
   esac
 }
 
+normalize_gambuild_compiler() {
+  local gambuild="$1"
+  local normalized
+  normalized="$(mktemp "${gambuild}.XXXXXX")"
+  if ! awk '
+    BEGIN { replacements = 0 }
+    /^C_COMPILER=/ {
+      print "if test \"${GERBIL_GCC+set}\" = set; then"
+      print "  C_COMPILER=\"${GERBIL_GCC}\""
+      print "else"
+      print "  " $0
+      print "fi"
+      replacements += 1
+      next
+    }
+    { print }
+    END { if (replacements != 1) exit 1 }
+  ' "$gambuild" >"$normalized"; then
+    rm -f "$normalized"
+    printf 'Gambit gambuild-C does not expose one C_COMPILER binding: %s\n' \
+      "$gambuild" >&2
+    return 73
+  fi
+  chmod +x "$normalized"
+  mv "$normalized" "$gambuild"
+}
+
 system="$(uname -s | tr '[:upper:]' '[:lower:]')"
 if [[ "$system" != linux ]]; then
   printf 'prebuilt capability production is currently Linux-only; got %s\n' "$system" >&2
@@ -72,6 +99,7 @@ if [[ -d "$prefix/current" ]]; then
 else
   gerbil_home=prefix
 fi
+normalize_gambuild_compiler "$stage/$gerbil_home/bin/gambuild-C"
 
 dependency_roots='[]'
 for candidate in "$prefix/lib" "$prefix/current/lib"; do
@@ -149,17 +177,67 @@ cp "$manifest" "$output_stem.manifest.json"
 relocation_started_at="$SECONDS"
 tar -xzf "$archive" -C "$relocation_root"
 relocated_home="$relocation_root/$gerbil_home"
+relocated_gsc="$relocated_home/bin/gsc"
+relocated_gxc="$relocation_root/$(jq -r '.gxc' <<<"$tools")"
 relocated_gxi="$relocation_root/$(jq -r '.gxi' <<<"$tools")"
-relocated_version="$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" --version)"
+relocated_gambopt="~~=$relocated_home,~~bin=$relocated_home/bin,~~lib=$relocated_home/lib"
+if [[ ! -x "$relocated_gsc" ]]; then
+  printf 'relocated Gerbil compiler driver is missing or not executable: %s\n' \
+  "$relocated_gsc" >&2
+  exit 69
+fi
+relocated_version="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" --version)"
 if [[ "$relocated_version" != "$version" ]]; then
   printf 'relocated Gerbil version mismatch: expected %s, got %s\n' \
     "$version" "$relocated_version" >&2
   exit 69
 fi
-if [[ "$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" -e '(display "ready")')" != ready ]]; then
+if [[ "$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display "ready")')" != ready ]]; then
   printf 'relocated Gerbil runtime probe failed\n' >&2
   exit 70
 fi
+observed_gambit_home="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~"))')"
+if [[ "${observed_gambit_home%/}" != "${relocated_home%/}" ]]; then
+  printf 'relocated Gambit home mismatch: expected %s, got %s\n' \
+    "$relocated_home" "$observed_gambit_home" >&2
+  exit 71
+fi
+observed_gambit_bin="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~bin"))')"
+observed_gambit_lib="$(env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxi" -e '(display (path-expand "~~lib"))')"
+if [[ "${observed_gambit_bin%/}" != "${relocated_home%/}/bin" ||
+      "${observed_gambit_lib%/}" != "${relocated_home%/}/lib" ]]; then
+  printf 'relocated Gambit directory map mismatch: bin=%s lib=%s\n' \
+    "$observed_gambit_bin" "$observed_gambit_lib" >&2
+  exit 72
+fi
+relocation_probe_source="$relocation_root/relocation-probe.ss"
+relocation_probe_output="$relocation_root/relocation-probe-lib"
+mkdir -p "$relocation_probe_output"
+printf '%s\n' \
+  '(export relocation-ready)' \
+  "(def relocation-ready 'ready)" \
+  >"$relocation_probe_source"
+env \
+  GAMBOPT="$relocated_gambopt" \
+  GERBIL_GCC="$cc" \
+  GERBIL_GSC="$relocated_gsc" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxc" -d "$relocation_probe_output" "$relocation_probe_source"
 relocation_seconds="$((SECONDS - relocation_started_at))"
 
 elapsed_seconds="$((SECONDS - started_at))"
@@ -185,6 +263,7 @@ jq -n \
     version: $version,
     platform: {os: $system, arch: $architecture},
     relocationVerified: true,
+    compilerRelocationVerified: true,
     archiveSeconds: $archive_seconds,
     relocationSeconds: $relocation_seconds,
     elapsedSeconds: $elapsed_seconds

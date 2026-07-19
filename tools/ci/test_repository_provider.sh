@@ -57,12 +57,45 @@ if [[ -z "$archive" ]]; then
   payload="$test_root/payload"
   mkdir -p "$payload/prefix/bin" "$payload/prefix/lib"
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == --synthetic-driver-probe ]]; then printf "ready\\n"; fi' \
+    'exit 0' >"$payload/prefix/bin/gsc"
+  chmod +x "$payload/prefix/bin/gsc"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if test "${GERBIL_GCC+set}" = set; then' \
+    '  C_COMPILER="${GERBIL_GCC}"' \
+    'else' \
+    '  C_COMPILER=/producer-only/ccache' \
+    'fi' \
+    'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
+    'exit 0' >"$payload/prefix/bin/gambuild-C"
+  chmod +x "$payload/prefix/bin/gambuild-C"
 
   for tool in gxc gxi gxpkg gxtest; do
     if [[ "$tool" == gxi ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'if [[ "${1:-}" == --version ]]; then printf "Gerbil v0.prebuilt-test\\n"; fi' \
+        'exit 0' >"$payload/prefix/bin/$tool"
+    elif [[ "$tool" == gxc ]]; then
+      printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        ': "${GAMBOPT:?GAMBOPT is required before gxc startup}"' \
+        ': "${GERBIL_GSC:?GERBIL_GSC is required before gxc startup}"' \
+        '[[ ",$GAMBOPT," == *,"~~=$GERBIL_HOME",* ]]' \
+        '[[ ",$GAMBOPT," == *,"~~lib=$GERBIL_HOME/lib",* ]]' \
+        'gambit_bin=' \
+        'IFS="," read -r -a gambit_options <<<"$GAMBOPT"' \
+        'for option in "${gambit_options[@]}"; do' \
+        '  if [[ "$option" == "~~bin="* ]]; then gambit_bin="${option#~~bin=}"; fi' \
+        'done' \
+        ': "${gambit_bin:?GAMBOPT must map ~~bin}"' \
+        '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == "$GERBIL_GCC" ]]' \
+        '[[ -x "$GERBIL_GSC" ]]' \
+        '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxpkg ]]; then
       printf '%s\n' \
@@ -78,6 +111,9 @@ if [[ -z "$archive" ]]; then
         'fi' \
         'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
         '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
+        '  resolved_gxi=$(command -v gxi)' \
+        '  [[ "$(gxi --version)" == "Gerbil v0.prebuilt-test" ]]' \
+        '  [[ "$resolved_gxi" == "$GERBIL_HOME/bin/gxi" ]]' \
         '  mkdir -p "$GERBIL_PATH/lib/clan" "$GERBIL_PATH/lib/gslph"' \
         '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
         '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \
@@ -164,6 +200,17 @@ if [[ "$selected_provider" != prebuilt || "$fixture" != synthetic ]]; then
   mkdir -p "$test_root/consumer/.gerbil/lib"
   cp -R "$provider_fixture/project-library/." "$test_root/consumer/.gerbil/lib/"
 fi
+if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+  ambient_bin="$test_root/ambient-bin"
+  mkdir -p "$ambient_bin"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "ambient gxi must not run\n" >&2' \
+    'exit 97' \
+    >"$ambient_bin/gxi"
+  chmod +x "$ambient_bin/gxi"
+  export PATH="$ambient_bin:$PATH"
+fi
 
 (
   cd "$test_root/consumer"
@@ -182,6 +229,17 @@ fi
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
+  compiler_probe_source="$test_root/consumer/compiler-driver-probe.ss"
+  compiler_probe_output="$test_root/consumer/compiler-driver-probe-lib"
+  mkdir -p "$compiler_probe_output"
+  printf '%s\n' \
+    '(export compiler-driver-ready)' \
+    "(def compiler-driver-ready 'ready)" \
+    >"$compiler_probe_source"
+  "$bazel_bin" --output_user_root="$test_root/bazel" run \
+    "@$repository_name//:gxc" -- \
+    -d "$compiler_probe_output" "$compiler_probe_source" >/dev/null
+  compiler_driver_verified=true
   install_seconds=0
   dependency_transition=false
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
@@ -213,6 +271,7 @@ fi
     --arg selected_provider "$selected_provider" \
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
+    --argjson compiler_driver_verified "$compiler_driver_verified" \
     --argjson dependency_transition "$dependency_transition" \
     --argjson install_seconds "$install_seconds" \
     --argjson provider_seconds "$provider_seconds" \
@@ -225,6 +284,7 @@ fi
       selectedProvider: $selected_provider,
       fixture: $fixture,
       version: $version,
+      compilerDriverVerified: $compiler_driver_verified,
       dependencyTransition: $dependency_transition,
       installSeconds: $install_seconds,
       providerSeconds: $provider_seconds,

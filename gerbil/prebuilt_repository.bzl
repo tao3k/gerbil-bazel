@@ -46,6 +46,13 @@ def _environment_dict(environment):
         return "{}"
     return "{\n" + "\n".join(entries) + "\n    }"
 
+def _append_runtime_option(options, option):
+    if not options:
+        return option
+    if options.endswith(","):
+        return options + option
+    return options + "," + option
+
 def _string_list(values):
     return "[{}]".format(", ".join([repr(value) for value in values]))
 
@@ -106,6 +113,51 @@ def _payload_path(repository_ctx, relative, description):
     if not path.exists:
         fail("{} does not exist in the Gerbil capability: {}".format(description, relative))
     return path
+
+def _normalized_gambuild_compiler(source):
+    normalized_guard = "if test \"${GERBIL_GCC+set}\" = set; then"
+    normalized_binding = "  C_COMPILER=\"${GERBIL_GCC}\""
+    if normalized_guard in source:
+        if normalized_binding not in source:
+            fail("Gambit gambuild-C has an invalid GERBIL_GCC normalization guard")
+        return source
+
+    output = []
+    replacements = 0
+    for line in source.split("\n"):
+        if line.startswith("C_COMPILER="):
+            output.extend([
+                "if test \"${GERBIL_GCC+set}\" = set; then",
+                "  C_COMPILER=\"${GERBIL_GCC}\"",
+                "else",
+                "  {}".format(line),
+                "fi",
+            ])
+            replacements += 1
+        else:
+            output.append(line)
+    if replacements != 1:
+        fail("Gambit gambuild-C must contain exactly one C_COMPILER binding; got {}".format(
+            replacements,
+        ))
+    return "\n".join(output)
+
+def _normalized_gambit_bin(repository_ctx, gambit_bin):
+    gambuild = repository_ctx.path("{}/gambuild-C".format(gambit_bin))
+    if not gambuild.exists:
+        return gambit_bin
+
+    overlay = "gambit-bin"
+    repository_ctx.file("{}/.root".format(overlay), "gerbil-bazel Gambit bin overlay\n")
+    for entry in gambit_bin.readdir():
+        if entry.basename != "gambuild-C":
+            repository_ctx.symlink(entry, "{}/{}".format(overlay, entry.basename))
+    repository_ctx.file(
+        "{}/gambuild-C".format(overlay),
+        _normalized_gambuild_compiler(repository_ctx.read(gambuild)),
+        executable = True,
+    )
+    return repository_ctx.path(overlay)
 
 def _platform(repository_ctx, manifest, host):
     platform = _require_type(manifest.get("platform"), "dict", "manifest platform")
@@ -280,12 +332,24 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home_relative,
         "Gerbil home",
     ))
+    gambit_bin = repository_ctx.path("{}/bin".format(gerbil_home))
+    gambit_lib = repository_ctx.path("{}/lib".format(gerbil_home))
+    if not gambit_bin.exists or not gambit_lib.exists:
+        fail("Gerbil home must contain relocatable Gambit bin and lib directories: {}".format(
+            gerbil_home,
+        ))
+    gerbil_gsc = repository_ctx.path("{}/gsc".format(gambit_bin))
+    if not gerbil_gsc.exists:
+        fail("Gerbil compiler driver does not exist in the prebuilt capability: {}".format(
+            gerbil_gsc,
+        ))
     native_abi = _hex_digest(
         manifest.get("nativeAbiFingerprint"),
         40,
         "manifest nativeAbiFingerprint",
     )
     capability_id = _require_string(manifest, "capabilityId", "manifest capabilityId")
+    gambit_runtime_bin = _normalized_gambit_bin(repository_ctx, gambit_bin)
 
     declared_environment = _require_type(
         manifest.get("environment", {}),
@@ -295,12 +359,28 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     environment = dict(host.environment)
     environment.update(declared_environment)
     environment.update(repository_ctx.attr.environment)
+    gambopt = environment.get(
+        "GAMBOPT",
+        repository_ctx.os.environ.get("GAMBOPT", ""),
+    )
+    gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))
+    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(gambit_runtime_bin))
+    gambopt = _append_runtime_option(gambopt, "~~lib={}".format(gambit_lib))
     environment.update({
         "CC": host.gerbil_cc,
+        "GAMBOPT": gambopt,
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
+        "GERBIL_GCC": host.gerbil_cc,
+        "GERBIL_GSC": str(gerbil_gsc),
         "GERBIL_HOME": gerbil_home,
     })
+    tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
+    inherited_path = environment.get(
+        "PATH",
+        repository_ctx.os.environ.get("PATH", ""),
+    )
+    environment["PATH"] = tool_directory + (":" + inherited_path if inherited_path else "")
     for name in ["AR", "CXX"]:
         value = repository_ctx.os.environ.get(name, "")
         if value:
@@ -419,6 +499,7 @@ prebuilt_gerbil_repository = repository_rule(
         "CC",
         "CPATH",
         "CXX",
+        "GAMBOPT",
         "GERBIL_AS",
         "GERBIL_CC",
         "GERBIL_DEVELOPER_DIR",
