@@ -280,6 +280,11 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home_relative,
         "Gerbil home",
     ))
+    gerbil_gsc = repository_ctx.path("{}/bin/gsc".format(gerbil_home))
+    if not gerbil_gsc.exists:
+        fail("Gerbil compiler driver does not exist in the prebuilt capability: {}".format(
+            gerbil_gsc,
+        ))
     native_abi = _hex_digest(
         manifest.get("nativeAbiFingerprint"),
         40,
@@ -299,6 +304,8 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "CC": host.gerbil_cc,
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
+        "GERBIL_GCC": host.gerbil_cc,
+        "GERBIL_GSC": str(gerbil_gsc),
         "GERBIL_HOME": gerbil_home,
     })
     tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)

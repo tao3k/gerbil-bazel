@@ -57,12 +57,25 @@ if [[ -z "$archive" ]]; then
   payload="$test_root/payload"
   mkdir -p "$payload/prefix/bin" "$payload/prefix/lib"
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == --synthetic-driver-probe ]]; then printf "ready\\n"; fi' \
+    'exit 0' >"$payload/prefix/bin/gsc"
+  chmod +x "$payload/prefix/bin/gsc"
 
   for tool in gxc gxi gxpkg gxtest; do
     if [[ "$tool" == gxi ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'if [[ "${1:-}" == --version ]]; then printf "Gerbil v0.prebuilt-test\\n"; fi' \
+        'exit 0' >"$payload/prefix/bin/$tool"
+    elif [[ "$tool" == gxc ]]; then
+      printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        ': "${GERBIL_GSC:?GERBIL_GSC is required before gxc startup}"' \
+        '[[ -x "$GERBIL_GSC" ]]' \
+        '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxpkg ]]; then
       printf '%s\n' \
@@ -184,6 +197,9 @@ fi
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
+  "$bazel_bin" --output_user_root="$test_root/bazel" run \
+    "@$repository_name//:gxc" -- --version >/dev/null
+  compiler_driver_verified=true
   install_seconds=0
   dependency_transition=false
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
@@ -215,6 +231,7 @@ fi
     --arg selected_provider "$selected_provider" \
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
+    --argjson compiler_driver_verified "$compiler_driver_verified" \
     --argjson dependency_transition "$dependency_transition" \
     --argjson install_seconds "$install_seconds" \
     --argjson provider_seconds "$provider_seconds" \
@@ -227,6 +244,7 @@ fi
       selectedProvider: $selected_provider,
       fixture: $fixture,
       version: $version,
+      compilerDriverVerified: $compiler_driver_verified,
       dependencyTransition: $dependency_transition,
       installSeconds: $install_seconds,
       providerSeconds: $provider_seconds,

@@ -149,7 +149,14 @@ cp "$manifest" "$output_stem.manifest.json"
 relocation_started_at="$SECONDS"
 tar -xzf "$archive" -C "$relocation_root"
 relocated_home="$relocation_root/$gerbil_home"
+relocated_gsc="$relocated_home/bin/gsc"
+relocated_gxc="$relocation_root/$(jq -r '.gxc' <<<"$tools")"
 relocated_gxi="$relocation_root/$(jq -r '.gxi' <<<"$tools")"
+if [[ ! -x "$relocated_gsc" ]]; then
+  printf 'relocated Gerbil compiler driver is missing or not executable: %s\n' \
+    "$relocated_gsc" >&2
+  exit 69
+fi
 relocated_version="$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" --version)"
 if [[ "$relocated_version" != "$version" ]]; then
   printf 'relocated Gerbil version mismatch: expected %s, got %s\n' \
@@ -160,6 +167,18 @@ if [[ "$(env GERBIL_HOME="$relocated_home" "$relocated_gxi" -e '(display "ready"
   printf 'relocated Gerbil runtime probe failed\n' >&2
   exit 70
 fi
+relocation_probe_source="$relocation_root/relocation-probe.ss"
+relocation_probe_output="$relocation_root/relocation-probe-lib"
+mkdir -p "$relocation_probe_output"
+printf '%s\n' \
+  '(export relocation-ready)' \
+  "(def relocation-ready 'ready)" \
+  >"$relocation_probe_source"
+env \
+  GERBIL_GCC="$cc" \
+  GERBIL_GSC="$relocated_gsc" \
+  GERBIL_HOME="$relocated_home" \
+  "$relocated_gxc" -d "$relocation_probe_output" "$relocation_probe_source"
 relocation_seconds="$((SECONDS - relocation_started_at))"
 
 elapsed_seconds="$((SECONDS - started_at))"
@@ -185,6 +204,7 @@ jq -n \
     version: $version,
     platform: {os: $system, arch: $architecture},
     relocationVerified: true,
+    compilerRelocationVerified: true,
     archiveSeconds: $archive_seconds,
     relocationSeconds: $relocation_seconds,
     elapsedSeconds: $elapsed_seconds
