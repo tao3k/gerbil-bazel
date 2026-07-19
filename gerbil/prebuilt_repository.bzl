@@ -114,6 +114,44 @@ def _payload_path(repository_ctx, relative, description):
         fail("{} does not exist in the Gerbil capability: {}".format(description, relative))
     return path
 
+def _normalized_gambuild_compiler(source):
+    output = []
+    replacements = 0
+    for line in source.split("\n"):
+        if line.startswith("C_COMPILER="):
+            output.extend([
+                "if test \"${GERBIL_GCC+set}\" = set; then",
+                "  C_COMPILER=\"${GERBIL_GCC}\"",
+                "else",
+                "  {}".format(line),
+                "fi",
+            ])
+            replacements += 1
+        else:
+            output.append(line)
+    if replacements != 1:
+        fail("Gambit gambuild-C must contain exactly one C_COMPILER binding; got {}".format(
+            replacements,
+        ))
+    return "\n".join(output)
+
+def _normalized_gambit_bin(repository_ctx, gambit_bin):
+    gambuild = repository_ctx.path("{}/gambuild-C".format(gambit_bin))
+    if not gambuild.exists:
+        return gambit_bin
+
+    overlay = "gambit-bin"
+    repository_ctx.file("{}/.root".format(overlay), "gerbil-bazel Gambit bin overlay\n")
+    for entry in gambit_bin.readdir():
+        if entry.basename != "gambuild-C":
+            repository_ctx.symlink(entry, "{}/{}".format(overlay, entry.basename))
+    repository_ctx.file(
+        "{}/gambuild-C".format(overlay),
+        _normalized_gambuild_compiler(repository_ctx.read(gambuild)),
+        executable = True,
+    )
+    return repository_ctx.path(overlay)
+
 def _platform(repository_ctx, manifest, host):
     platform = _require_type(manifest.get("platform"), "dict", "manifest platform")
     system = _require_string(platform, "os", "manifest platform.os").lower()
@@ -246,12 +284,7 @@ def _tool_rules():
         """sh_binary(
     name = {name},
     srcs = [{wrapper}],
-    data = [
-        {raw},
-        "bin/gsc_raw",
-        "gsc_driver.sh",
-        "native_abi.txt",
-    ],
+    data = [{raw}, "native_abi.txt"],
 )""".format(
             name = repr(name),
             raw = repr("bin/{}_raw".format(name)),
@@ -309,7 +342,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "manifest nativeAbiFingerprint",
     )
     capability_id = _require_string(manifest, "capabilityId", "manifest capabilityId")
-    gsc_driver = str(repository_ctx.path("gsc_driver.sh"))
+    gambit_runtime_bin = _normalized_gambit_bin(repository_ctx, gambit_bin)
 
     declared_environment = _require_type(
         manifest.get("environment", {}),
@@ -324,7 +357,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         repository_ctx.os.environ.get("GAMBOPT", ""),
     )
     gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))
-    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(gambit_bin))
+    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(gambit_runtime_bin))
     gambopt = _append_runtime_option(gambopt, "~~lib={}".format(gambit_lib))
     environment.update({
         "CC": host.gerbil_cc,
@@ -332,7 +365,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
         "GERBIL_GCC": host.gerbil_cc,
-        "GERBIL_GSC": gsc_driver,
+        "GERBIL_GSC": str(gerbil_gsc),
         "GERBIL_HOME": gerbil_home,
     })
     tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
@@ -345,17 +378,6 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         value = repository_ctx.os.environ.get(name, "")
         if value:
             environment[name] = value
-
-    repository_ctx.symlink(gerbil_gsc, "bin/gsc_raw")
-    repository_ctx.template(
-        "gsc_driver.sh",
-        repository_ctx.attr._gsc_driver_template,
-        {
-            "{{ENVIRONMENT}}": _environment_exports(environment),
-            "{{GSC}}": _shell_quote(str(gerbil_gsc)),
-        },
-        executable = True,
-    )
 
     version = _version(repository_ctx, manifest, tools.absolute, environment)
     dependency_roots = _link_dependency_roots(repository_ctx, manifest)
@@ -450,10 +472,6 @@ prebuilt_gerbil_repository = repository_rule(
         "_build_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:prebuilt_toolchain.BUILD.bazel.tpl",
-        ),
-        "_gsc_driver_template": attr.label(
-            allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:gsc_driver.sh.tpl",
         ),
         "_install_dependencies_template": attr.label(
             allow_single_file = True,

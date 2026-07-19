@@ -59,10 +59,15 @@ if [[ -z "$archive" ]]; then
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
-    'if [[ "${1:-}" == -cc ]]; then shift 2; fi' \
     'if [[ "${1:-}" == --synthetic-driver-probe ]]; then printf "ready\\n"; fi' \
     'exit 0' >"$payload/prefix/bin/gsc"
   chmod +x "$payload/prefix/bin/gsc"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'C_COMPILER=/producer-only/ccache' \
+    'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
+    'exit 0' >"$payload/prefix/bin/gambuild-C"
+  chmod +x "$payload/prefix/bin/gambuild-C"
 
   for tool in gxc gxi gxpkg gxtest; do
     if [[ "$tool" == gxi ]]; then
@@ -77,8 +82,14 @@ if [[ -z "$archive" ]]; then
         ': "${GAMBOPT:?GAMBOPT is required before gxc startup}"' \
         ': "${GERBIL_GSC:?GERBIL_GSC is required before gxc startup}"' \
         '[[ ",$GAMBOPT," == *,"~~=$GERBIL_HOME",* ]]' \
-        '[[ ",$GAMBOPT," == *,"~~bin=$GERBIL_HOME/bin",* ]]' \
         '[[ ",$GAMBOPT," == *,"~~lib=$GERBIL_HOME/lib",* ]]' \
+        'gambit_bin=' \
+        'IFS="," read -r -a gambit_options <<<"$GAMBOPT"' \
+        'for option in "${gambit_options[@]}"; do' \
+        '  if [[ "$option" == "~~bin="* ]]; then gambit_bin="${option#~~bin=}"; fi' \
+        'done' \
+        ': "${gambit_bin:?GAMBOPT must map ~~bin}"' \
+        '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == "$GERBIL_GCC" ]]' \
         '[[ -x "$GERBIL_GSC" ]]' \
         '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"
@@ -202,8 +213,16 @@ fi
     exit 1
   fi
   tool_seconds="$((SECONDS - tool_started_at))"
+  compiler_probe_source="$test_root/consumer/compiler-driver-probe.ss"
+  compiler_probe_output="$test_root/consumer/compiler-driver-probe-lib"
+  mkdir -p "$compiler_probe_output"
+  printf '%s\n' \
+    '(export compiler-driver-ready)' \
+    "(def compiler-driver-ready 'ready)" \
+    >"$compiler_probe_source"
   "$bazel_bin" --output_user_root="$test_root/bazel" run \
-    "@$repository_name//:gxc" -- --version >/dev/null
+    "@$repository_name//:gxc" -- \
+    -d "$compiler_probe_output" "$compiler_probe_source" >/dev/null
   compiler_driver_verified=true
   install_seconds=0
   dependency_transition=false
