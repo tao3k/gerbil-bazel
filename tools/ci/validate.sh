@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+bazel_bin="${BAZEL:-bazel}"
+
 receipt_path="${RECEIPT_PATH:-.ci/receipts/validation.json}"
 phases='[]'
 
@@ -16,7 +18,7 @@ write_receipt() {
     --arg os "$(uname -s)" \
     --arg arch "$(uname -m)" \
     --arg gerbil_version "$(gxi --version)" \
-    --arg bazel_version "$(bazel --version)" \
+    --arg bazel_version "$("$bazel_bin" --version)" \
     --argjson exit_code "$exit_code" \
     --argjson phases "$phases" \
     '{
@@ -54,13 +56,13 @@ run_phase() {
   fi
 }
 
-run_phase query bazel query //...
-run_phase build bazel build //tests/smoke:compile
-run_phase test bazel test \
+run_phase query "$bazel_bin" query //...
+run_phase build "$bazel_bin" build //tests/smoke:compile
+run_phase test "$bazel_bin" test \
   //tests/smoke:project_library_view_test \
   //tests/smoke:test \
   //tests/smoke:toolchain_environment_test \
   --test_output=errors
-run_phase dev bazel run //tests/smoke:dev
+run_phase dev "$bazel_bin" run //tests/smoke:dev
 write_receipt passed 0
 jq -c . "$receipt_path"

@@ -20,6 +20,8 @@ gerbil.auto(
     linux_prebuilt_urls = [
         "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
     ],
+    project_dependency_packages = ["clan", "gslph"],
+    project_root_marker = "//:MODULE.bazel",
 )
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
@@ -29,6 +31,10 @@ The extension resolves `auto` before repository creation and instantiates
 exactly one provider. Darwin uses native host discovery; Linux validates that
 the declared archive architecture matches the runner and instantiates the
 prebuilt provider. Unsupported systems and architecture mismatches fail closed.
+The module extension is declared `os_dependent` and `arch_dependent`, so Bazel
+records separate operating-system and architecture evaluations instead of
+reusing a Darwin-generated provider graph on Linux or a Linux prebuilt graph
+across incompatible architectures through `MODULE.bazel.lock`.
 
 Use explicit native host discovery when the consumer does not need automatic
 cross-platform selection:
@@ -59,6 +65,24 @@ platform, runtime version, and native ABI shape. It fails closed and never
 falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
+
+Both `auto` providers and the explicit `prebuilt` provider support the same
+project-library view as `host`. Declare `project_root_marker`,
+`project_library_relative_path`, and `project_dependency_packages`; the
+repository projects ready packages into `lib/<package>` and records every
+package as `ready` or `missing` in `toolchain.receipt.json`. This keeps the
+downstream BUILD graph identical on Darwin and Linux while leaving dependency
+installation under the separate `install_dependencies` capability.
+
+Every host and prebuilt repository publishes `//:install_dependencies`. The
+launcher enters the consumer workspace, uses its workspace-local `.gerbil`
+root, and runs the standard `gxpkg deps --install` and `gxpkg list` lifecycle
+through the selected provider environment. The environment is injected before
+the first raw `gxpkg` process starts, so a relocated prebuilt can resolve
+`:gerbil/core` before delegating to `gxpkg env`. A dependency installation can
+make
+previously missing project packages ready; the next Bazel command then
+re-evaluates the watched project-library view.
 
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")

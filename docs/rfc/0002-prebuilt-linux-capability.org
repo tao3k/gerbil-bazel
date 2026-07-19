@@ -38,6 +38,14 @@ provider before repository creation: native =host= on Darwin and immutable
 archive architecture that does not match the consumer host. It SHALL NOT
 instantiate both providers and defer selection to toolchain resolution.
 
+Because provider selection observes both =module_ctx.os.name= and
+=module_ctx.os.arch=, the public module extension SHALL be declared
+=os_dependent=True= and =arch_dependent=True=. A checked-in Bzlmod lockfile
+must retain operating-system- and architecture-specific extension evaluations;
+it must never replay a Darwin host repository specification on Linux, a Linux
+prebuilt repository specification on Darwin, or a Linux prebuilt repository
+specification across incompatible architectures.
+
 Homebrew remains the macOS distribution path. Linux capability production and
 consumption belong to =gerbil-bazel=. =poo-flow= SHALL consume the registered
 library capability and SHALL NOT implement another source bootstrap, direct
@@ -52,6 +60,9 @@ flowchart LR
   RELEASE --> AUTO["gerbil.auto extension selection"]
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
   REPO --> CACHE["Bazel repository cache"]
+  PROJECT["Consumer project library"] --> AUTO
+  AUTO --> VIEW["lib/package project-library view"]
+  VIEW --> TC
   CACHE --> TC["Registered GerbilToolchainInfo"]
   TC --> RULES["Library compile / test / dev rules"]
   RULES --> BUILDSS["build.ss semantic owner"]
@@ -75,6 +86,8 @@ gerbil.auto(
     linux_prebuilt_urls = [
         "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
     ],
+    project_dependency_packages = ["clan", "gslph"],
+    project_root_marker = "//:MODULE.bazel",
 )
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
@@ -101,6 +114,34 @@ Repository names are unique across all tag classes. The =auto= tag instantiates
 one of the existing repository providers; it does not add another toolchain
 contract. The prebuilt path never falls back to host discovery or a source
 build when download, digest, manifest, platform, or runtime validation fails.
+
+* Project-library view contract
+
+All three providers accept the same optional project-library declaration:
+=project_root_marker= identifies the consumer project, the relative library
+root defaults to =.gerbil/lib=, and =project_dependency_packages= names the
+packages projected into the repository as =lib/<package>=. The repository
+receipt records =dependencyPolicy=project-library-view= and a
+=dependencyState= map containing =ready= or =missing= for each declaration.
+
+The Linux prebuilt provider therefore imports immutable Gerbil runtime bytes
+while exposing consumer-owned package sources through Bazel repository inputs.
+It does not bake downstream packages into the archive and it does not perform
+an implicit =gxpkg= installation. Dependency installation remains an explicit,
+separate capability.
+
+Every provider repository publishes =install_dependencies=. Its launcher uses
+the selected provider environment, enters the consumer workspace, and runs the
+standard =gxpkg deps --install= followed by =gxpkg list=. When installation
+changes a watched project package from absent to present, the next Bazel command
+re-evaluates the repository and the receipt changes that package from =missing=
+to =ready=. This lifecycle is validated by an isolated synthetic prebuilt
+consumer; consumers do not need provider-specific install scripts.
+
+The provider environment SHALL be applied by the host =env= executable before
+the first raw =gxpkg= process starts. Only then may the standard =gxpkg env env=
+handoff run. This ordering is required for relocated prebuilts because
+=GERBIL_HOME= must already be visible while =gxpkg= imports =:gerbil/core=.
 
 * Archive and manifest contract
 
@@ -175,8 +216,9 @@ never an expiring workflow artifact.
 
 * Compatibility and migration
 
-The existing =gerbil.host(...)= and =gerbil.prebuilt(...)= APIs are unchanged.
-Projects may use them for explicitly single-provider environments. A
+The existing =gerbil.host(...)= and =gerbil.prebuilt(...)= APIs remain
+compatible, with the project-library declaration added uniformly to every
+provider. Projects may use them for explicitly single-provider environments. A
 cross-platform project migrates to one =gerbil.auto(...)= registration;
 compile, test, and development targets remain unchanged because every path
 resolves the same toolchain provider.
