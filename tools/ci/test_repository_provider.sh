@@ -70,27 +70,31 @@ if [[ -z "$archive" ]]; then
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
     'compiler=' \
+    'cc_options=' \
     'link_options=' \
-    'mode=' \
+    'mode=dynamic' \
     'probe=0' \
     'while (( $# > 0 )); do' \
     '  case "$1" in' \
     '    -cc) compiler="$2"; shift 2 ;;' \
+    '    -cc-options) cc_options="$2"; shift 2 ;;' \
     '    -ld-options) link_options="$2"; shift 2 ;;' \
-    '    -dynamic | -exe) mode="${1#-}"; shift ;;' \
+    '    -c | -link | -obj | -exe | -dynamic) mode="${1#-}"; shift ;;' \
     '    --synthetic-driver-probe) probe=1; shift ;;' \
     '    *) shift ;;' \
     '  esac' \
     'done' \
     '[[ "$probe" == 1 ]]' \
-    'printf "mode=%s\\ncompiler=%s\\nlinkOptions=%s\\n" "$mode" "$compiler" "$link_options"' \
+    'printf "mode=%s\\ncompiler=%s\\nccOptions=%s\\nlinkOptions=%s\\n" "$mode" "$compiler" "$cc_options" "$link_options"' \
     >"$payload/prefix/bin/gsc"
   chmod +x "$payload/prefix/bin/gsc"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'C_COMPILER=/producer-only/ccache' \
+    'FLAGS_OBJ=-fPIC' \
     'FLAGS_DYN=-bundle' \
     'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
+    'if [[ "${1:-}" == FLAGS_OBJ ]]; then printf "%s\\n" "$FLAGS_OBJ"; fi' \
     'if [[ "${1:-}" == FLAGS_DYN ]]; then printf "%s\\n" "$FLAGS_DYN"; fi' \
     'exit 0' >"$payload/prefix/bin/gambuild-C"
   chmod +x "$payload/prefix/bin/gambuild-C"
@@ -116,19 +120,23 @@ if [[ -z "$archive" ]]; then
         'done' \
         ': "${gambit_bin:?GAMBOPT must map ~~bin}"' \
         '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == /producer-only/ccache ]]' \
+        '[[ "$("$gambit_bin/gambuild-C" FLAGS_OBJ)" == -fPIC ]]' \
         '[[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == -bundle ]]' \
         '[[ -x "$GERBIL_GSC" ]]' \
         'case "$(uname -s)" in' \
-        '  Darwin) expected_dynamic_link_options=-Wl,-undefined,dynamic_lookup ;;' \
-        '  Linux) expected_dynamic_link_options= ;;' \
+        '  Darwin) expected_dynamic_link_options="-bundle -Wl,-undefined,dynamic_lookup" ;;' \
+        '  Linux) expected_dynamic_link_options=-bundle ;;' \
         '  *) exit 64 ;;' \
         'esac' \
-        'dynamic_probe=$("$GERBIL_GSC" -dynamic --synthetic-driver-probe)' \
-        'expected_dynamic_probe=$(printf "mode=dynamic\\ncompiler=%s\\nlinkOptions=%s" "$CC" "$expected_dynamic_link_options")' \
-        '[[ "$dynamic_probe" == "$expected_dynamic_probe" ]]' \
-        'executable_probe=$("$GERBIL_GSC" -exe --synthetic-driver-probe)' \
-        'expected_executable_probe=$(printf "mode=exe\\ncompiler=%s\\nlinkOptions=" "$GERBIL_GCC")' \
-        '[[ "$executable_probe" == "$expected_executable_probe" ]]' \
+        'expected_dynamic_probe=$(printf "mode=dynamic\\ncompiler=%s\\nccOptions=\\nlinkOptions=%s" "$CC" "$expected_dynamic_link_options")' \
+        '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == "$expected_dynamic_probe" ]]' \
+        '[[ "$("$GERBIL_GSC" -dynamic --synthetic-driver-probe)" == "$expected_dynamic_probe" ]]' \
+        'expected_object_probe=$(printf "mode=obj\\ncompiler=%s\\nccOptions=-fPIC\\nlinkOptions=" "$CC")' \
+        '[[ "$("$GERBIL_GSC" -obj --synthetic-driver-probe)" == "$expected_object_probe" ]]' \
+        'for pass_through_mode in c link exe; do' \
+        '  expected_pass_through_probe=$(printf "mode=%s\\ncompiler=\\nccOptions=\\nlinkOptions=" "$pass_through_mode")' \
+        '  [[ "$("$GERBIL_GSC" "-$pass_through_mode" --synthetic-driver-probe)" == "$expected_pass_through_probe" ]]' \
+        'done' \
         'exit 0' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxpkg ]]; then
       printf '%s\n' \
@@ -260,8 +268,15 @@ fi
     --arg source "$expected_build_cores_source" \
     '.environment.GERBIL_BUILD_CORES == $build_cores and
      .gerbilBuildCores == ($build_cores | tonumber) and
-     .gerbilBuildCoresSource == $source' \
+     .gerbilBuildCoresSource == $source and
+     (.gambitProducerOptions.dynamic | type == "string") and
+     (.gambitProducerOptions.object | type == "string")' \
     "$output_base/$receipt_relative" >/dev/null
+  if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+    jq -e \
+      '.gambitProducerOptions == {dynamic: "-bundle", object: "-fPIC"}' \
+      "$output_base/$receipt_relative" >/dev/null
+  fi
   tool_started_at="$SECONDS"
   observed_version="$(
     "$bazel_bin" --output_user_root="$test_root/bazel" run \

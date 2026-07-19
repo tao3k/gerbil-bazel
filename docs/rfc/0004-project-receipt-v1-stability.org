@@ -40,9 +40,11 @@ No producer-owned receipt replaces the outer Gerbil-Bazel receipt.
 
 #+begin_src mermaid
 flowchart LR
-  A["Declared Gerbil action"] --> B["Scheme resource guard (optional)"]
+  A["Declared Gerbil action"] -->|"guard enabled"| B["Scheme resource guard"]
+  A -->|"no guard"| C
   B --> C["Build script"]
-  C --> D["Producer receipt (optional)"]
+  C -->|"producer receipt emitted"| D["Producer receipt"]
+  C -->|"no producer receipt"| F
   B --> E["Resource guard receipt"]
   D --> F["Project receipt v1 envelope"]
   E --> F
@@ -91,16 +93,23 @@ successful project receipt.
 - =tests/smoke/native-math.ss=
 - =tests/smoke/gxpkg_native_package_test.sh=
 
-* Upstream-native Darwin compiler and linker capabilities
+* Upstream-native compiler modes and executable-link capabilities
 
 The stable project receipt version is independent from native toolchain
 normalization.  Gerbil-Bazel does not copy or rewrite the installed
-=gambuild-C=.  A generated =GERBIL_GSC= launcher uses Gambit's public =-cc= and
-=-ld-options= interfaces.  Object generation retains the compiler that produced
-the installed runtime; Darwin dynamic modules additionally receive
-=-Wl,-undefined,dynamic_lookup=.  Gerbil's public =GERBIL_GCC= boundary selects
-Xcode Clang only for the final executable link.  Linux keeps one producer
-compiler and receives neither Darwin capability.
+=gambuild-C=: discovery reads its literal =C_COMPILER= declaration and queries
+=FLAGS_DYN= and =FLAGS_OBJ= without writing the installation.  A generated
+executable-path =GERBIL_GSC= launcher uses Gambit's public =-cc=,
+=-cc-options=, and =-ld-options= interfaces.  Because =-cc= clears Gambit's
+configured mode flags, implicit or explicit dynamic compilation restores the
+complete =FLAGS_DYN= value before appending any platform extra, while =-obj=
+restores the complete =FLAGS_OBJ= value.  =-c=, =-link=, and =-exe= pass through
+without a wrapper-added compiler override.  Gerbil's public =GERBIL_GCC=
+boundary remains the final executable linker.  On Darwin it selects Xcode
+Clang and dynamic compilation appends =-Wl,-undefined,dynamic_lookup=; Linux
+restores the installed producer flags without the Darwin extra or a separate
+final link driver.  This normalization does not change the project receipt v1
+schema.
 
 This division matters for a Gerbil installation produced by GCC 16: replacing
 the producer globally sends GCC-only optimization flags to Clang, while leaving
@@ -113,13 +122,17 @@ flowchart LR
   Package["gerbil.pkg"] --> GXPKG["gxpkg build"]
   GXPKG --> Build["build.ss and std/make"]
   Build --> GXC["gxc"]
-  GXC --> GSC["GERBIL_GSC launcher"]
-  Producer["Installed producer compiler"] --> GSC
-  GSC --> Obj["Object and dynamic module generation"]
-  Darwin["Darwin dynamic_lookup"] --> Obj
+  GAMBUILD["Immutable gambuild-C"] -->|"read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"| GSC["GERBIL_GSC path wrapper"]
+  GXC --> GSC
+  GSC -->|"-cc clears configured mode flags"| DYN["implicit or -dynamic: full FLAGS_DYN + platform extra"]
+  GSC --> OBJ["-obj: full FLAGS_OBJ"]
+  GSC --> PASS["-c / -link / -exe: no compiler override"]
+  Darwin["Darwin dynamic_lookup extra"] --> DYN
   GXC --> Final["GERBIL_GCC final executable link"]
   Clang["Xcode Clang on Darwin"] --> Final
-  Obj --> Artifact["Declared Bazel project tree"]
+  DYN --> Artifact["Declared Bazel project tree"]
+  OBJ --> Artifact
+  PASS --> Artifact
   Final --> Artifact
   Artifact --> Receipt["gerbil-bazel.project-receipt.v1"]
 #+end_src
@@ -133,6 +146,16 @@ installer, and gxpkg gates passed in 9.419 seconds.  The real POO Flow
 action, and =//scheme:compile_receipt_v1_test= passed in 187.355 seconds with a
 181.58-second project critical path.  These receipts were obtained through a
 consumer =local_path_override= before any release commit was created.
+
+The follow-up 2026-07-19 compiler-mode acceptance diagnosed the cross-platform
+CI failure caused by =-cc= clearing installed mode flags, then verified the
+read-only restoration path.  All 16 forced Bazel tests passed in 19.296
+seconds; the standard native package fixture passed in 10.2 seconds.  A POO
+Flow command-line module override then rebuilt the real =gerbil-utils= package
+successfully in 90.755 seconds with a 71.73-second critical path.  Its stable
+v1 receipt reported =status=ok= and =durationSeconds=63=.  The CI validation
+receipt passed, including a 42-second atomic-cache phase, and the final
+synthetic auto and prebuilt provider receipts passed in 15 and 16 seconds.
 
 * Versioning rule
 

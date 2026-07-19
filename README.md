@@ -163,14 +163,23 @@ such as `GERBIL_CC`, `GERBIL_GXI`, or `GERBIL_NATIVE_ABI`. For fully declared
 installations, `gerbil.host(tool_paths = {...})` takes precedence over
 environment overrides and `PATH` discovery.
 
-On Darwin, Gerbil-Bazel leaves the installed `gambuild-C` immutable. A generated
-`GERBIL_GSC` launcher uses Gambit's public `-cc` and `-ld-options` interfaces:
-object generation keeps the compiler that produced the installed runtime, and
-dynamic modules additionally receive `-Wl,-undefined,dynamic_lookup`.
-Gerbil's public `GERBIL_GCC` boundary selects the Xcode Clang driver for the
-final executable link. Linux receives neither Darwin option nor a separate
-link driver. `gambitDynamicLinkOptions` and `gerbilExecutableLinker` are
-recorded in `toolchain.receipt.json` and participate in Bazel action identity.
+Gerbil-Bazel leaves the installed `gambuild-C` immutable. Repository discovery
+reads its literal `C_COMPILER` declaration and queries `FLAGS_DYN` and
+`FLAGS_OBJ` without writing the installation. A generated executable-path
+`GERBIL_GSC` launcher uses Gambit's public `-cc`, `-cc-options`, and
+`-ld-options` interfaces. Because a `-cc` override clears Gambit's configured
+mode flags, implicit or explicit dynamic compilation restores the complete
+`FLAGS_DYN` value before adding any platform option, while `-obj` restores the
+complete `FLAGS_OBJ` value. `-c`, `-link`, and `-exe` pass through without a
+wrapper-added compiler override.
+
+On Darwin, dynamic compilation appends `-Wl,-undefined,dynamic_lookup` after
+the installed producer flags, and Gerbil's public `GERBIL_GCC` boundary selects
+the Xcode Clang driver for the final executable link. Linux restores the same
+installed producer mode flags without the Darwin option or a separate final
+link driver. `gambitProducerOptions`, `gambitDynamicLinkOptions`, and
+`gerbilExecutableLinker` are recorded in `toolchain.receipt.json` and
+participate in Bazel action identity.
 
 Package semantics remain upstream-owned. `gerbil.pkg` owns package and
 dependency metadata, `gxpkg` owns package lifecycle, and `build.ss` plus

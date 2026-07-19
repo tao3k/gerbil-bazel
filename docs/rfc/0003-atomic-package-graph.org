@@ -100,12 +100,20 @@ The producer compiler is discovered from the selected Gambit installation
 unless =GERBIL_CC= is an explicit user override.  Gerbil-Bazel never edits the
 installed =gambuild-C= file.
 
-On Darwin, a generated =GERBIL_GSC= launcher uses Gambit's public =-cc= and
-=-ld-options= interfaces.  Object generation uses the compiler that produced
-the installed runtime, dynamic modules add
-=-Wl,-undefined,dynamic_lookup=, and Gerbil's public =GERBIL_GCC= boundary uses
-the Xcode Clang driver for the final executable link.  Linux keeps the upstream
-host compiler and linker path without Darwin-specific options.
+A generated executable-path =GERBIL_GSC= launcher uses Gambit's public =-cc=,
+=-cc-options=, and =-ld-options= interfaces.  Repository discovery reads the
+literal producer compiler and queries =FLAGS_DYN= and =FLAGS_OBJ= without
+writing =gambuild-C=.  Because =-cc= clears the configured mode flags, implicit
+or explicit dynamic compilation restores the complete =FLAGS_DYN= value before
+adding a platform extra, and =-obj= restores the complete =FLAGS_OBJ= value.
+=-c=, =-link=, and =-exe= pass through without a wrapper-added compiler
+override.  On Darwin the dynamic extra is
+=-Wl,-undefined,dynamic_lookup= and Gerbil's public =GERBIL_GCC= boundary uses
+the Xcode Clang driver for the final executable link.  Linux restores the same
+producer mode flags without the Darwin extra or a separate final link driver.
+The generated =GERBIL_GSC= wrapper is a declared toolchain file and action
+input, so a change to normalized producer flags invalidates every consuming
+action through ordinary Bazel identity rather than ambient filesystem state.
 
 Both native and prebuilt toolchains derive a positive
 =GERBIL_BUILD_CORES= value through the shared host-system resolver.  Resolution
@@ -116,11 +124,24 @@ provider hard-codes a machine-specific worker count.
 #+begin_src mermaid
 flowchart LR
   HOST["Host capabilities"] --> ABI["Native ABI fingerprint"]
+  HOST --> GAMBUILD["Immutable gambuild-C: read-only discovery"]
   CPU["Available logical CPUs"] --> CORES["GERBIL_BUILD_CORES"]
   ABI --> ACTION["GerbilProjectCompile action"]
   CORES --> ACTION
   INPUTS["Sources + dependency trees + build arguments"] --> ACTION
+  ACTION --> GXC["gxc"]
+  GAMBUILD --> MODE["GERBIL_GSC mode adapter"]
+  MODE -->|"-cc clears configured mode flags"| DYN["dynamic: full FLAGS_DYN + platform extra"]
+  MODE --> OBJ["obj: full FLAGS_OBJ"]
+  MODE --> PASS["c / link / exe: pass through"]
+  GXC --> MODE
+  GXC --> FINAL["GERBIL_GCC final executable link"]
+  DYN --> CONTENTS["Compiled project contents"]
+  OBJ --> CONTENTS
+  PASS --> CONTENTS
+  FINAL --> CONTENTS
   ACTION --> TREE["Atomic output tree"]
+  CONTENTS -. "published only by successful action" .-> TREE
   ACTION --> JSON["Stable v1 receipt"]
 #+end_src
 
@@ -134,8 +155,10 @@ flowchart LR
 4. A failed action must not publish a partial output tree.
 5. The Scheme-owned resource guard must terminate a compile action at its
    adaptive deadline and emit guard evidence in the stable receipt.
-6. Darwin and Linux toolchain receipts must expose their platform-specific
-   capabilities without imposing one platform's linker policy on the other.
+6. Darwin and Linux toolchain receipts and probes must prove that complete
+   producer mode flags are restored, that the Darwin dynamic extra appears
+   only on Darwin, and that the wrapper does not take over =-c=, =-link=, or
+   =-exe=.
 
 The 2026-07-19 local acceptance passed all 16 =gerbil-bazel= tests.  The focused
 standard-package fixture completed in 4.5 seconds, and the seven focused

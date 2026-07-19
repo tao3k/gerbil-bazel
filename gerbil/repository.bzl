@@ -252,6 +252,10 @@ def _local_gerbil_repository_impl(repository_ctx):
             "dependencyPolicy": "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots" if repository_ctx.attr.dependency_roots else "host-only",
             "dependencyState": project_dependency_state,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gambitProducerOptions": {
+                "dynamic": runtime.producer_dynamic_options,
+                "object": runtime.producer_object_options,
+            },
             "gerbilExecutableLinker": runtime.executable_linker,
             "nativeAbiFingerprint": fingerprint,
             "producerCompilerCommand": runtime.compiler_command,

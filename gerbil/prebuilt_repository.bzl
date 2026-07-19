@@ -376,6 +376,10 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "gerbilBuildCoresSource": build_cores.source,
             "gerbilHome": gerbil_home_relative,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gambitProducerOptions": {
+                "dynamic": runtime.producer_dynamic_options,
+                "object": runtime.producer_object_options,
+            },
             "gerbilExecutableLinker": runtime.executable_linker,
             "nativeAbiFingerprint": native_abi,
             "platform": {

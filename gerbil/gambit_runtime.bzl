@@ -7,6 +7,21 @@ def _append_runtime_option(options, option):
         return options + option
     return options + "," + option
 
+def _shell_quote(value):
+    return "'{}'".format(value.replace("'", "'\"'\"'"))
+
+def _gambuild_value(repository_ctx, gerbil_home, variable):
+    gambuild = repository_ctx.path("{}/bin/gambuild-C".format(gerbil_home))
+    if not gambuild.exists:
+        fail("Gambit compiler driver does not exist: {}".format(gambuild))
+    result = repository_ctx.execute([str(gambuild), variable], quiet = True)
+    if result.return_code != 0:
+        fail("Gambit {} discovery failed: {}".format(
+            variable,
+            result.stderr.strip(),
+        ))
+    return result.stdout.strip()
+
 def discover_gambit_home(repository_ctx, gxi):
     """Returns the native Gambit home reported by the selected Gerbil runtime."""
     result = repository_ctx.execute(
@@ -45,6 +60,13 @@ def discover_gambit_compiler_command(repository_ctx, gerbil_home):
         ))
 
     return compilers[0]
+
+def discover_gambit_producer_options(repository_ctx, gerbil_home):
+    """Returns the installed producer flags cleared by Gambit's -cc override."""
+    return struct(
+        dynamic = _gambuild_value(repository_ctx, gerbil_home, "FLAGS_DYN"),
+        object = _gambuild_value(repository_ctx, gerbil_home, "FLAGS_OBJ"),
+    )
 
 def _materialized_compiler(repository_ctx, compiler_command):
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:+-=, "
@@ -91,8 +113,8 @@ def _materialized_gsc(
         repository_ctx,
         raw_gsc,
         producer_compiler,
-        dynamic_link_options,
-        executable_linker):
+        producer_options,
+        dynamic_link_options):
     wrapper = "gerbil-gsc"
     repository_ctx.file(
         wrapper,
@@ -100,28 +122,44 @@ def _materialized_gsc(
 set -euo pipefail
 raw_gsc={raw_gsc}
 producer_compiler={producer_compiler}
-dynamic_link_options={dynamic_link_options}
-executable_linker={executable_linker}
+producer_object_options={producer_object_options}
+producer_dynamic_options={producer_dynamic_options}
+platform_dynamic_link_options={platform_dynamic_link_options}
 mode=dynamic
 for argument in "$@"; do
   case "$argument" in
     -c | -link | -obj | -exe | -dynamic) mode=${{argument#-}} ;;
   esac
 done
-compiler=$producer_compiler
-if [[ $mode == exe && -n $executable_linker ]]; then
-  compiler=$executable_linker
-fi
-gsc_options=(-cc "$compiler")
-if [[ $mode == dynamic && -n $dynamic_link_options ]]; then
-  gsc_options+=(-ld-options "$dynamic_link_options")
-fi
+gsc_options=()
+case "$mode" in
+  obj)
+    gsc_options+=(-cc "$producer_compiler")
+    if [[ -n $producer_object_options ]]; then
+      gsc_options+=(-cc-options "$producer_object_options")
+    fi
+    ;;
+  dynamic)
+    gsc_options+=(-cc "$producer_compiler")
+    dynamic_options=$producer_dynamic_options
+    if [[ -n $platform_dynamic_link_options ]]; then
+      if [[ -n $dynamic_options ]]; then
+        dynamic_options+=" "
+      fi
+      dynamic_options+=$platform_dynamic_link_options
+    fi
+    if [[ -n $dynamic_options ]]; then
+      gsc_options+=(-ld-options "$dynamic_options")
+    fi
+    ;;
+esac
 exec "$raw_gsc" "${{gsc_options[@]}}" "$@"
 """.format(
-            dynamic_link_options = repr(dynamic_link_options),
-            executable_linker = repr(executable_linker),
-            producer_compiler = repr(str(producer_compiler)),
-            raw_gsc = repr(str(raw_gsc)),
+            platform_dynamic_link_options = _shell_quote(dynamic_link_options),
+            producer_compiler = _shell_quote(str(producer_compiler)),
+            producer_dynamic_options = _shell_quote(producer_options.dynamic),
+            producer_object_options = _shell_quote(producer_options.object),
+            raw_gsc = _shell_quote(str(raw_gsc)),
         ),
         executable = True,
     )
@@ -146,12 +184,13 @@ def normalized_gambit_runtime(
         fail("Gerbil compiler driver does not exist: {}".format(gerbil_gsc))
 
     compiler = _materialized_compiler(repository_ctx, compiler_command)
+    producer_options = discover_gambit_producer_options(repository_ctx, gerbil_home)
     gsc = _materialized_gsc(
         repository_ctx,
         gerbil_gsc,
         compiler.path,
+        producer_options,
         gambit_dynamic_link_options,
-        gambit_executable_linker,
     )
     output = dict(environment)
     gambopt = output.get("GAMBOPT", repository_ctx.os.environ.get("GAMBOPT", ""))
@@ -174,4 +213,6 @@ def normalized_gambit_runtime(
         environment = output,
         executable_linker = gambit_executable_linker,
         gsc_path = gsc,
+        producer_dynamic_options = producer_options.dynamic,
+        producer_object_options = producer_options.object,
     )
