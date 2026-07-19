@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bazel_bin="${BAZEL:-bazel}"
+bazel_bin="${BAZEL:-bazelisk}"
 
 provider="${1:-prebuilt}"
 case "$provider" in

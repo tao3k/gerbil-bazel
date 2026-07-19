@@ -120,13 +120,15 @@ def _darwin_environment(repository_ctx, homebrew_formulae):
             developer_dir = developer_dir,
         )
 
-    linker = _darwin_checked(
-        repository_ctx,
-        ["/usr/bin/xcrun", "--sdk", "macosx", "--find", "ld"],
-        "macOS linker discovery",
-        developer_dir = developer_dir,
-        sdkroot = sdkroot,
-    )
+    discovered_tools = {}
+    for name in ["ar", "as", "clang", "clang++", "ld"]:
+        discovered_tools[name] = _darwin_checked(
+            repository_ctx,
+            ["/usr/bin/xcrun", "--sdk", "macosx", "--find", name],
+            "macOS {} discovery".format(name),
+            developer_dir = developer_dir,
+            sdkroot = sdkroot,
+        )
     memory = _checked(
         repository_ctx,
         ["/usr/sbin/sysctl", "-n", "hw.memsize"],
@@ -140,14 +142,17 @@ def _darwin_environment(repository_ctx, homebrew_formulae):
 
     environment = _darwin_homebrew_environment(repository_ctx, homebrew_formulae)
     environment.update({
+        "AR": discovered_tools["ar"],
+        "CXX": discovered_tools["clang++"],
         "DEVELOPER_DIR": developer_dir,
         "SDKROOT": sdkroot,
     })
 
     return struct(
         environment = environment,
-        gerbil_as = "/usr/bin/as",
-        gerbil_ld = linker,
+        gerbil_as = discovered_tools["as"],
+        gerbil_cc = discovered_tools["clang"],
+        gerbil_ld = discovered_tools["ld"],
         system_cpu_count = cpu_count,
         system_memory_bytes = memory,
     )
@@ -171,6 +176,7 @@ def _linux_environment(repository_ctx):
     return struct(
         environment = {},
         gerbil_as = _which(repository_ctx, ["as"], "assembler"),
+        gerbil_cc = _which(repository_ctx, ["cc", "clang", "gcc"], "C compiler"),
         gerbil_ld = _which(repository_ctx, ["ld"], "linker"),
         system_cpu_count = cpu_count,
         system_memory_bytes = str(int(pages) * int(page_size)),
@@ -200,7 +206,7 @@ def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
             "C compiler",
         )
     else:
-        compiler = _which(repository_ctx, ["cc", "clang", "gcc"], "C compiler")
+        compiler = host.gerbil_cc
 
     return struct(
         environment = environment,

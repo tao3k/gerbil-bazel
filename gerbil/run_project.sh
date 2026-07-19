@@ -69,7 +69,25 @@ fi
 export GERBIL_PATH="$project_root/.gerbil"
 mkdir -p "$GERBIL_PATH/lib"
 dependency_root=$(dirname "$dependency_root_marker")
-export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
+project_dependency_loadpath=
+if [[ -n ${GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS:-} ]]; then
+  IFS=: read -r -a project_dependency_roots \
+    <<<"$GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS"
+  for dependency_project_root in "${project_dependency_roots[@]}"; do
+    case "$dependency_project_root" in
+      /*) ;;
+      *) dependency_project_root="$PWD/$dependency_project_root" ;;
+    esac
+    dependency_library_root="$dependency_project_root/.gerbil/lib"
+    if [[ ! -d "$dependency_library_root" ]]; then
+      printf 'Gerbil project dependency library root is missing: %s\n' \
+        "$dependency_library_root" >&2
+      exit 66
+    fi
+    project_dependency_loadpath="$project_dependency_loadpath:$dependency_library_root"
+  done
+fi
+export GERBIL_LOADPATH="$GERBIL_PATH/lib$project_dependency_loadpath:$dependency_root"
 
 tool_bin="$project_root/.gerbil-tool-bin"
 mkdir -p "$tool_bin"
@@ -119,8 +137,11 @@ if [[ -n "$receipt_line_prefix" ]]; then
   fi
   printf '%s\n' "$receipt_payload" >"$receipt"
 else
-  printf '{"durationSeconds":%d,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
-    "$((finished_at - started_at))" >"$receipt"
+  printf '{"durationSeconds":%d,"packageIdentity":%s,"packageRevision":%s,"schema":"gerbil-bazel.project-receipt.v1","status":"ok"}\n' \
+    "$((finished_at - started_at))" \
+    "${GERBIL_BAZEL_PACKAGE_IDENTITY_JSON:-\"\"}" \
+    "${GERBIL_BAZEL_PACKAGE_REVISION_JSON:-\"\"}" \
+    >"$receipt"
 fi
 
 set +e

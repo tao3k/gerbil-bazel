@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+set -eu
+
+resolve_runfile() {
+  path=$1
+  case "$path" in
+    /*) printf '%s\n' "$path" ;;
+    *) printf '%s/%s\n' "${TEST_SRCDIR:?TEST_SRCDIR is required}" "$path" ;;
+  esac
+}
+
+receipt=$(resolve_runfile "${1:?package receipt path is required}")
+grep -F '"packageIdentity":"example.invalid/gerbil-bazel/dependency"' \
+  "$receipt" >/dev/null
+grep -F '"packageRevision":"dependency-v1"' "$receipt" >/dev/null
+grep -F '"schema":"gerbil-bazel.project-receipt.v1"' "$receipt" >/dev/null
+grep -F '"status":"ok"' "$receipt" >/dev/null

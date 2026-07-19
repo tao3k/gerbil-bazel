@@ -82,6 +82,8 @@ run_fixture() {
 FAKE_RECEIPT_MODE=generic run_fixture generic ''
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' \
   "$root/generic.receipt.json" >/dev/null
+grep -F '"packageIdentity":""' "$root/generic.receipt.json" >/dev/null
+grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
 [[ -f "$root/generic.project/src/generated.c" ]]
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]

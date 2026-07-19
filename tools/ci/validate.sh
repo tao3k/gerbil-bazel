@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bazel_bin="${BAZEL:-bazel}"
+bazel_bin="${BAZEL:-bazelisk}"
 
 receipt_path="${RECEIPT_PATH:-.ci/receipts/validation.json}"
 phases='[]'
@@ -59,10 +59,15 @@ run_phase() {
 run_phase query "$bazel_bin" query //...
 run_phase build "$bazel_bin" build //tests/smoke:compile
 run_phase test "$bazel_bin" test \
+  //tests/smoke:package_receipt_test \
   //tests/smoke:project_library_view_test \
   //tests/smoke:test \
   //tests/smoke:toolchain_environment_test \
   --test_output=errors
+run_phase atomic-package-cache env \
+  BAZEL="$bazel_bin" \
+  ATOMIC_RECEIPT_PATH="$(dirname "$receipt_path")/atomic-package-cache.json" \
+  tools/ci/test_atomic_package_cache.sh
 run_phase dev "$bazel_bin" run //tests/smoke:dev
 write_receipt passed 0
 jq -c . "$receipt_path"

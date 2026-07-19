@@ -5,7 +5,11 @@ load(":toolchain.bzl", "GERBIL_TOOLCHAIN_TYPE", "resolved_gerbil_toolchain")
 GerbilProjectInfo = provider(
     doc = "Outputs of a Gerbil project build.",
     fields = {
+        "dependency_roots": "transitive depset of isolated dependency project roots",
         "log": "complete project build log",
+        "package_identity": "declared package identity, or the empty string",
+        "package_revision": "declared immutable package revision, or the empty string",
+        "package_revisions": "transitive package identity to immutable revision mapping",
         "project_root": "tree artifact containing the isolated built project",
         "receipt": "machine-readable build receipt",
         "source_root_marker": "build script anchoring the declared project source root",
@@ -36,8 +40,41 @@ def _manifest_entries(files):
         for destination in sorted(sources_by_destination.keys())
     ]
 
+def _package_revisions(ctx, project_dependencies):
+    revisions = {}
+    for dependency in project_dependencies:
+        for identity in sorted(dependency.package_revisions.keys()):
+            revision = dependency.package_revisions[identity]
+            previous = revisions.get(identity)
+            if previous != None and previous != revision:
+                fail("{} depends on package {} at conflicting immutable revisions {} and {}".format(
+                    ctx.label,
+                    identity,
+                    previous,
+                    revision,
+                ))
+            revisions[identity] = revision
+    if ctx.attr.package_identity:
+        previous = revisions.get(ctx.attr.package_identity)
+        if previous != None and previous != ctx.attr.package_revision:
+            fail("{} provides package {} at revision {}, conflicting with dependency revision {}".format(
+                ctx.label,
+                ctx.attr.package_identity,
+                ctx.attr.package_revision,
+                previous,
+            ))
+        revisions[ctx.attr.package_identity] = ctx.attr.package_revision
+    return revisions
+
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
+    project_dependencies = [dep[GerbilProjectInfo] for dep in ctx.attr.deps]
+    package_revisions = _package_revisions(ctx, project_dependencies)
+    dependency_roots = depset(
+        direct = [dependency.project_root for dependency in project_dependencies],
+        order = "postorder",
+        transitive = [dependency.dependency_roots for dependency in project_dependencies],
+    )
     project_root = ctx.actions.declare_directory(ctx.label.name + ".project")
     receipt = ctx.actions.declare_file(ctx.label.name + ".receipt.json")
     log = ctx.actions.declare_file(ctx.label.name + ".log")
@@ -66,6 +103,12 @@ def _gerbil_project_compile_impl(ctx):
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
+    environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode(ctx.attr.package_identity)
+    environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode(ctx.attr.package_revision)
+    environment["GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS"] = ":".join([
+        root.path
+        for root in dependency_roots.to_list()
+    ])
     ctx.actions.run(
         arguments = [args],
         env = environment,
@@ -79,6 +122,7 @@ def _gerbil_project_compile_impl(ctx):
             ],
             transitive = [
                 sources,
+                dependency_roots,
                 toolchain.dependency_libraries,
                 toolchain.runfiles,
             ],
@@ -93,7 +137,11 @@ def _gerbil_project_compile_impl(ctx):
         ],
     )
     info = GerbilProjectInfo(
+        dependency_roots = dependency_roots,
         log = log,
+        package_identity = ctx.attr.package_identity,
+        package_revision = ctx.attr.package_revision,
+        package_revisions = package_revisions,
         project_root = project_root,
         receipt = receipt,
         source_root_marker = ctx.file.build_script,
@@ -113,7 +161,10 @@ gerbil_project_compile = rule(
     attrs = {
         "args": attr.string_list(),
         "build_script": attr.label(allow_single_file = True, mandatory = True),
+        "deps": attr.label_list(providers = [GerbilProjectInfo]),
         "env": attr.string_dict(),
+        "package_identity": attr.string(),
+        "package_revision": attr.string(),
         "receipt_line_prefix": attr.string(),
         "srcs": attr.label_list(allow_files = True),
         "_runner": attr.label(
@@ -128,6 +179,31 @@ gerbil_project_compile = rule(
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
+
+def gerbil_package_compile(
+        name,
+        package,
+        revision,
+        build_script,
+        srcs,
+        deps = [],
+        args = ["compile"],
+        **kwargs):
+    """Builds one immutable Gerbil package node as an isolated tree artifact."""
+    if not package:
+        fail("gerbil_package_compile requires a package identity")
+    if not revision:
+        fail("gerbil_package_compile requires an immutable package revision")
+    gerbil_project_compile(
+        name = name,
+        args = args,
+        build_script = build_script,
+        deps = deps,
+        package_identity = package,
+        package_revision = revision,
+        srcs = srcs,
+        **kwargs
+    )
 
 def _runfile_key(ctx, file):
     if file.short_path.startswith("../"):
@@ -158,6 +234,16 @@ def _gerbil_project_dev_impl(ctx):
     args = " ".join([repr(arg) for arg in ctx.attr.build_args])
     native_env_key = _runfile_key(ctx, toolchain.native_scheme_env.executable)
     dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
+    project_dependencies = [dep[GerbilProjectInfo] for dep in ctx.attr.deps]
+    dependency_roots = depset(
+        direct = [dependency.project_root for dependency in project_dependencies],
+        order = "postorder",
+        transitive = [dependency.dependency_roots for dependency in project_dependencies],
+    )
+    project_dependency_keys = " ".join([
+        repr(_runfile_key(ctx, root))
+        for root in dependency_roots.to_list()
+    ])
     test_files = ctx.files.test_files
     if test_files:
         command = """"$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxi" "$workspace/{build_script}" {args}
@@ -188,14 +274,20 @@ gxi=$(rlocation {gxi_key})
 native_env=$(rlocation {native_env_key})
 dependency_root_marker=$(rlocation {dependency_root_key})
 dependency_root=$(dirname "$dependency_root_marker")
+project_dependency_loadpath=
+for key in {project_dependency_keys}; do
+  dependency_project_root=$(rlocation "$key")
+  project_dependency_loadpath="$project_dependency_loadpath:$dependency_project_root/.gerbil/lib"
+done
 export GERBIL_PATH="$workspace/.gerbil"
-export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
+export GERBIL_LOADPATH="$GERBIL_PATH/lib$project_dependency_loadpath:$dependency_root"
 {command}
 """.format(
             command = command,
             dependency_root_key = repr(dependency_root_key),
             gxi_key = repr(_runfile_key(ctx, toolchain.gxi.executable)),
             native_env_key = repr(native_env_key),
+            project_dependency_keys = project_dependency_keys,
             runfiles_init = _runfiles_init(),
         ),
     )
@@ -206,7 +298,7 @@ export GERBIL_LOADPATH="$GERBIL_PATH/lib:$dependency_root"
             toolchain.gxtest.executable,
             toolchain.native_scheme_env.executable,
         ] + test_files,
-        transitive_files = toolchain.runfiles,
+        transitive_files = depset(transitive = [dependency_roots, toolchain.runfiles]),
     )
     return [DefaultInfo(executable = executable, runfiles = runfiles)]
 
@@ -215,18 +307,20 @@ _gerbil_project_dev = rule(
     attrs = {
         "build_args": attr.string_list(),
         "build_script": attr.label(allow_single_file = True, mandatory = True),
+        "deps": attr.label_list(providers = [GerbilProjectInfo]),
         "test_files": attr.label_list(allow_files = True),
     },
     executable = True,
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
 
-def gerbil_project_dev(name, build_script, args = [], tests = [], **kwargs):
+def gerbil_project_dev(name, build_script, args = [], deps = [], tests = [], **kwargs):
     """Declares a source-workspace development launcher for =bazel run=."""
     _gerbil_project_dev(
         name = name,
         build_args = args,
         build_script = build_script,
+        deps = deps,
         test_files = tests,
         **kwargs
     )
@@ -241,6 +335,10 @@ def _gerbil_project_test_impl(ctx):
     dependency_root_key = _runfile_key(ctx, toolchain.dependency_library_root)
     source_root_marker = ctx.file.source_root_marker or project.source_root_marker
     source_root_key = _runfile_key(ctx, source_root_marker)
+    project_dependency_keys = " ".join([
+        repr(_runfile_key(ctx, root))
+        for root in project.dependency_roots.to_list()
+    ])
     test_keys = " ".join([
         repr(_runfile_key(ctx, test_file))
         for test_file in ctx.files.test_files
@@ -259,12 +357,17 @@ dependency_root_marker=$(rlocation {dependency_root_key})
 dependency_root=$(dirname "$dependency_root_marker")
 source_root_marker=$(rlocation {source_root_key})
 source_root=$(dirname "$source_root_marker")
+project_dependency_loadpath=
+for key in {project_dependency_keys}; do
+  dependency_project_root=$(rlocation "$key")
+  project_dependency_loadpath="$project_dependency_loadpath:$dependency_project_root/.gerbil/lib"
+done
 test_files=()
 for key in {test_keys}; do
   test_files+=("$(rlocation "$key")")
 done
 export GERBIL_PATH="$project_root/.gerbil"
-export GERBIL_LOADPATH="$GERBIL_PATH/lib:$source_root:$dependency_root"
+export GERBIL_LOADPATH="$GERBIL_PATH/lib$project_dependency_loadpath:$source_root:$dependency_root"
 cd "$source_root"
 exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADPATH" "$gxtest" {test_args} "${{test_files[@]}}"
 """.format(
@@ -272,13 +375,14 @@ exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADP
             gxtest_key = repr(gxtest_key),
             native_env_key = repr(native_env_key),
             project_key = repr(project_key),
+            project_dependency_keys = project_dependency_keys,
             runfiles_init = _runfiles_init(),
             source_root_key = repr(source_root_key),
             test_args = test_args,
             test_keys = test_keys,
         ),
     )
-    transitive_files = [toolchain.runfiles]
+    transitive_files = [project.dependency_roots, toolchain.runfiles]
     for srcs in ctx.attr.srcs:
         transitive_files.append(srcs[DefaultInfo].files)
     runfile_files = [

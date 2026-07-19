@@ -1,0 +1,139 @@
+#+title: RFC 0003: Atomic Gerbil Package Graph
+#+status: Accepted
+#+language: en
+#+options: toc:2 num:nil
+
+* Problem
+
+A mutable =~/.gerbil/pkg= cache is not an incremental build graph. Hashing the
+complete =gerbil.pkg= file makes every dependency share one cache key, while an
+unconditional =gxpkg deps --install= can fetch and rebuild every package even
+after that cache key is restored. One dependency revision change therefore
+invalidates unrelated packages and hides package-level work behind a repository
+side effect.
+
+* Decision
+
+Every analyzed project graph MUST contain at most one immutable revision for a
+given package identity. If two transitive paths select different revisions for
+the same identity, analysis MUST fail before any Gerbil compile action runs.
+
+Each immutable Gerbil package is a separate Bazel action and tree artifact.
+=gerbil_package_compile= declares its package identity, revision, sources, build
+script, and direct package dependencies. =GerbilProjectInfo= propagates the
+transitive dependency roots to compilers, tests, and downstream artifact rules.
+
+#+begin_src mermaid
+flowchart LR
+  U[gerbil-utils at revision U] --> P[gerbil-poo at revision P]
+  P --> H[harness at revision H]
+  U --> Root[POO Flow project]
+  P --> Root
+  H --> Root
+  C1[same package at revision A] --> Guard{one revision per package identity}
+  C2[same package at revision B] --> Guard
+  Guard --> Failure[analysis failure]
+  U --> UR[isolated tree plus JSON receipt]
+  P --> PR[isolated tree plus JSON receipt]
+  H --> HR[isolated tree plus JSON receipt]
+  Root --> RR[project tree plus JSON receipt]
+#+end_src
+
+The effective package action key is owned by Bazel and includes declared source
+content, package identity, package revision, native ABI and toolchain inputs,
+build arguments, and direct dependency artifacts. A successful sandbox action
+publishes its tree artifact atomically. A failed action cannot partially mutate
+another package node or the previously cached result.
+
+* Invalidation semantics
+
+| Change | Required rebuild set |
+|--------+----------------------|
+| Independent package A revision changes | A only |
+| Package A changes and B depends on A | A and the reverse dependency closure containing B |
+| Host native ABI changes | All native package nodes for that ABI |
+| Unrelated project source changes | Project node only |
+| Test-only source changes | Affected test action only |
+
+"Only one package" is correct only when no other package depends on that node.
+Reusing a dependent compiled against an obsolete dependency ABI would violate
+the package graph contract.
+
+* Receipt contract
+
+Every package build emits exactly one JSON value containing the package identity,
+immutable revision, duration, schema, and success status. Downstream actions use
+declared tree artifacts for correctness; receipts provide observability and are
+not substitutes for Bazel dependencies.
+
+* CI cache policy
+
+GitHub Actions caches are transport accelerators only. They may store Bazel's
+content-addressed disk cache, but they must not define dependency resolution.
+The workflow must not run a repository-wide package installer after an exact
+cache hit. During migration, a whole-workspace fallback cache may restore the
+nearest previous state, but package correctness remains owned by individual
+Bazel actions and receipts.
+
+* Migration gates
+
+A repeated identical build MUST execute zero =GerbilProjectCompile= actions.
+The revision-change acceptance build MUST execute only the changed package and
+its reverse dependency closure; an unrelated package MUST remain a cache hit.
+
+1. Expose transitive dependency roots and =gerbil_package_compile= from the
+   stable public API.
+2. Validate an isolated dependency node through compile and test runfiles.
+3. Express each downstream pinned Gerbil dependency as one package target with
+   explicit edges.
+4. Update projection and runtime-C consumers to propagate dependency roots.
+5. Remove =gxpkg deps --install= and the mutable package-directory cache from
+   the normal CI path.
+6. Record a two-run receipt proving that changing one independent revision
+   executes one package action, while unchanged nodes are cache hits.
+
+* Toolchain capability closure
+
+The package action key MUST include the selected native ABI fingerprint.  The
+fingerprint, in turn, MUST identify the compiler that can consume the installed
+Gambit producer flags.  A Darwin host is not sufficient evidence that Apple
+Clang is compatible with an installed Gerbil capability: a capability produced
+with Homebrew GCC can carry GCC-only flags in =gambuild-C=.
+
+For a local toolchain, gerbil-bazel therefore discovers the literal producer
+compiler from the selected Gambit home unless =GERBIL_CC= is an explicit user
+override.  Darwin SDK, developer directory, assembler, archiver, and linker
+discovery remain Xcode-owned.  Linux continues to use the upstream host
+toolchain and build path.
+
+gerbil-bazel publishes a repository-owned Gambit bin overlay.  The overlay
+changes only the =C_COMPILER= launcher binding to honor =GERBIL_GCC=; it does
+not rewrite =FLAGS_OBJ=, =FLAGS_DYN=, =FLAGS_LIB=, =FLAGS_EXE=, or the upstream
+build graph.
+
+#+begin_src mermaid
+flowchart LR
+  SRC[Package sources + build.ss] --> KEY[Package action key]
+  REV[Exact package REV] --> KEY
+  DEPS[Dependency tree artifacts] --> KEY
+  ABI[Native ABI + producer compiler] --> KEY
+  KEY --> ACTION[Isolated Gerbil package action]
+  ACTION --> TREE[Immutable project tree]
+  ACTION --> RECEIPT[JSON package receipt]
+#+end_src
+
+Cache correctness does not waive cold-build performance requirements.  A
+Scheme-owned build guard MUST terminate a package action at its declared
+deadline.  The POO Flow Darwin acceptance run on 2026-07-18 was manually
+interrupted after 832.653 seconds total and a 763.48-second package critical
+path because the external package action had crossed the 12-minute gate without
+being stopped by the Scheme guard.  Until that guard and cold-build performance
+gate are closed, the real-package migration is not release-complete even though
+the atomic invalidation semantics pass in the gerbil-bazel acceptance graph.
+
+* Non-goals
+
+- Reimplementing Gerbil's compiler, =std/make=, or package build scripts.
+- Introducing a Linux-only compiler graph or GCC-specific optimization policy.
+- Hiding dependency conflicts by selecting whichever mutable package tag was
+  installed last.

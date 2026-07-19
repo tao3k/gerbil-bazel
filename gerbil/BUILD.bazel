@@ -38,6 +38,7 @@ sh_test(
 exports_files([
     "defs.bzl",
     "extensions.bzl",
+    "gambit_runtime.bzl",
     "host_system.bzl",
     "install_gerbil_dependencies.sh.tpl",
     "local_toolchain.BUILD.bazel.tpl",
