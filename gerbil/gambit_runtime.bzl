@@ -7,35 +7,54 @@ def _append_runtime_option(options, option):
         return options + option
     return options + "," + option
 
-def _normalized_gambuild_compiler(source):
+def _normalized_gambuild_compiler(source, dynamic_link_options):
     normalized_guard = "if test \"${GERBIL_GCC+set}\" = set; then"
     normalized_binding = "  C_COMPILER=\"${GERBIL_GCC}\""
     if normalized_guard in source:
         if normalized_binding not in source:
             fail("Gambit gambuild-C has an invalid GERBIL_GCC normalization guard")
-        return source
+        compiler_source = source
+    else:
+        output = []
+        replacements = 0
+        for line in source.split("\n"):
+            if line.startswith("C_COMPILER="):
+                output.extend([
+                    "if test \"${GERBIL_GCC+set}\" = set; then",
+                    "  C_COMPILER=\"${GERBIL_GCC}\"",
+                    "else",
+                    "  {}".format(line),
+                    "fi",
+                ])
+                replacements += 1
+            else:
+                output.append(line)
+        if replacements != 1:
+            fail("Gambit gambuild-C must contain exactly one C_COMPILER binding; got {}".format(
+                replacements,
+            ))
+        compiler_source = "\n".join(output)
 
+    if not dynamic_link_options:
+        return compiler_source
+
+    dynamic_binding = 'FLAGS_DYN="${{FLAGS_DYN}} {}"'.format(dynamic_link_options)
+    if dynamic_binding in compiler_source:
+        return compiler_source
     output = []
     replacements = 0
-    for line in source.split("\n"):
-        if line.startswith("C_COMPILER="):
-            output.extend([
-                "if test \"${GERBIL_GCC+set}\" = set; then",
-                "  C_COMPILER=\"${GERBIL_GCC}\"",
-                "else",
-                "  {}".format(line),
-                "fi",
-            ])
+    for line in compiler_source.split("\n"):
+        output.append(line)
+        if line.startswith("FLAGS_DYN="):
+            output.append(dynamic_binding)
             replacements += 1
-        else:
-            output.append(line)
     if replacements != 1:
-        fail("Gambit gambuild-C must contain exactly one C_COMPILER binding; got {}".format(
+        fail("Gambit gambuild-C must contain exactly one FLAGS_DYN binding; got {}".format(
             replacements,
         ))
     return "\n".join(output)
 
-def _normalized_gambit_bin(repository_ctx, gambit_bin):
+def _normalized_gambit_bin(repository_ctx, gambit_bin, dynamic_link_options):
     gambuild = repository_ctx.path("{}/gambuild-C".format(gambit_bin))
     if not gambuild.exists:
         return gambit_bin
@@ -47,7 +66,10 @@ def _normalized_gambit_bin(repository_ctx, gambit_bin):
             repository_ctx.symlink(entry, "{}/{}".format(overlay, entry.basename))
     repository_ctx.file(
         "{}/gambuild-C".format(overlay),
-        _normalized_gambuild_compiler(repository_ctx.read(gambuild)),
+        _normalized_gambuild_compiler(
+            repository_ctx.read(gambuild),
+            dynamic_link_options,
+        ),
         executable = True,
     )
     return repository_ctx.path(overlay)
@@ -132,7 +154,12 @@ def _materialized_compiler(repository_ctx, compiler_command):
         path = wrapper_path,
     )
 
-def normalized_gambit_runtime(repository_ctx, gerbil_home, compiler_command, environment):
+def normalized_gambit_runtime(
+        repository_ctx,
+        gerbil_home,
+        compiler_command,
+        environment,
+        gambit_dynamic_link_options = ""):
     """Returns an environment that consumes a compiler-only gambuild-C overlay."""
     gambit_bin = repository_ctx.path("{}/bin".format(gerbil_home))
     gambit_lib = repository_ctx.path("{}/lib".format(gerbil_home))
@@ -145,7 +172,11 @@ def normalized_gambit_runtime(repository_ctx, gerbil_home, compiler_command, env
         fail("Gerbil compiler driver does not exist: {}".format(gerbil_gsc))
 
     compiler = _materialized_compiler(repository_ctx, compiler_command)
-    runtime_bin = _normalized_gambit_bin(repository_ctx, gambit_bin)
+    runtime_bin = _normalized_gambit_bin(
+        repository_ctx,
+        gambit_bin,
+        gambit_dynamic_link_options,
+    )
     output = dict(environment)
     gambopt = output.get("GAMBOPT", repository_ctx.os.environ.get("GAMBOPT", ""))
     gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))

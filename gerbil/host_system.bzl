@@ -150,6 +150,7 @@ def _darwin_environment(repository_ctx, homebrew_formulae):
 
     return struct(
         environment = environment,
+        gambit_dynamic_link_options = "-Wl,-undefined,dynamic_lookup",
         gerbil_as = discovered_tools["as"],
         gerbil_cc = discovered_tools["clang"],
         gerbil_ld = discovered_tools["ld"],
@@ -175,6 +176,7 @@ def _linux_environment(repository_ctx):
     )
     return struct(
         environment = {},
+        gambit_dynamic_link_options = "",
         gerbil_as = _which(repository_ctx, ["as"], "assembler"),
         gerbil_cc = _which(repository_ctx, ["cc", "clang", "gcc"], "C compiler"),
         gerbil_ld = _which(repository_ctx, ["ld"], "linker"),
@@ -236,6 +238,7 @@ def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
     return struct(
         environment = environment,
         exec_constraint = _EXEC_CONSTRAINT_BY_SYSTEM[system],
+        gambit_dynamic_link_options = host.gambit_dynamic_link_options,
         gerbil_as = _environment_tool(
             repository_ctx,
             "GERBIL_AS",

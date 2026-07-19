@@ -304,6 +304,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home,
         host.gerbil_cc,
         environment,
+        gambit_dynamic_link_options = host.gambit_dynamic_link_options,
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -373,6 +374,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "gerbilBuildCores": int(build_cores.value),
             "gerbilBuildCoresSource": build_cores.source,
             "gerbilHome": gerbil_home_relative,
+            "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
             "nativeAbiFingerprint": native_abi,
             "platform": {
                 "arch": platform.architecture,

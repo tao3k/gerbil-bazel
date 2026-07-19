@@ -78,7 +78,9 @@ if [[ -z "$archive" ]]; then
     'else' \
     '  C_COMPILER=/producer-only/ccache' \
     'fi' \
+    'FLAGS_DYN=-bundle' \
     'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
+    'if [[ "${1:-}" == FLAGS_DYN ]]; then printf "%s\\n" "$FLAGS_DYN"; fi' \
     'exit 0' >"$payload/prefix/bin/gambuild-C"
   chmod +x "$payload/prefix/bin/gambuild-C"
 
@@ -103,6 +105,11 @@ if [[ -z "$archive" ]]; then
         'done' \
         ': "${gambit_bin:?GAMBOPT must map ~~bin}"' \
         '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == "$GERBIL_GCC" ]]' \
+        'case "$(uname -s)" in' \
+        '  Darwin) [[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == "-bundle -Wl,-undefined,dynamic_lookup" ]] ;;' \
+        '  Linux) [[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == "-bundle" ]] ;;' \
+        '  *) exit 64 ;;' \
+        'esac' \
         '[[ -x "$GERBIL_GSC" ]]' \
         '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"

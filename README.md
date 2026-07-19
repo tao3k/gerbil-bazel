@@ -162,3 +162,12 @@ executables are discovered dynamically. Override only explicit capabilities
 such as `GERBIL_CC`, `GERBIL_GXI`, or `GERBIL_NATIVE_ABI`. For fully declared
 installations, `gerbil.host(tool_paths = {...})` takes precedence over
 environment overrides and `PATH` discovery.
+
+On Darwin, the normalized Gambit overlay preserves the compiler that produced
+the installed runtime and all of its object and executable flags. It augments
+only Gambit's dynamic-module `FLAGS_DYN` with
+`-Wl,-undefined,dynamic_lookup`. This is required for GCC-built Gambit bundles
+that reference symbols such as `_log`; it does not alter `FLAGS_EXE`, static
+runtime linking, or the Linux provider. The selected dynamic-only option is
+recorded as `gambitDynamicLinkOptions` in `toolchain.receipt.json` and therefore
+participates in the registered toolchain and Bazel action identity.

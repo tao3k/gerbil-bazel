@@ -10,9 +10,10 @@ resolve_runfile() {
 }
 
 receipt=$(resolve_runfile "${1:?package receipt path is required}")
-grep -F '"packageIdentity":"example.invalid/gerbil-bazel/dependency"' \
-  "$receipt" >/dev/null
-grep -F '"packageRevision":"dependency-v1"' "$receipt" >/dev/null
+package_identity=${2:?package identity is required}
+package_revision=${3:?package revision is required}
+grep -F '"packageIdentity":"'"$package_identity"'"' "$receipt" >/dev/null
+grep -F '"packageRevision":"'"$package_revision"'"' "$receipt" >/dev/null
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' "$receipt" >/dev/null
 grep -F '"status":"ok"' "$receipt" >/dev/null
 grep -F '"admissionOutcome":"ready"' "$receipt" >/dev/null

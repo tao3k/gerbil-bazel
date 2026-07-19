@@ -23,6 +23,7 @@ case "$(uname -s)" in
     expected_cpu_count="$(/usr/sbin/sysctl -n hw.logicalcpu)"
     grep -F '"DEVELOPER_DIR": '"\"$expected_developer_dir\"" "$receipt" >/dev/null
     grep -F '"SDKROOT": '"\"$expected_sdkroot\"" "$receipt" >/dev/null
+    grep -F '"gambitDynamicLinkOptions": "-Wl,-undefined,dynamic_lookup"' "$receipt" >/dev/null
     ;;
   Linux)
     expected_cpu_count="$(getconf _NPROCESSORS_ONLN)"
@@ -31,6 +32,7 @@ case "$(uname -s)" in
       printf 'Darwin SDK capability leaked into the Linux toolchain receipt\n' >&2
       exit 1
     fi
+    grep -F '"gambitDynamicLinkOptions": ""' "$receipt" >/dev/null
     ;;
   *)
     printf 'unsupported test host: %s\n' "$(uname -s)" >&2

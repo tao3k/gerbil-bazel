@@ -179,6 +179,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         gambit_home,
         compiler_command,
         declared_environment,
+        gambit_dynamic_link_options = host.gambit_dynamic_link_options,
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -249,6 +250,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "environment": environment,
             "dependencyPolicy": "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots" if repository_ctx.attr.dependency_roots else "host-only",
             "dependencyState": project_dependency_state,
+            "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
             "nativeAbiFingerprint": fingerprint,
             "producerCompilerCommand": runtime.compiler_command,
             "gerbilBuildCores": int(build_cores.value),

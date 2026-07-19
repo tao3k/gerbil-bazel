@@ -79,7 +79,48 @@ successful project receipt.
 - =gerbil/project_receipt_schema_test.sh=
 - =gerbil/project_receipt_v1_instances_test.sh=
 - =gerbil/validate_project_receipt_v1.ss=
+- =gerbil/gambit_runtime.bzl=
 - =tests/smoke/package_receipt_test.sh=
+- =tests/smoke/native-math.ss=
+
+* Darwin GCC dynamic-module compatibility
+
+The stable project receipt version is independent from native toolchain
+normalization.  A Darwin Gerbil installation built with GCC 16 retains that
+producer compiler for ABI-compatible object generation.  Its Gambit
+=gambuild-C= overlay augments only =FLAGS_DYN= with
+=-Wl,-undefined,dynamic_lookup=.  It does not replace =C_COMPILER=, mutate
+=FLAGS_EXE=, or modify the Linux provider.
+
+The distinction is required because Gambit's dynamic-module command compiles C
+and links a bundle through the same compiler driver.  Replacing GCC with clang
+also passes GCC-only optimization flags to clang.  Applying a global
+=LDFLAGS_GAMBUILD= override would affect executable/static-runtime linking.
+The dynamic-only overlay preserves both upstream command forms and the installed
+runtime ABI while fixing unresolved process-provided symbols in loadable
+modules.
+
+#+begin_src mermaid
+flowchart LR
+  Host["Host system capability"] --> Choice{"Darwin?"}
+  Choice -->|"no"| Upstream["Unmodified Gambit compiler and link flags"]
+  Choice -->|"yes"| Overlay["Compiler-only gambuild-C overlay"]
+  Producer["Installed producer compiler: GCC 16"] --> Overlay
+  Overlay --> Obj["Object path: producer compiler, unchanged flags"]
+  Overlay --> Dyn["Dynamic path: -bundle plus dynamic_lookup"]
+  Overlay --> Exe["Executable/static path: unchanged FLAGS_EXE"]
+  Dyn --> ABI["Registered toolchain and Bazel action identity"]
+#+end_src
+
+The regression vector =//tests/smoke:native_math_module_test= compiles a real
+Gerbil package whose native code references =log=.  Before the overlay, the
+Darwin action failed with unresolved =_log= and exit 70 in 33.493 seconds; its
+Scheme guard recorded a 318,717,952-byte process-tree peak.  After the
+dynamic-only overlay, the native package, stable v1 receipt, and toolchain
+environment gates passed.  The complete Bazel suite passed 15 of 15 tests in
+110.172 seconds.  The prebuilt and Darwin auto repository-provider receipts
+also passed, in 72 and 88 seconds respectively.  These are compatibility-gate
+times, not new project cold-build baselines.
 
 * Versioning rule
 

@@ -33,6 +33,14 @@ gerbil_package_compile(
     revision = "independent-v1",
 )
 
+gerbil_package_compile(
+    name = "native_math_compile",
+    srcs = ["native-math.ss"],
+    build_script = "native-math-build.ss",
+    package = "example.invalid/gerbil-bazel/native-math",
+    revision = "native-math-v1",
+)
+
 gerbil_project_compile(
     name = "compile",
     args = ["compile"],
@@ -68,6 +76,12 @@ filegroup(
     srcs = [":dependency_compile"],
     output_group = "receipt",
     visibility = ["//gerbil:__pkg__"],
+)
+
+filegroup(
+    name = "native_math_compile_receipt",
+    srcs = [":native_math_compile"],
+    output_group = "receipt",
 )
 
 filegroup(
@@ -148,8 +162,23 @@ filegroup(
 sh_test(
     name = "package_receipt_test",
     srcs = ["package_receipt_test.sh"],
-    args = ["$(rlocationpath :dependency_compile_receipt)"],
+    args = [
+        "$(rlocationpath :dependency_compile_receipt)",
+        "example.invalid/gerbil-bazel/dependency",
+        "dependency-v1",
+    ],
     data = [":dependency_compile_receipt"],
+)
+
+sh_test(
+    name = "native_math_module_test",
+    srcs = ["package_receipt_test.sh"],
+    args = [
+        "$(rlocationpath :native_math_compile_receipt)",
+        "example.invalid/gerbil-bazel/native-math",
+        "native-math-v1",
+    ],
+    data = [":native_math_compile_receipt"],
 )
 
 sh_test(
