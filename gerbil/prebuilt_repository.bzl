@@ -1,7 +1,11 @@
 """Repository rule for importing an immutable Gerbil toolchain capability."""
 
 load(":gambit_runtime.bzl", "normalized_gambit_runtime")
-load(":host_system.bzl", "resolve_host_environment")
+load(
+    ":host_system.bzl",
+    "resolve_gerbil_build_cores",
+    "resolve_host_environment",
+)
 
 _ARCH_ALIASES = {
     "aarch64": "aarch64",
@@ -301,8 +305,14 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         host.gerbil_cc,
         environment,
     )
+    build_cores = resolve_gerbil_build_cores(
+        repository_ctx,
+        repository_ctx.attr.environment,
+        host.system_cpu_count,
+    )
     environment = runtime.environment
     environment.update({
+        "GERBIL_BUILD_CORES": build_cores.value,
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
     })
@@ -360,6 +370,8 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "dependencyRoots": dependency_roots,
             "dependencyState": project_dependency_state,
             "environment": environment,
+            "gerbilBuildCores": int(build_cores.value),
+            "gerbilBuildCoresSource": build_cores.source,
             "gerbilHome": gerbil_home_relative,
             "nativeAbiFingerprint": native_abi,
             "platform": {
@@ -433,6 +445,7 @@ prebuilt_gerbil_repository = repository_rule(
         "CXX",
         "GAMBOPT",
         "GERBIL_AS",
+        "GERBIL_BUILD_CORES",
         "GERBIL_CC",
         "GERBIL_DEVELOPER_DIR",
         "GERBIL_LD",

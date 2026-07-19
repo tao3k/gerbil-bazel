@@ -49,6 +49,15 @@ sha256_file() {
 
 system="$(normalize_system "$(uname -s)")"
 architecture="$(normalize_arch "$(uname -m)")"
+case "$system" in
+  darwin) logical_cpu_count="$(/usr/sbin/sysctl -n hw.logicalcpu)" ;;
+  linux) logical_cpu_count="$(getconf _NPROCESSORS_ONLN)" ;;
+esac
+expected_build_cores="${GERBIL_BUILD_CORES:-$logical_cpu_count}"
+expected_build_cores_source=host-system
+if [[ -n "${GERBIL_BUILD_CORES:-}" ]]; then
+  expected_build_cores_source=process-environment
+fi
 mkdir -p "$test_root/consumer"
 fixture=provided
 archive="${GERBIL_PREBUILT_ARCHIVE:-}"
@@ -218,6 +227,22 @@ fi
   "$bazel_bin" --output_user_root="$test_root/bazel" query \
     "@$repository_name//:registered_toolchain"
   provider_seconds="$((SECONDS - provider_started_at))"
+  output_base="$(
+    "$bazel_bin" --output_user_root="$test_root/bazel" info output_base \
+      --noshow_progress 2>/dev/null
+  )"
+  receipt_relative="$(
+    "$bazel_bin" --output_user_root="$test_root/bazel" cquery \
+      "@$repository_name//:toolchain.receipt.json" \
+      --output=files --noshow_progress 2>/dev/null
+  )"
+  jq -e \
+    --arg build_cores "$expected_build_cores" \
+    --arg source "$expected_build_cores_source" \
+    '.environment.GERBIL_BUILD_CORES == $build_cores and
+     .gerbilBuildCores == ($build_cores | tonumber) and
+     .gerbilBuildCoresSource == $source' \
+    "$output_base/$receipt_relative" >/dev/null
   tool_started_at="$SECONDS"
   observed_version="$(
     "$bazel_bin" --output_user_root="$test_root/bazel" run \

@@ -6,7 +6,11 @@ load(
     "discover_gambit_home",
     "normalized_gambit_runtime",
 )
-load(":host_system.bzl", "resolve_host_environment")
+load(
+    ":host_system.bzl",
+    "resolve_gerbil_build_cores",
+    "resolve_host_environment",
+)
 
 _GERBIL_TOOLS = {
     "gxc": ["gxc"],
@@ -176,6 +180,11 @@ def _local_gerbil_repository_impl(repository_ctx):
         compiler_command,
         declared_environment,
     )
+    build_cores = resolve_gerbil_build_cores(
+        repository_ctx,
+        repository_ctx.attr.environment,
+        host.system_cpu_count,
+    )
     gerbil_cc = str(runtime.compiler_path)
     version = _gerbil_version(repository_ctx, tools)
     fingerprint = _fingerprint(
@@ -186,6 +195,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         str(runtime.compiler_identity_path),
     )
     environment = runtime.environment
+    environment["GERBIL_BUILD_CORES"] = build_cores.value
     environment["GERBIL_BAZEL_CPU_COUNT"] = host.system_cpu_count
     environment["GERBIL_BAZEL_MEMORY_BYTES"] = host.system_memory_bytes
     tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
@@ -241,6 +251,8 @@ def _local_gerbil_repository_impl(repository_ctx):
             "dependencyState": project_dependency_state,
             "nativeAbiFingerprint": fingerprint,
             "producerCompilerCommand": runtime.compiler_command,
+            "gerbilBuildCores": int(build_cores.value),
+            "gerbilBuildCoresSource": build_cores.source,
             "schema": "gerbil-bazel.local-toolchain-receipt.v1",
             "system": host.system,
             "systemCpuCount": int(host.system_cpu_count),
@@ -307,6 +319,7 @@ local_gerbil_repository = repository_rule(
         "CPATH",
         "CXX",
         "GERBIL_AS",
+        "GERBIL_BUILD_CORES",
         "GERBIL_CC",
         "GERBIL_DEVELOPER_DIR",
         "GERBIL_GXC",

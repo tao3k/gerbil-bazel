@@ -182,6 +182,31 @@ def _linux_environment(repository_ctx):
         system_memory_bytes = str(int(pages) * int(page_size)),
     )
 
+def resolve_gerbil_build_cores(
+        repository_ctx,
+        declared_environment,
+        system_cpu_count):
+    """Resolves the upstream std/make worker count and its provenance."""
+    value = repository_ctx.os.environ.get("GERBIL_BUILD_CORES", "")
+    source = "process-environment"
+    if not value:
+        value = declared_environment.get("GERBIL_BUILD_CORES", "")
+        source = "repository-environment"
+    if not value:
+        value = system_cpu_count
+        source = "host-system"
+
+    for character in value.elems():
+        if character not in "0123456789":
+            fail("GERBIL_BUILD_CORES must be a positive integer, got {!r}".format(value))
+    count = int(value)
+    if count < 1:
+        fail("GERBIL_BUILD_CORES must be a positive integer, got {!r}".format(value))
+    return struct(
+        source = source,
+        value = str(count),
+    )
+
 def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
     """Returns normalized host capabilities for Darwin or Linux."""
     system = repository_ctx.os.name.lower()

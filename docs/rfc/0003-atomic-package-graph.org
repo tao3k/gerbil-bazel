@@ -114,12 +114,16 @@ changes only the =C_COMPILER= launcher binding to honor =GERBIL_GCC=; it does
 not rewrite =FLAGS_OBJ=, =FLAGS_DYN=, =FLAGS_LIB=, =FLAGS_EXE=, or the upstream
 build graph.
 
+Both native and prebuilt toolchains MUST derive a positive =GERBIL_BUILD_CORES= capability through the shared host-system resolver. Resolution MUST prefer an explicit process override, then an explicit repository environment value, and otherwise use the current host's available logical CPU count. A prebuilt manifest MUST NOT impose a machine-specific worker count. Provider implementations MUST NOT duplicate this mapping or hard-code a worker count. The value and its provenance MUST appear in the toolchain receipt, and Gerbil's upstream =std/make= dependency coordinator consumes the exported value as its worker-pool limit.
+
 #+begin_src mermaid
 flowchart LR
   SRC[Package sources + build.ss] --> KEY[Package action key]
   REV[Exact package REV] --> KEY
   DEPS[Dependency tree artifacts] --> KEY
   ABI[Native ABI + producer compiler] --> KEY
+  CPU[Available host logical CPU count] --> CORES[GERBIL_BUILD_CORES capability]
+  CORES --> ACTION
   KEY --> ACTION[Isolated Gerbil package action]
   ACTION --> TREE[Immutable project tree]
   ACTION --> RECEIPT[JSON package receipt]
