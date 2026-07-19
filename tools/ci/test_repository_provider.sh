@@ -59,6 +59,7 @@ if [[ -z "$archive" ]]; then
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == -cc ]]; then shift 2; fi' \
     'if [[ "${1:-}" == --synthetic-driver-probe ]]; then printf "ready\\n"; fi' \
     'exit 0' >"$payload/prefix/bin/gsc"
   chmod +x "$payload/prefix/bin/gsc"

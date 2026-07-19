@@ -3,12 +3,21 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-sh_binary(name = "native_scheme_env", srcs = ["native_scheme_env.sh"])
+sh_binary(
+    name = "native_scheme_env",
+    srcs = ["native_scheme_env.sh"],
+    data = [
+        "bin/gsc_raw",
+        "gsc_driver.sh",
+    ],
+)
 
 sh_binary(
     name = "install_dependencies",
     srcs = ["install_gerbil_dependencies.sh"],
     data = [
+        "bin/gsc_raw",
+        "gsc_driver.sh",
         "bin/gxpkg_raw",
         "native_abi.txt",
     ],

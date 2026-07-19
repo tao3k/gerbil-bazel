@@ -246,7 +246,12 @@ def _tool_rules():
         """sh_binary(
     name = {name},
     srcs = [{wrapper}],
-    data = [{raw}, "native_abi.txt"],
+    data = [
+        {raw},
+        "bin/gsc_raw",
+        "gsc_driver.sh",
+        "native_abi.txt",
+    ],
 )""".format(
             name = repr(name),
             raw = repr("bin/{}_raw".format(name)),
@@ -304,6 +309,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "manifest nativeAbiFingerprint",
     )
     capability_id = _require_string(manifest, "capabilityId", "manifest capabilityId")
+    gsc_driver = str(repository_ctx.path("gsc_driver.sh"))
 
     declared_environment = _require_type(
         manifest.get("environment", {}),
@@ -326,7 +332,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
         "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
         "GERBIL_GCC": host.gerbil_cc,
-        "GERBIL_GSC": str(gerbil_gsc),
+        "GERBIL_GSC": gsc_driver,
         "GERBIL_HOME": gerbil_home,
     })
     tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
@@ -339,6 +345,17 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         value = repository_ctx.os.environ.get(name, "")
         if value:
             environment[name] = value
+
+    repository_ctx.symlink(gerbil_gsc, "bin/gsc_raw")
+    repository_ctx.template(
+        "gsc_driver.sh",
+        repository_ctx.attr._gsc_driver_template,
+        {
+            "{{ENVIRONMENT}}": _environment_exports(environment),
+            "{{GSC}}": _shell_quote(str(gerbil_gsc)),
+        },
+        executable = True,
+    )
 
     version = _version(repository_ctx, manifest, tools.absolute, environment)
     dependency_roots = _link_dependency_roots(repository_ctx, manifest)
@@ -433,6 +450,10 @@ prebuilt_gerbil_repository = repository_rule(
         "_build_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:prebuilt_toolchain.BUILD.bazel.tpl",
+        ),
+        "_gsc_driver_template": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:gsc_driver.sh.tpl",
         ),
         "_install_dependencies_template": attr.label(
             allow_single_file = True,

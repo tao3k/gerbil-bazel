@@ -8,7 +8,10 @@ The provider environment prepends the selected capability's tool directory to
 =PATH= before the first raw =gxpkg= process starts.  It also derives
 =GERBIL_GSC= from the relocated =GERBIL_HOME=, appends Gambit =GAMBOPT=
 runtime mappings for =~~=, =~~bin=, and =~~lib=, and derives =GERBIL_GCC=
-from the consumer host toolchain.  Dependency build scripts launched through
+from the consumer host toolchain.  =GERBIL_GSC= names a provider-generated
+driver that invokes the immutable raw =gsc= with Gambit's upstream =-cc=
+option, so producer-only compiler launchers such as =/usr/bin/ccache= are never
+required by consumers.  Dependency build scripts launched through
 =/usr/bin/env gxi= and compiler processes launched by =gxc= therefore resolve
 the same immutable prebuilt capability instead of retaining producer-machine
 paths.  The synthetic prebuilt fixture requires the nested =gxi= lookup to
@@ -69,8 +72,9 @@ flowchart LR
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> COMPILE["Relocated gxc -> gsc compile verification"]
-  COMPILE --> ENV["Consumer derives GAMBOPT + GERBIL_GSC + GERBIL_GCC"]
-  ENV --> ARC["Archive + SHA-256 + manifest"]
+  COMPILE --> ENV["Consumer derives GAMBOPT + host compiler"]
+  ENV --> GSC["Generated gsc driver injects upstream -cc"]
+  GSC --> ARC["Archive + SHA-256 + manifest"]
   ARC --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
