@@ -7,9 +7,6 @@ GerbilProjectInfo = provider(
     fields = {
         "dependency_roots": "transitive depset of isolated dependency project roots",
         "log": "complete project build log",
-        "package_identity": "declared package identity, or the empty string",
-        "package_revision": "declared immutable package revision, or the empty string",
-        "package_revisions": "transitive package identity to immutable revision mapping",
         "project_root": "tree artifact containing the isolated built project",
         "receipt": "machine-readable build receipt",
         "source_root_marker": "build script anchoring the declared project source root",
@@ -40,36 +37,9 @@ def _manifest_entries(files):
         for destination in sorted(sources_by_destination.keys())
     ]
 
-def _package_revisions(ctx, project_dependencies):
-    revisions = {}
-    for dependency in project_dependencies:
-        for identity in sorted(dependency.package_revisions.keys()):
-            revision = dependency.package_revisions[identity]
-            previous = revisions.get(identity)
-            if previous != None and previous != revision:
-                fail("{} depends on package {} at conflicting immutable revisions {} and {}".format(
-                    ctx.label,
-                    identity,
-                    previous,
-                    revision,
-                ))
-            revisions[identity] = revision
-    if ctx.attr.package_identity:
-        previous = revisions.get(ctx.attr.package_identity)
-        if previous != None and previous != ctx.attr.package_revision:
-            fail("{} provides package {} at revision {}, conflicting with dependency revision {}".format(
-                ctx.label,
-                ctx.attr.package_identity,
-                ctx.attr.package_revision,
-                previous,
-            ))
-        revisions[ctx.attr.package_identity] = ctx.attr.package_revision
-    return revisions
-
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
     project_dependencies = [dep[GerbilProjectInfo] for dep in ctx.attr.deps]
-    package_revisions = _package_revisions(ctx, project_dependencies)
     dependency_roots = depset(
         direct = [dependency.project_root for dependency in project_dependencies],
         order = "postorder",
@@ -103,16 +73,16 @@ def _gerbil_project_compile_impl(ctx):
     args.add(ctx.file._receipt_writer.path)
     args.add("1" if ctx.attr.process_guard else "0")
     args.add(ctx.attr.process_guard_timeout_seconds)
-    args.add(ctx.attr.package_identity)
-    args.add(ctx.attr.package_revision)
+    args.add(str(ctx.label))
+    args.add("")
+    args.add("")
     args.add_all(ctx.attr.args)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
     environment["CC"] = toolchain.gerbil_cc
-    environment["GERBIL_GCC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
-    environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode(ctx.attr.package_identity)
-    environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode(ctx.attr.package_revision)
+    environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode("")
+    environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode("")
     environment["GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT"] = "1" if ctx.attr.require_library_output else "0"
     environment["GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS"] = ":".join([
         root.path
@@ -150,9 +120,6 @@ def _gerbil_project_compile_impl(ctx):
     info = GerbilProjectInfo(
         dependency_roots = dependency_roots,
         log = log,
-        package_identity = ctx.attr.package_identity,
-        package_revision = ctx.attr.package_revision,
-        package_revisions = package_revisions,
         project_root = project_root,
         receipt = receipt,
         source_root_marker = ctx.file.build_script,
@@ -174,8 +141,6 @@ gerbil_project_compile = rule(
         "build_script": attr.label(allow_single_file = True, mandatory = True),
         "deps": attr.label_list(providers = [GerbilProjectInfo]),
         "env": attr.string_dict(),
-        "package_identity": attr.string(),
-        "package_revision": attr.string(),
         "process_guard": attr.bool(default = False),
         "process_guard_timeout_seconds": attr.int(default = 0),
         "receipt_line_prefix": attr.string(),
@@ -201,35 +166,6 @@ gerbil_project_compile = rule(
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )
-
-def gerbil_package_compile(
-        name,
-        package,
-        revision,
-        build_script,
-        srcs,
-        deps = [],
-        args = ["compile"],
-        **kwargs):
-    """Builds one immutable Gerbil package node as an isolated tree artifact."""
-    if not package:
-        fail("gerbil_package_compile requires a package identity")
-    if not revision:
-        fail("gerbil_package_compile requires an immutable package revision")
-    if "process_guard" not in kwargs:
-        kwargs["process_guard"] = True
-
-    gerbil_project_compile(
-        name = name,
-        args = args,
-        build_script = build_script,
-        deps = deps,
-        package_identity = package,
-        package_revision = revision,
-        require_library_output = True,
-        srcs = srcs,
-        **kwargs
-    )
 
 def _runfile_key(ctx, file):
     if file.short_path.startswith("../"):

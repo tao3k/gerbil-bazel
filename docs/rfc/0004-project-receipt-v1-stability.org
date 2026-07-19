@@ -20,6 +20,12 @@ The following six fields are required and retain their original meaning:
 - =packageIdentity=
 - =packageRevision=
 
+The two package-named fields are retained to keep the published v1 shape
+stable.  Current generic project producers emit empty strings.  They do not
+define a second package graph: =gerbil.pkg= and =gxpkg= own package semantics,
+while repository pins and Bazel content inputs own reproducible source
+identity.
+
 Two optional extension fields are reserved in v1:
 
 - =resourceGuard= contains a typed
@@ -56,11 +62,12 @@ flowchart LR
 
 * Atomic cache semantics
 
-The receipt is an output of the same immutable package action as the compiled
-tree. Package identity, package revision, declared sources, transitive package
-roots, toolchain capability, and guard implementation participate in the Bazel
-action key. Changing one dependency revision invalidates that package and its
-reverse-dependent closure; an independent package remains reusable.
+The receipt is an output of the same declared project action as the compiled
+tree. Declared sources, transitive project tree artifacts, toolchain capability,
+and guard implementation participate in the Bazel action key. Repository pins
+materialize the revisions declared by the consumer's canonical dependency
+manifest. Changing one dependency input invalidates that project and its
+reverse-dependent closure; an independent project remains reusable.
 
 * Failure semantics
 
@@ -80,47 +87,52 @@ successful project receipt.
 - =gerbil/project_receipt_v1_instances_test.sh=
 - =gerbil/validate_project_receipt_v1.ss=
 - =gerbil/gambit_runtime.bzl=
-- =tests/smoke/package_receipt_test.sh=
+- =tests/smoke/guarded_project_receipt_test.sh=
 - =tests/smoke/native-math.ss=
+- =tests/smoke/gxpkg_native_package_test.sh=
 
-* Darwin GCC dynamic-module compatibility
+* Upstream-native Darwin compiler and linker capabilities
 
 The stable project receipt version is independent from native toolchain
-normalization.  A Darwin Gerbil installation built with GCC 16 retains that
-producer compiler for ABI-compatible object generation.  Its Gambit
-=gambuild-C= overlay augments only =FLAGS_DYN= with
-=-Wl,-undefined,dynamic_lookup=.  It does not replace =C_COMPILER=, mutate
-=FLAGS_EXE=, or modify the Linux provider.
+normalization.  Gerbil-Bazel does not copy or rewrite the installed
+=gambuild-C=.  A generated =GERBIL_GSC= launcher uses Gambit's public =-cc= and
+=-ld-options= interfaces.  Object generation retains the compiler that produced
+the installed runtime; Darwin dynamic modules additionally receive
+=-Wl,-undefined,dynamic_lookup=.  Gerbil's public =GERBIL_GCC= boundary selects
+Xcode Clang only for the final executable link.  Linux keeps one producer
+compiler and receives neither Darwin capability.
 
-The distinction is required because Gambit's dynamic-module command compiles C
-and links a bundle through the same compiler driver.  Replacing GCC with clang
-also passes GCC-only optimization flags to clang.  Applying a global
-=LDFLAGS_GAMBUILD= override would affect executable/static-runtime linking.
-The dynamic-only overlay preserves both upstream command forms and the installed
-runtime ABI while fixing unresolved process-provided symbols in loadable
-modules.
+This division matters for a Gerbil installation produced by GCC 16: replacing
+the producer globally sends GCC-only optimization flags to Clang, while leaving
+the final executable link on GCC can fail against Darwin's host link model.
+Using the two upstream environment hooks preserves the runtime ABI without
+mutating an installed upstream artifact.
 
 #+begin_src mermaid
 flowchart LR
-  Host["Host system capability"] --> Choice{"Darwin?"}
-  Choice -->|"no"| Upstream["Unmodified Gambit compiler and link flags"]
-  Choice -->|"yes"| Overlay["Compiler-only gambuild-C overlay"]
-  Producer["Installed producer compiler: GCC 16"] --> Overlay
-  Overlay --> Obj["Object path: producer compiler, unchanged flags"]
-  Overlay --> Dyn["Dynamic path: -bundle plus dynamic_lookup"]
-  Overlay --> Exe["Executable/static path: unchanged FLAGS_EXE"]
-  Dyn --> ABI["Registered toolchain and Bazel action identity"]
+  Package["gerbil.pkg"] --> GXPKG["gxpkg build"]
+  GXPKG --> Build["build.ss and std/make"]
+  Build --> GXC["gxc"]
+  GXC --> GSC["GERBIL_GSC launcher"]
+  Producer["Installed producer compiler"] --> GSC
+  GSC --> Obj["Object and dynamic module generation"]
+  Darwin["Darwin dynamic_lookup"] --> Obj
+  GXC --> Final["GERBIL_GCC final executable link"]
+  Clang["Xcode Clang on Darwin"] --> Final
+  Obj --> Artifact["Declared Bazel project tree"]
+  Final --> Artifact
+  Artifact --> Receipt["gerbil-bazel.project-receipt.v1"]
 #+end_src
 
-The regression vector =//tests/smoke:native_math_module_test= compiles a real
-Gerbil package whose native code references =log=.  Before the overlay, the
-Darwin action failed with unresolved =_log= and exit 70 in 33.493 seconds; its
-Scheme guard recorded a 318,717,952-byte process-tree peak.  After the
-dynamic-only overlay, the native package, stable v1 receipt, and toolchain
-environment gates passed.  The complete Bazel suite passed 15 of 15 tests in
-110.172 seconds.  The prebuilt and Darwin auto repository-provider receipts
-also passed, in 72 and 88 seconds respectively.  These are compatibility-gate
-times, not new project cold-build baselines.
+The standard regression =//tests/smoke:gxpkg_native_package_test= starts from a
+real =gerbil.pkg=, invokes the public =gxpkg= wrapper, delegates to
+=std/build-script=, compiles a native =log= reference, links an executable, and
+runs it.  It passed in 4.5 seconds.  Seven focused toolchain, runner, receipt,
+installer, and gxpkg gates passed in 9.419 seconds.  The real POO Flow
+=gerbil-utils= project then passed in 51.606 seconds with a 30.25-second Gerbil
+action, and =//scheme:compile_receipt_v1_test= passed in 187.355 seconds with a
+181.58-second project critical path.  These receipts were obtained through a
+consumer =local_path_override= before any release commit was created.
 
 * Versioning rule
 

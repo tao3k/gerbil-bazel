@@ -9,11 +9,9 @@ resolve_runfile() {
   esac
 }
 
-receipt=$(resolve_runfile "${1:?package receipt path is required}")
-package_identity=${2:?package identity is required}
-package_revision=${3:?package revision is required}
-grep -F '"packageIdentity":"'"$package_identity"'"' "$receipt" >/dev/null
-grep -F '"packageRevision":"'"$package_revision"'"' "$receipt" >/dev/null
+receipt=$(resolve_runfile "${1:?project receipt path is required}")
+grep -F '"packageIdentity":""' "$receipt" >/dev/null
+grep -F '"packageRevision":""' "$receipt" >/dev/null
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' "$receipt" >/dev/null
 grep -F '"status":"ok"' "$receipt" >/dev/null
 grep -F '"admissionOutcome":"ready"' "$receipt" >/dev/null

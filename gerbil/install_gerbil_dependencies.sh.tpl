@@ -21,7 +21,4 @@ mkdir -p "${gerbil_root%/}/pkg"
 
 phase=install
 /usr/bin/env "${native_environment[@]}" \
-  "$gxpkg" env env "${native_environment[@]}" "$gxpkg" deps --install
-phase=list
-/usr/bin/env "${native_environment[@]}" \
-  "$gxpkg" env env "${native_environment[@]}" "$gxpkg" list
+  "$gxpkg" deps --install

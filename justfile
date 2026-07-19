@@ -19,8 +19,10 @@ test:
       //gerbil:project_receipt_v1_instances_test \
       //gerbil:resource_guard_test \
       //gerbil:validate_json_test \
+      //tests/smoke:guarded_project_receipt_test \
+      //tests/smoke:gxpkg_native_package_test \
       //tests/smoke:install_dependencies_test \
-      //tests/smoke:package_receipt_test \
+      //tests/smoke:native_math_receipt_test \
       //tests/smoke:project_receipt_test \
       //tests/smoke:project_library_view_test \
       //tests/smoke:reuse_test_one \

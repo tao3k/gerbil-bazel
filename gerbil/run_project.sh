@@ -19,9 +19,10 @@ resource_guard=${15}
 receipt_writer=${16}
 process_guard=${17}
 process_guard_timeout_seconds=${18}
-package_identity=${19}
-package_revision=${20}
-shift 20
+project_label=${19}
+package_identity=${20}
+package_revision=${21}
+shift 21
 
 case "$gxi" in /*) ;; *) gxi="$PWD/$gxi" ;; esac
 case "$gxc" in /*) ;; *) gxc="$PWD/$gxc" ;; esac
@@ -144,7 +145,7 @@ if [[ "$process_guard" == 1 ]]; then
     cd "$build_source_root"
     "$gxi" "$resource_guard" \
       "$guard_receipt" \
-      "$package_identity@$package_revision" \
+      "$project_label" \
       "$process_guard_timeout_seconds" \
       "$gxi" "$staged_build_script" "$@"
   ) >"$log" 2>&1
@@ -169,7 +170,7 @@ case "$library_output_required" in
   0) ;;
   1)
     if ! find "$GERBIL_PATH/lib" -mindepth 1 -type f -print -quit | grep -q .; then
-      printf 'Gerbil package build produced no library files: %s\n' \
+      printf 'Gerbil project build produced no library files: %s\n' \
         "$GERBIL_PATH/lib" >&2
       exit 66
     fi

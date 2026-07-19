@@ -20,10 +20,12 @@ case "$(uname -s)" in
   Darwin)
     expected_developer_dir="$(/usr/bin/env -u DEVELOPER_DIR -u SDKROOT /usr/bin/xcode-select -p)"
     expected_sdkroot="$(/usr/bin/env -u DEVELOPER_DIR -u SDKROOT /usr/bin/xcrun --sdk macosx --show-sdk-path)"
+    expected_executable_linker="$(/usr/bin/env -u DEVELOPER_DIR -u SDKROOT /usr/bin/xcrun --sdk macosx --find clang)"
     expected_cpu_count="$(/usr/sbin/sysctl -n hw.logicalcpu)"
     grep -F '"DEVELOPER_DIR": '"\"$expected_developer_dir\"" "$receipt" >/dev/null
     grep -F '"SDKROOT": '"\"$expected_sdkroot\"" "$receipt" >/dev/null
     grep -F '"gambitDynamicLinkOptions": "-Wl,-undefined,dynamic_lookup"' "$receipt" >/dev/null
+    grep -F '"gerbilExecutableLinker": '"\"$expected_executable_linker\"" "$receipt" >/dev/null
     ;;
   Linux)
     expected_cpu_count="$(getconf _NPROCESSORS_ONLN)"
@@ -33,6 +35,7 @@ case "$(uname -s)" in
       exit 1
     fi
     grep -F '"gambitDynamicLinkOptions": ""' "$receipt" >/dev/null
+    grep -F '"gerbilExecutableLinker": ""' "$receipt" >/dev/null
     ;;
   *)
     printf 'unsupported test host: %s\n' "$(uname -s)" >&2

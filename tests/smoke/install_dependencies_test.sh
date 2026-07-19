@@ -32,6 +32,8 @@ set -euo pipefail
 {
   printf 'cwd=%s\n' "$PWD"
   printf 'gerbil-path=%s\n' "${GERBIL_PATH:-}"
+  printf 'cc=%s\n' "${CC:-}"
+  printf 'cpu-count=%s\n' "${GERBIL_BAZEL_CPU_COUNT:-}"
   printf 'argv='
   printf '<%s>' "$@"
   printf '\n'
@@ -51,9 +53,9 @@ env -u GERBIL_PATH \
   "$rendered"
 
 test -d "$workspace/.gerbil/pkg"
-test "$(grep -c '^cwd=' "$log")" -eq 2
+test "$(grep -c '^cwd=' "$log")" -eq 1
 grep -F "cwd=$workspace" "$log" >/dev/null
 grep -F "gerbil-path=$workspace/.gerbil" "$log" >/dev/null
-grep -F '<env><env><CC=fake-cc><GERBIL_BAZEL_CPU_COUNT=7>' "$log" >/dev/null
-grep -F "<$fake_gxpkg><deps><--install>" "$log" >/dev/null
-grep -F "<$fake_gxpkg><list>" "$log" >/dev/null
+grep -F 'cc=fake-cc' "$log" >/dev/null
+grep -F 'cpu-count=7' "$log" >/dev/null
+grep -F '<deps><--install>' "$log" >/dev/null

@@ -76,11 +76,10 @@ installation under the separate `install_dependencies` capability.
 
 Every host and prebuilt repository publishes `//:install_dependencies`. The
 launcher enters the consumer workspace, uses its workspace-local `.gerbil`
-root, and runs the standard `gxpkg deps --install` and `gxpkg list` lifecycle
-through the selected provider environment. The environment is injected before
-the first raw `gxpkg` process starts, so a relocated prebuilt can resolve
-`:gerbil/core` before delegating to `gxpkg env`. A dependency installation can
-make
+root, and runs the standard `gxpkg deps --install` command through the selected
+provider environment. Gerbil-Bazel does not wrap this command in another
+`gxpkg env` lifecycle and does not duplicate package-manager verification with
+an unconditional `gxpkg list`. A dependency installation can make
 previously missing project packages ready; the next Bazel command then
 re-evaluates the watched project-library view.
 
@@ -112,7 +111,8 @@ bazel run @local_gerbil//:install_dependencies
 The target enters `BUILD_WORKSPACE_DIRECTORY`, defaults `GERBIL_PATH` to
 `$BUILD_WORKSPACE_DIRECTORY/.gerbil`, runs the standard
 `gxpkg deps --install` workflow through the normalized native tool
-environment, and finishes with `gxpkg list` as an executable verification.
+environment. This is an explicit developer-side effect target, never build
+truth inside a hermetic compile action.
 
 ## Project rules
 
@@ -151,8 +151,8 @@ matrix reuses one compile action. Set `receipt_line_prefix` when the build
 script emits canonical JSON. Every action receipt keeps the stable outer
 `gerbil-bazel.project-receipt.v1` schema and its original six required fields.
 The validated producer value is nested under the optional `buildReceipt`
-field. Immutable package actions also expose their Scheme resource-guard
-evidence under the optional `resourceGuard` field. The normative contract is
+field. Guarded project actions also expose their Scheme resource-guard evidence
+under the optional `resourceGuard` field. The normative contract is
 `schemas/gerbil-bazel.project-receipt.v1.schema.json`; execution capability
 changes do not create a new project receipt version.
 
@@ -163,11 +163,17 @@ such as `GERBIL_CC`, `GERBIL_GXI`, or `GERBIL_NATIVE_ABI`. For fully declared
 installations, `gerbil.host(tool_paths = {...})` takes precedence over
 environment overrides and `PATH` discovery.
 
-On Darwin, the normalized Gambit overlay preserves the compiler that produced
-the installed runtime and all of its object and executable flags. It augments
-only Gambit's dynamic-module `FLAGS_DYN` with
-`-Wl,-undefined,dynamic_lookup`. This is required for GCC-built Gambit bundles
-that reference symbols such as `_log`; it does not alter `FLAGS_EXE`, static
-runtime linking, or the Linux provider. The selected dynamic-only option is
-recorded as `gambitDynamicLinkOptions` in `toolchain.receipt.json` and therefore
-participates in the registered toolchain and Bazel action identity.
+On Darwin, Gerbil-Bazel leaves the installed `gambuild-C` immutable. A generated
+`GERBIL_GSC` launcher uses Gambit's public `-cc` and `-ld-options` interfaces:
+object generation keeps the compiler that produced the installed runtime, and
+dynamic modules additionally receive `-Wl,-undefined,dynamic_lookup`.
+Gerbil's public `GERBIL_GCC` boundary selects the Xcode Clang driver for the
+final executable link. Linux receives neither Darwin option nor a separate
+link driver. `gambitDynamicLinkOptions` and `gerbilExecutableLinker` are
+recorded in `toolchain.receipt.json` and participate in Bazel action identity.
+
+Package semantics remain upstream-owned. `gerbil.pkg` owns package and
+dependency metadata, `gxpkg` owns package lifecycle, and `build.ss` plus
+`std/make` own compile membership, ordering, and incrementality. Bazel declares
+the source closure and dependency tree artifacts needed by the sandbox; it does
+not expose a second package identity/revision graph.

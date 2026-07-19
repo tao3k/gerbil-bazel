@@ -1,44 +1,54 @@
 load(
     "@gerbil_bazel//gerbil:defs.bzl",
-    "gerbil_package_compile",
     "gerbil_project_compile",
     "gerbil_project_dev",
     "gerbil_project_test",
 )
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":build_settings.bzl", "dependency_state_flag")
 
 exports_files(["project-root.marker"])
 
-gerbil_package_compile(
+dependency_state_flag(
+    name = "dependency_state",
+    build_setting_default = "baseline",
+)
+
+config_setting(
+    name = "changed_dependency_input",
+    flag_values = {":dependency_state": "changed"},
+)
+
+gerbil_project_compile(
     name = "dependency_compile",
-    srcs = ["dependency.ss"],
-    build_script = "dependency-build.ss",
-    package = "example.invalid/gerbil-bazel/dependency",
-    revision = "dependency-v1",
+    srcs = select({
+        ":changed_dependency_input": ["dependency-changed.ss"],
+        "//conditions:default": ["dependency.ss"],
+    }),
+    build_script = select({
+        ":changed_dependency_input": "dependency-changed-build.ss",
+        "//conditions:default": "dependency-build.ss",
+    }),
+    process_guard = True,
+    require_library_output = True,
 )
 
-gerbil_package_compile(
-    name = "dependency_compile_v2",
-    srcs = ["dependency.ss"],
-    build_script = "dependency-build.ss",
-    package = "example.invalid/gerbil-bazel/dependency",
-    revision = "dependency-v2",
-)
-
-gerbil_package_compile(
+gerbil_project_compile(
     name = "independent_compile",
     srcs = ["independent.ss"],
     build_script = "independent-build.ss",
-    package = "example.invalid/gerbil-bazel/independent",
-    revision = "independent-v1",
+    process_guard = True,
+    require_library_output = True,
 )
 
-gerbil_package_compile(
+gerbil_project_compile(
     name = "native_math_compile",
-    srcs = ["native-math.ss"],
+    srcs = [
+        "native-math.ss",
+    ],
     build_script = "native-math-build.ss",
-    package = "example.invalid/gerbil-bazel/native-math",
-    revision = "native-math-v1",
+    process_guard = True,
+    require_library_output = True,
 )
 
 gerbil_project_compile(
@@ -48,26 +58,6 @@ gerbil_project_compile(
     deps = [
         ":dependency_compile",
         ":independent_compile",
-    ],
-)
-
-gerbil_project_compile(
-    name = "compile_v2",
-    args = ["compile"],
-    build_script = "build.ss",
-    deps = [
-        ":dependency_compile_v2",
-        ":independent_compile",
-    ],
-)
-
-gerbil_project_compile(
-    name = "revision_conflict",
-    build_script = "build.ss",
-    tags = ["manual"],
-    deps = [
-        ":dependency_compile",
-        ":dependency_compile_v2",
     ],
 )
 
@@ -160,24 +150,16 @@ filegroup(
 )
 
 sh_test(
-    name = "package_receipt_test",
-    srcs = ["package_receipt_test.sh"],
-    args = [
-        "$(rlocationpath :dependency_compile_receipt)",
-        "example.invalid/gerbil-bazel/dependency",
-        "dependency-v1",
-    ],
+    name = "guarded_project_receipt_test",
+    srcs = ["guarded_project_receipt_test.sh"],
+    args = ["$(rlocationpath :dependency_compile_receipt)"],
     data = [":dependency_compile_receipt"],
 )
 
 sh_test(
-    name = "native_math_module_test",
-    srcs = ["package_receipt_test.sh"],
-    args = [
-        "$(rlocationpath :native_math_compile_receipt)",
-        "example.invalid/gerbil-bazel/native-math",
-        "native-math-v1",
-    ],
+    name = "native_math_receipt_test",
+    srcs = ["guarded_project_receipt_test.sh"],
+    args = ["$(rlocationpath :native_math_compile_receipt)"],
     data = [":native_math_compile_receipt"],
 )
 
@@ -211,6 +193,25 @@ sh_test(
     data = [
         "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
         "@local_gerbil//:install_dependencies",
+    ],
+)
+
+sh_test(
+    name = "gxpkg_native_package_test",
+    srcs = ["gxpkg_native_package_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxpkg)",
+        "$(rlocationpath gxpkg-native/gerbil.pkg)",
+        "$(rlocationpath gxpkg-native/build.ss)",
+        "$(rlocationpath gxpkg-native/native-math/lib.ss)",
+        "$(rlocationpath gxpkg-native/native-math/main.ss)",
+    ],
+    data = [
+        "gxpkg-native/build.ss",
+        "gxpkg-native/gerbil.pkg",
+        "gxpkg-native/native-math/lib.ss",
+        "gxpkg-native/native-math/main.ss",
+        "@local_gerbil//:gxpkg",
     ],
 )
 

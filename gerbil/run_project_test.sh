@@ -95,6 +95,7 @@ run_fixture() {
     "$receipt_writer" \
     0 \
     0 \
+    '//tests/smoke:fixture' \
     '' \
     '' \
     compile
@@ -152,7 +153,7 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$dependency_root/.marker" "$root/unsafe.sources" \
     "$root/unsafe.project" build.ss "$root/unsafe.receipt.json" \
   "$root/unsafe.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '' '' compile
+  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:unsafe' '' '' compile
 unsafe_status=$?
 set -e
 [[ "$unsafe_status" -eq 64 ]]
@@ -170,7 +171,7 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$dependency_root/.marker" "$root/duplicate.sources" \
     "$root/duplicate.project" build.ss "$root/duplicate.receipt.json" \
   "$root/duplicate.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '' '' compile
+  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:duplicate' '' '' compile
 duplicate_status=$?
 set -e
 [[ "$duplicate_status" -eq 64 ]]

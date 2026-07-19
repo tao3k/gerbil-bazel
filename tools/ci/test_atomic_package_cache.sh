@@ -10,7 +10,6 @@ disk_cache=$scratch/disk-cache
 first_log=$scratch/first.json
 warm_log=$scratch/warm.json
 second_log=$scratch/second.json
-conflict_log=$scratch/conflict.log
 
 cleanup() {
   "$bazel_bin" --output_base="$output_base" shutdown >/dev/null 2>&1 || true
@@ -41,8 +40,9 @@ fi
 
 "$bazel_bin" --output_base="$output_base" build \
   --disk_cache="$disk_cache" \
+  --//tests/smoke:dependency_state=changed \
   --execution_log_json_file="$second_log" \
-  //tests/smoke:compile_v2
+  //tests/smoke:compile
 
 executed_actions=$(jq -s '
   [.. | objects
@@ -50,7 +50,7 @@ executed_actions=$(jq -s '
    | .targetLabel]
   | unique
 ' "$second_log")
-expected_actions='["//tests/smoke:compile_v2","//tests/smoke:dependency_compile_v2"]'
+expected_actions='["//tests/smoke:compile","//tests/smoke:dependency_compile"]'
 if ! jq -en \
   --argjson actual "$executed_actions" \
   --argjson expected "$expected_actions" \
@@ -59,36 +59,22 @@ if ! jq -en \
   exit 1
 fi
 
-if "$bazel_bin" --output_base="$output_base" build \
-  --nobuild \
-  //tests/smoke:revision_conflict >"$conflict_log" 2>&1; then
-  printf 'expected conflicting immutable package revisions to fail analysis\n' >&2
-  exit 1
-fi
-if ! grep -F \
-  'depends on package example.invalid/gerbil-bazel/dependency at conflicting immutable revisions dependency-v1 and dependency-v2' \
-  "$conflict_log" >/dev/null; then
-  printf 'missing package revision conflict diagnostic:\n' >&2
-  cat "$conflict_log" >&2
-  exit 1
-fi
-
 mkdir -p "$(dirname "$receipt_path")"
 jq -n \
   --arg schema gerbil-bazel.atomic-package-cache-receipt.v1 \
   --arg outcome passed \
-  --arg unchanged_package example.invalid/gerbil-bazel/independent@independent-v1 \
-  --arg changed_package example.invalid/gerbil-bazel/dependency@dependency-v2 \
+  --arg changed_input //tests/smoke:dependency-changed.ss \
+  --arg unchanged_dependency //tests/smoke:independent_compile \
   --argjson warm_executed_actions "$warm_executed_actions" \
   --argjson executed_actions "$executed_actions" \
   '{
     schema: $schema,
     outcome: $outcome,
-    changedPackage: $changed_package,
-    unchangedPackage: $unchanged_package,
+    changedInput: $changed_input,
+    unchangedDependency: $unchanged_dependency,
     warmBuildExecutedActions: $warm_executed_actions,
     warmBuildGerbilActionCount: ($warm_executed_actions | length),
-    revisionConflictRejected: true,
+    declaredInputInvalidationVerified: true,
     secondBuildExecutedActions: $executed_actions,
     secondBuildGerbilActionCount: ($executed_actions | length)
   }' >"$receipt_path"

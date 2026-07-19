@@ -180,6 +180,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         compiler_command,
         declared_environment,
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
+        gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -251,6 +252,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "dependencyPolicy": "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots" if repository_ctx.attr.dependency_roots else "host-only",
             "dependencyState": project_dependency_state,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gerbilExecutableLinker": runtime.executable_linker,
             "nativeAbiFingerprint": fingerprint,
             "producerCompilerCommand": runtime.compiler_command,
             "gerbilBuildCores": int(build_cores.value),

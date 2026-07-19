@@ -7,16 +7,13 @@
 The provider environment prepends the selected capability's tool directory to
 =PATH= before the first raw =gxpkg= process starts.  It also derives
 =GERBIL_GSC= from the relocated =GERBIL_HOME=, appends Gambit =GAMBOPT=
-runtime mappings for =~~=, =~~bin=, and =~~lib=, and derives =GERBIL_GCC=
-from the consumer host toolchain.  The producer normalizes Gambit's installed
-=gambuild-C= to retain upstream object, dynamic, and linker flags while reading
-the compiler command from =GERBIL_GCC=.  The prebuilt repository applies the
-same normalization through a generated =~~bin= overlay for already published
-archives, so producer-only compiler launchers such as =/usr/bin/ccache= are
-never required by consumers.  This normalization is idempotent: an archive
-that already contains the complete =GERBIL_GCC= guard passes unchanged, while
-a partial or unknown guarded shape is rejected.  Dependency build scripts
-launched through
+runtime mappings for =~~=, =~~bin=, and =~~lib=.  The registered toolchain
+leaves the installed =gambuild-C= immutable.  A repository-owned =GERBIL_GSC=
+launcher uses Gambit's public =-cc= and =-ld-options= interfaces, while
+=GERBIL_GCC= selects the platform's final executable linker.  Linux retains
+the upstream host compiler/linker path.  Darwin uses the installed producer
+compiler for objects and the Xcode Clang driver for final executable links.
+Dependency build scripts launched through
 =/usr/bin/env gxi= and compiler processes launched by =gxc= therefore resolve
 the same immutable prebuilt capability instead of retaining producer-machine
 paths.  The synthetic prebuilt fixture requires the nested =gxi= lookup to
@@ -89,8 +86,7 @@ flowchart LR
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> COMPILE["Relocated gxc -> gsc compile verification"]
-  COMPILE --> NORMALIZE["Normalize gambuild-C compiler binding"]
-  NORMALIZE --> ENV["Consumer derives GAMBOPT + GERBIL_GCC"]
+  COMPILE --> ENV["Consumer derives GAMBOPT + public compiler boundaries"]
   ENV --> ARC["Archive + SHA-256 + manifest"]
   ARC --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
@@ -168,16 +164,18 @@ separate capability.
 
 Every provider repository publishes =install_dependencies=. Its launcher uses
 the selected provider environment, enters the consumer workspace, and runs the
-standard =gxpkg deps --install= followed by =gxpkg list=. When installation
-changes a watched project package from absent to present, the next Bazel command
+standard =gxpkg deps --install= command exactly once. When installation changes
+a watched project package from absent to present, the next Bazel command
 re-evaluates the repository and the receipt changes that package from =missing=
 to =ready=. This lifecycle is validated by an isolated synthetic prebuilt
-consumer; consumers do not need provider-specific install scripts.
+consumer; consumers do not need provider-specific install scripts.  The target
+is an explicit developer action, not an input-producing step hidden inside a
+compile rule.
 
-The provider environment SHALL be applied by the host =env= executable before
-the first raw =gxpkg= process starts. Only then may the standard =gxpkg env env=
-handoff run. This ordering is required for relocated prebuilts because
-=GERBIL_HOME= must already be visible while =gxpkg= imports =:gerbil/core=.
+The provider environment SHALL be applied by the host =env= executable to the
+single raw =gxpkg= process.  It SHALL NOT create a nested =gxpkg env env=
+lifecycle or perform an unconditional package listing.  The selected
+=GERBIL_HOME= is already visible when =gxpkg= imports =:gerbil/core=.
 
 * Archive and manifest contract
 

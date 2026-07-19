@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.project-receipt.v1.schema.json",
   "title": "Gerbil Bazel Project Receipt v1",
-  "description": "Stable action receipt for Gerbil project and immutable package builds.",
+  "description": "Stable action receipt for a declared Gerbil project build.",
   "type": "object",
   "required": [
     "schema",
@@ -27,9 +27,11 @@
       "type": "boolean"
     },
     "packageIdentity": {
+      "description": "Reserved v1 compatibility field. Package identity is owned by gerbil.pkg and gxpkg; current project producers emit the empty string.",
       "type": "string"
     },
     "packageRevision": {
+      "description": "Reserved v1 compatibility field. Source revisions are owned by the dependency manifest and Bazel repository pins; current project producers emit the empty string.",
       "type": "string"
     },
     "resourceGuard": {

@@ -59,8 +59,11 @@ run_phase() {
 run_phase query "$bazel_bin" query //...
 run_phase build "$bazel_bin" build //tests/smoke:compile
 run_phase test "$bazel_bin" test \
-  //tests/smoke:package_receipt_test \
+  //tests/smoke:guarded_project_receipt_test \
+  //tests/smoke:gxpkg_native_package_test \
+  //tests/smoke:install_dependencies_test \
   //tests/smoke:project_library_view_test \
+  //tests/smoke:project_receipt_test \
   //tests/smoke:test \
   //tests/smoke:toolchain_environment_test \
   --test_output=errors

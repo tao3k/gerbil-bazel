@@ -32,10 +32,6 @@ flowchart LR
 
 - =gerbil.host=: declares one native host toolchain repository.
 - =gerbil_project_compile=: executes =build.ss= in an isolated declared tree.
-- =gerbil_package_compile=: specializes the project compiler for one immutable
-  package identity and revision. Its declared package dependencies are isolated
-  =GerbilProjectInfo= nodes, so Bazel invalidates only the changed node and its
-  reverse dependency closure.
 - =gerbil_project_dev=: runs the same build truth in the source workspace for
   deliberate developer iteration. When tests are declared, the launcher builds
   once and then runs =gxtest= against those source-workspace test files.
@@ -48,9 +44,15 @@ flowchart LR
 - =GerbilToolchainInfo=: exposes resolved tools, environment, native ABI,
   dependency roots, logical CPU count, and physical memory to downstream Bazel
   rules.
-- =GerbilProjectInfo=: exposes the isolated project tree, transitive package
-  roots, optional package identity and revision, log, receipt, and source-root
-  anchor to declared consumers.
+- =GerbilProjectInfo=: exposes the isolated project tree, transitive dependency
+  roots, log, receipt, and source-root anchor to declared consumers.
+
+Gerbil package semantics are deliberately outside this public surface.
+=gerbil.pkg= owns package and dependency metadata, =gxpkg= owns package
+lifecycle, and the consumer's =build.ss= owns compile membership and ordering.
+Bazel repository pins, declared sources, and =GerbilProjectInfo= dependency
+trees provide content-addressed invalidation without a second package identity
+or revision model.
 
 The public API is loaded from =@gerbil_bazel//gerbil:defs.bzl=. Internal files
 may evolve without creating an application-framework dependency.

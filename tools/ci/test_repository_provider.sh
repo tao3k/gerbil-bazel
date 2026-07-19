@@ -68,16 +68,27 @@ if [[ -z "$archive" ]]; then
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
-    'if [[ "${1:-}" == --synthetic-driver-probe ]]; then printf "ready\\n"; fi' \
-    'exit 0' >"$payload/prefix/bin/gsc"
+    'set -euo pipefail' \
+    'compiler=' \
+    'link_options=' \
+    'mode=' \
+    'probe=0' \
+    'while (( $# > 0 )); do' \
+    '  case "$1" in' \
+    '    -cc) compiler="$2"; shift 2 ;;' \
+    '    -ld-options) link_options="$2"; shift 2 ;;' \
+    '    -dynamic | -exe) mode="${1#-}"; shift ;;' \
+    '    --synthetic-driver-probe) probe=1; shift ;;' \
+    '    *) shift ;;' \
+    '  esac' \
+    'done' \
+    '[[ "$probe" == 1 ]]' \
+    'printf "mode=%s\\ncompiler=%s\\nlinkOptions=%s\\n" "$mode" "$compiler" "$link_options"' \
+    >"$payload/prefix/bin/gsc"
   chmod +x "$payload/prefix/bin/gsc"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
-    'if test "${GERBIL_GCC+set}" = set; then' \
-    '  C_COMPILER="${GERBIL_GCC}"' \
-    'else' \
-    '  C_COMPILER=/producer-only/ccache' \
-    'fi' \
+    'C_COMPILER=/producer-only/ccache' \
     'FLAGS_DYN=-bundle' \
     'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
     'if [[ "${1:-}" == FLAGS_DYN ]]; then printf "%s\\n" "$FLAGS_DYN"; fi' \
@@ -104,27 +115,26 @@ if [[ -z "$archive" ]]; then
         '  if [[ "$option" == "~~bin="* ]]; then gambit_bin="${option#~~bin=}"; fi' \
         'done' \
         ': "${gambit_bin:?GAMBOPT must map ~~bin}"' \
-        '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == "$GERBIL_GCC" ]]' \
+        '[[ "$("$gambit_bin/gambuild-C" C_COMPILER)" == /producer-only/ccache ]]' \
+        '[[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == -bundle ]]' \
+        '[[ -x "$GERBIL_GSC" ]]' \
         'case "$(uname -s)" in' \
-        '  Darwin) [[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == "-bundle -Wl,-undefined,dynamic_lookup" ]] ;;' \
-        '  Linux) [[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == "-bundle" ]] ;;' \
+        '  Darwin) expected_dynamic_link_options=-Wl,-undefined,dynamic_lookup ;;' \
+        '  Linux) expected_dynamic_link_options= ;;' \
         '  *) exit 64 ;;' \
         'esac' \
-        '[[ -x "$GERBIL_GSC" ]]' \
-        '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == ready ]]' \
+        'dynamic_probe=$("$GERBIL_GSC" -dynamic --synthetic-driver-probe)' \
+        'expected_dynamic_probe=$(printf "mode=dynamic\\ncompiler=%s\\nlinkOptions=%s" "$CC" "$expected_dynamic_link_options")' \
+        '[[ "$dynamic_probe" == "$expected_dynamic_probe" ]]' \
+        'executable_probe=$("$GERBIL_GSC" -exe --synthetic-driver-probe)' \
+        'expected_executable_probe=$(printf "mode=exe\\ncompiler=%s\\nlinkOptions=" "$GERBIL_GCC")' \
+        '[[ "$executable_probe" == "$expected_executable_probe" ]]' \
         'exit 0' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxpkg ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
         ': "${GERBIL_HOME:?GERBIL_HOME is required before gxpkg startup}"' \
-        'if [[ "${1:-}" == env ]]; then' \
-        '  shift' \
-        '  [[ "${1:-}" == env ]] || exit 64' \
-        '  shift' \
-        '  while [[ "${1:-}" == *=* ]]; do export "$1"; shift; done' \
-        '  exec "$@"' \
-        'fi' \
         'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
         '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
         '  resolved_gxi=$(command -v gxi)' \
@@ -134,8 +144,10 @@ if [[ -z "$archive" ]]; then
         '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
         '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \
         '  printf "command=deps --install\\nGERBIL_PATH=%s\\n" "$GERBIL_PATH" >"$GERBIL_PATH/install-dependencies.receipt"' \
+        '  exit 0' \
         'fi' \
-        'exit 0' >"$payload/prefix/bin/$tool"
+        'printf "unexpected synthetic gxpkg command: %s\\n" "$*" >&2' \
+        'exit 64' >"$payload/prefix/bin/$tool"
     else
       printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$payload/prefix/bin/$tool"
     fi

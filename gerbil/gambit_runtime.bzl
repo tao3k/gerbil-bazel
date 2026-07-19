@@ -7,73 +7,6 @@ def _append_runtime_option(options, option):
         return options + option
     return options + "," + option
 
-def _normalized_gambuild_compiler(source, dynamic_link_options):
-    normalized_guard = "if test \"${GERBIL_GCC+set}\" = set; then"
-    normalized_binding = "  C_COMPILER=\"${GERBIL_GCC}\""
-    if normalized_guard in source:
-        if normalized_binding not in source:
-            fail("Gambit gambuild-C has an invalid GERBIL_GCC normalization guard")
-        compiler_source = source
-    else:
-        output = []
-        replacements = 0
-        for line in source.split("\n"):
-            if line.startswith("C_COMPILER="):
-                output.extend([
-                    "if test \"${GERBIL_GCC+set}\" = set; then",
-                    "  C_COMPILER=\"${GERBIL_GCC}\"",
-                    "else",
-                    "  {}".format(line),
-                    "fi",
-                ])
-                replacements += 1
-            else:
-                output.append(line)
-        if replacements != 1:
-            fail("Gambit gambuild-C must contain exactly one C_COMPILER binding; got {}".format(
-                replacements,
-            ))
-        compiler_source = "\n".join(output)
-
-    if not dynamic_link_options:
-        return compiler_source
-
-    dynamic_binding = 'FLAGS_DYN="${{FLAGS_DYN}} {}"'.format(dynamic_link_options)
-    if dynamic_binding in compiler_source:
-        return compiler_source
-    output = []
-    replacements = 0
-    for line in compiler_source.split("\n"):
-        output.append(line)
-        if line.startswith("FLAGS_DYN="):
-            output.append(dynamic_binding)
-            replacements += 1
-    if replacements != 1:
-        fail("Gambit gambuild-C must contain exactly one FLAGS_DYN binding; got {}".format(
-            replacements,
-        ))
-    return "\n".join(output)
-
-def _normalized_gambit_bin(repository_ctx, gambit_bin, dynamic_link_options):
-    gambuild = repository_ctx.path("{}/gambuild-C".format(gambit_bin))
-    if not gambuild.exists:
-        return gambit_bin
-
-    overlay = "gambit-bin"
-    repository_ctx.file("{}/.root".format(overlay), "gerbil-bazel Gambit bin overlay\n")
-    for entry in gambit_bin.readdir():
-        if entry.basename != "gambuild-C":
-            repository_ctx.symlink(entry, "{}/{}".format(overlay, entry.basename))
-    repository_ctx.file(
-        "{}/gambuild-C".format(overlay),
-        _normalized_gambuild_compiler(
-            repository_ctx.read(gambuild),
-            dynamic_link_options,
-        ),
-        executable = True,
-    )
-    return repository_ctx.path(overlay)
-
 def discover_gambit_home(repository_ctx, gxi):
     """Returns the native Gambit home reported by the selected Gerbil runtime."""
     result = repository_ctx.execute(
@@ -154,13 +87,54 @@ def _materialized_compiler(repository_ctx, compiler_command):
         path = wrapper_path,
     )
 
+def _materialized_gsc(
+        repository_ctx,
+        raw_gsc,
+        producer_compiler,
+        dynamic_link_options,
+        executable_linker):
+    wrapper = "gerbil-gsc"
+    repository_ctx.file(
+        wrapper,
+        """#!/usr/bin/env bash
+set -euo pipefail
+raw_gsc={raw_gsc}
+producer_compiler={producer_compiler}
+dynamic_link_options={dynamic_link_options}
+executable_linker={executable_linker}
+mode=dynamic
+for argument in "$@"; do
+  case "$argument" in
+    -c | -link | -obj | -exe | -dynamic) mode=${{argument#-}} ;;
+  esac
+done
+compiler=$producer_compiler
+if [[ $mode == exe && -n $executable_linker ]]; then
+  compiler=$executable_linker
+fi
+gsc_options=(-cc "$compiler")
+if [[ $mode == dynamic && -n $dynamic_link_options ]]; then
+  gsc_options+=(-ld-options "$dynamic_link_options")
+fi
+exec "$raw_gsc" "${{gsc_options[@]}}" "$@"
+""".format(
+            dynamic_link_options = repr(dynamic_link_options),
+            executable_linker = repr(executable_linker),
+            producer_compiler = repr(str(producer_compiler)),
+            raw_gsc = repr(str(raw_gsc)),
+        ),
+        executable = True,
+    )
+    return repository_ctx.path(wrapper)
+
 def normalized_gambit_runtime(
         repository_ctx,
         gerbil_home,
         compiler_command,
         environment,
-        gambit_dynamic_link_options = ""):
-    """Returns an environment that consumes a compiler-only gambuild-C overlay."""
+        gambit_dynamic_link_options = "",
+        gambit_executable_linker = ""):
+    """Returns an environment using upstream Gerbil and Gambit compiler hooks."""
     gambit_bin = repository_ctx.path("{}/bin".format(gerbil_home))
     gambit_lib = repository_ctx.path("{}/lib".format(gerbil_home))
     if not gambit_bin.exists or not gambit_lib.exists:
@@ -172,26 +146,32 @@ def normalized_gambit_runtime(
         fail("Gerbil compiler driver does not exist: {}".format(gerbil_gsc))
 
     compiler = _materialized_compiler(repository_ctx, compiler_command)
-    runtime_bin = _normalized_gambit_bin(
+    gsc = _materialized_gsc(
         repository_ctx,
-        gambit_bin,
+        gerbil_gsc,
+        compiler.path,
         gambit_dynamic_link_options,
+        gambit_executable_linker,
     )
     output = dict(environment)
     gambopt = output.get("GAMBOPT", repository_ctx.os.environ.get("GAMBOPT", ""))
     gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))
-    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(runtime_bin))
+    gambopt = _append_runtime_option(gambopt, "~~bin={}".format(gambit_bin))
     gambopt = _append_runtime_option(gambopt, "~~lib={}".format(gambit_lib))
     output.update({
         "CC": str(compiler.path),
         "GAMBOPT": gambopt,
-        "GERBIL_GCC": str(compiler.path),
-        "GERBIL_GSC": str(gerbil_gsc),
+        "GERBIL_GCC": gambit_executable_linker if gambit_executable_linker else str(compiler.path),
+        "GERBIL_GSC": str(gsc),
         "GERBIL_HOME": gerbil_home,
     })
+    if gambit_executable_linker:
+        output["GERBIL_BAZEL_EXE_LINKER"] = gambit_executable_linker
     return struct(
         compiler_command = compiler.command,
         compiler_identity_path = compiler.identity_path,
         compiler_path = compiler.path,
         environment = output,
+        executable_linker = gambit_executable_linker,
+        gsc_path = gsc,
     )

@@ -305,6 +305,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         host.gerbil_cc,
         environment,
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
+        gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -375,6 +376,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "gerbilBuildCoresSource": build_cores.source,
             "gerbilHome": gerbil_home_relative,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gerbilExecutableLinker": runtime.executable_linker,
             "nativeAbiFingerprint": native_abi,
             "platform": {
                 "arch": platform.architecture,
