@@ -39,6 +39,10 @@ flowchart TD
   G["Exact Gerbil source ref and URL"] --> H["Installation identity"]
   E --> H
   H --> I["installDigest"]
+  I --> O["Exact source-build checkpoint key"]
+  O --> P["Restore newest safe stage-boundary generation"]
+  P --> Q["Save only after a completed upstream stage"]
+  Q -->|"Next retry"| P
   C --> J["Runtime execution policy only"]
   J -->|"No output change"| K["Does not invalidate installation"]
 #+end_src
@@ -65,6 +69,31 @@ incomplete prefix admissible, cannot create an immutable bootstrap success
 receipt, and cannot turn a warm-cache retry into a zero-cache capacity proof.
 Only the exact installation cache or a newly validated =ready= bootstrap
 receipt may authorize materialization.
+
+The source-build checkpoint is a second non-authoritative recovery layer for
+work that ccache cannot observe.  ccache wraps native C compiler calls, while
+Gerbil's Scheme frontend schedules =compile-file= jobs and writes generated
+Scheme, C, object, library, and interface outputs under the upstream build
+tree.  A checkpoint key binds the exact =installDigest= and rotates by workflow
+run ID and attempt.  There is no revision or version fallback.
+
+Only a completed upstream stage boundary may produce
+=gerbil-bazel.source-build-checkpoint.v1=.  The workflow copies that boundary
+into a generation separate from the live tree before starting the next stage.
+If =TERM= interrupts the next stage, its possibly truncated timestamp-newer
+outputs remain only in the live tree and are discarded.  The immutable cache
+save sees the last completed generation, never the interrupted tree.  A
+missing, corrupt, path-traversing, wrong source or prefix root, wrong-revision, or
+identity-mismatched generation falls back to cold source preparation and
+cannot authorize materialization.
+
+Each generation also carries a canonical manifest of every non-Git regular
+file and symbolic link in the copied tree.  Git object hashes bind file content
+and link targets; the receipt binds the manifest with SHA-256.  Validation
+recomputes the manifest in the cached generation, and restore recomputes it
+again in the sibling temporary copy before replacing the live source root.
+This detects a truncated non-sentinel output even when its timestamp is newer
+and the usual =gxi= or =build/lib/std= sentinels remain present.
 
 The installation digest includes:
 
@@ -104,24 +133,47 @@ sequenceDiagram
   participant CI as "GitHub CI"
   participant ID as "Source identity"
   participant Cache as "Actions cache"
+  participant Checkpoint as "Safe stage checkpoint"
   participant Upstream as "Gerbil upstream"
   CI->>ID: Resolve compiler, libraries, config, exact ref
   ID-->>CI: installDigest and compilerCacheNamespaceDigest
   CI->>Cache: Restore installation by installDigest
   alt Installation miss
     CI->>Cache: Restore ccache namespace
-    CI->>Upstream: ./configure with declared arguments
-    CI->>Upstream: make -jN
+    CI->>Checkpoint: Restore newest generation by exact installDigest
+    alt Valid safe boundary
+      Checkpoint-->>CI: Exact checkout and completed boundary
+    else Missing or invalid
+      CI->>Upstream: Exact checkout and ./configure
+    end
+    loop Remaining declared upstream stages
+      CI->>Upstream: ./build.sh STAGE with dynamic -jN
+      Upstream-->>CI: Stage completed and parallel jobs drained
+      CI->>Checkpoint: Advance at declared safe boundaries
+    end
     CI->>Upstream: make install
-    CI->>Cache: Save installation and compiler cache
+    CI->>Cache: Save installation, ccache, or last safe checkpoint as applicable
   else Installation hit
     Cache-->>CI: Exact native installation
   end
 #+end_src
 
-Gerbil upstream continues to own configure, build scheduling, bootstrap stages,
-and installation. The identity layer does not invoke private stage scripts and
-does not reproduce gxpkg or =std/make= semantics.
+Gerbil upstream continues to own configure, every bootstrap and library stage,
+parallel Scheme scheduling, timestamp decisions, and installation.  The pinned
+=07c848...= root =build.sh= explicitly forwards the documented
+=prepare|gambit|boot-gxi|stage0|stage1|stdlib|libgerbil|lang|r7rs-large|srfi|tools=
+commands to its source builder.  The declarative stage sequence invokes only
+those revision-local upstream commands; it does not call internal Scheme
+functions, include the undocumented =doc= arm, or reproduce gxpkg or
+=std/make= semantics.
+
+This revision's top-level =make= cannot be a checkpoint resume entrypoint.  It
+unconditionally runs =build_prepare=, whose =target_setup= removes
+=bootstrap/bin=, =bootstrap/lib=, =build/bin=, and =build/lib=.  That destroys
+the Scheme outputs a checkpoint is intended to preserve.  The stage sequence
+and checkpoint boundaries are therefore part of output identity.  Any upstream
+revision, order, entrypoint, or layout change invalidates the checkpoint and
+requires an explicit contract update rather than a compatibility guess.
 
 * Atomic invalidation scenarios
 
@@ -153,20 +205,35 @@ architecture facts; those remain owned by the materialization receipt.  An
 explicit runner admission remains subject to the identity-owned 12-minute
 source-build guard.
 
-Every admitted cache-miss execution emits
-=gerbil-bazel.gerbil-bootstrap-attempt.v1=.  This current-run receipt is
+Every newly admitted cache-miss execution emits
+=gerbil-bazel.gerbil-bootstrap-attempt.v2=.  The closed v1 schema remains the
+immutable validator for historical receipts; it is not widened in place.
+The v2 current-run receipt is
 separate from the immutable successful bootstrap receipt.  It records exactly
 one of =ready=, =failed=, =timed-out=, or =interrupted=, together with the
 identity digests, policy-owned timeout and termination grace, elapsed time,
 last observed upstream phase, exit or signal evidence, and whether the
 immutable success receipt exists and validates against the exact install
-identity.  It MUST NOT contain runner name, system,
+identity.  It also MUST emit the nested =checkpoint= snapshot:
+=restoreOutcome=, restored boundary/index/generation, and last-safe
+boundary/index.  Unknown values are JSON =false=, never an inferred string.
+The wrapper obtains this snapshot from the bootstrap progress receipt, so a
+=failed=, =timed-out=, or =interrupted= attempt remains self-describing without
+log correlation.  =restoreOutcome= distinguishes =not-observed=,
+=not-configured=, =not-found=, =pending=, =rejected=, and =restored=.  The
+v2 schema binds the only valid boundary/index pairs to =stage1/4=,
+=stdlib/5=, and =tools/10=, and a restored generation cannot report a
+last-safe boundary earlier than the restored boundary.  The attempt MUST NOT
+contain runner name, system,
 architecture, or CPU observations.
 
 The attempt wrapper owns the internal 12-minute enforcement and invokes the
-unchanged bootstrap command exactly once.  The bootstrap command continues to
-own =configure -> make -jN -> make install=.  A non-ready attempt preserves its
-failure status and MUST NOT manufacture an immutable =ready= bootstrap receipt.
+bootstrap command exactly once.  The bootstrap command owns exact checkout or
+checkpoint restore, =configure= when cold, the declared upstream stage
+sequence with dynamic available-CPU parallelism, safe-boundary snapshots, and
+=make install=.  A non-ready attempt preserves its failure status and MUST NOT
+manufacture an immutable =ready= bootstrap receipt.  A safe checkpoint remains
+recovery evidence only and MUST NOT change that attempt outcome.
 The 30-minute GitHub job limit remains a catastrophic outer ceiling, not the
 normal source-build timeout and not a substitute for typed attempt evidence.
 
@@ -213,12 +280,20 @@ flowchart LR
   S["Declared runner selection"] --> Q{"Source producer admission"}
   L --> Q
   Q -->|"cache hit"| M
-  Q -->|"cold miss + explicit runner"| GUARD["Internal 12-minute bootstrap guard<br/>policy-owned termination grace"]
+  Q -->|"cold miss + explicit runner"| RECOVER["Restore ccache and exact-identity<br/>safe stage checkpoint"]
+  RECOVER --> GUARD["Internal 12-minute bootstrap guard<br/>policy-owned termination grace"]
+  RECOVER --> SNAPSHOT["Atomic checkpoint telemetry<br/>restore outcome + restored generation/boundary/index<br/>last observed safe boundary/index"]
   JOB["30-minute catastrophic job ceiling"] -.-> GUARD
-  GUARD --> U["One unchanged upstream lifecycle<br/>configure -> make -jN -> make install"]
+  GUARD --> U["Remaining upstream-exposed stages<br/>dynamic -jN -> make install"]
+  U --> SAFE["Atomically advance only after<br/>a completed declared stage boundary"]
+  SAFE --> CHECKPOINT["Non-authoritative checkpoint generation<br/>exact installDigest + rotating attempt key"]
+  CHECKPOINT --> SNAPSHOT
   U --> ATTEMPT{"Current-run bootstrap attempt receipt"}
+  SNAPSHOT --> ATTEMPT
   ATTEMPT -->|"ready + immutable success receipt"| M
-  ATTEMPT -->|"failed / timed-out / interrupted"| STOP["Stop; promotion prohibited"]
+  ATTEMPT -->|"failed / timed-out / interrupted"| DISCARD["Discard interrupted live tree"]
+  DISCARD --> STOP["Save last safe generation; promotion prohibited"]
+  CHECKPOINT -->|"Authorized retry"| RECOVER
   Q -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
   X["Successful main Source Producer run"] --> PROMOTE{"Explicit promotion authorization"}
   Y["Non-main Source Producer run<br/>unique open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
@@ -240,5 +315,8 @@ falls back to a source build.  The =auto= tag uses
 
 =gerbil-bazel.source-build-identity.v1= records the complete inputs and both
 digests. The bootstrap receipt MUST record the identity and phase durations for
-source preparation, configure, upstream build, and install. Generated receipts
-remain CI artifacts under =.ci= and are never committed.
+source preparation, configure, upstream build, and install.  The checkpoint
+receipt records its exact identity, source root, prefix root, tree-manifest
+digest, complete stage sequence, and last safe boundary; it never records an
+interrupted frontier as complete.
+Generated receipts remain CI artifacts under =.ci= and are never committed.

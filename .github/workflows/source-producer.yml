@@ -43,6 +43,7 @@ jobs:
       - name: Validate source build identity semantics
         run: |
           tools/ci/test_source_build_identity.sh
+          tools/ci/test_source_build_checkpoint.sh
           tools/ci/test_bootstrap_gerbil.sh
           tools/ci/test_gerbil_bootstrap_attempt.sh
           tools/ci/test_install_materialization.sh
@@ -72,6 +73,16 @@ jobs:
           path: .ci/gerbil-prefix
           key: gerbil-install-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
 
+      - name: Restore Linux source-build checkpoint
+        id: gerbil-source-build-checkpoint
+        if: steps.gerbil-install-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ci/gerbil-source-build-checkpoint
+          key: gerbil-source-build-checkpoint-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            gerbil-source-build-checkpoint-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}-
+
       - name: Admit source producer execution
         env:
           GERBIL_INSTALL_CACHE_HIT: ${{ steps.gerbil-install-cache.outputs.cache-hit }}
@@ -95,16 +106,31 @@ jobs:
           GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
           GERBIL_REQUIRE_CCACHE: "1"
           GERBIL_SOURCE_BUILD_CONFIG: ${{ github.workspace }}/tools/ci/gerbil_source_build_config.json
+          GERBIL_SOURCE_BUILD_CHECKPOINT_ROOT: ${{ github.workspace }}/.ci/gerbil-source-build-checkpoint
           GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
           GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
           GERBIL_TERMINATION_GRACE_SECONDS: ${{ steps.gerbil-source-build-identity.outputs.termination_grace_seconds }}
         run: |
+          set +e
           tools/ci/run_gerbil_bootstrap_attempt.sh \
             "$GERBIL_BUILD_TIMEOUT_MINUTES" \
             "$GERBIL_TERMINATION_GRACE_SECONDS" \
             "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT" \
             "$GERBIL_BOOTSTRAP_ATTEMPT_RECEIPT" \
             tools/ci/bootstrap_gerbil.sh
+          build_status=$?
+          set -e
+          checkpoint_available=false
+          if tools/ci/source_build_checkpoint.sh \
+            validate \
+            "$GERBIL_SOURCE_BUILD_CHECKPOINT_ROOT" \
+            "$GERBIL_SRC" \
+            "$GERBIL_PREFIX" \
+            "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT"; then
+            checkpoint_available=true
+          fi
+          echo "checkpoint_available=$checkpoint_available" >> "$GITHUB_OUTPUT"
+          exit "$build_status"
 
       - name: Save Linux compiler cache
         if: >-
@@ -117,6 +143,18 @@ jobs:
         with:
           path: .ci/ccache
           key: ${{ steps.gerbil-compiler-cache.outputs.cache-primary-key }}
+
+      - name: Save Linux source-build checkpoint
+        if: >-
+          always() &&
+          steps.gerbil-install-cache.outputs.cache-hit != 'true' &&
+          steps.gerbil-build.outcome == 'failure' &&
+          steps.gerbil-build.outputs.checkpoint_available == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ci/gerbil-source-build-checkpoint
+          key: ${{ steps.gerbil-source-build-checkpoint.outputs.cache-primary-key }}
 
       - name: Record Linux Gerbil materialization
         env:
@@ -172,4 +210,6 @@ jobs:
             .ci/gerbil-source-build-identity.json
             .ci/receipts/*.json
             .ci/gerbil-prefix/bootstrap.receipt.json
+            .ci/gerbil-source-build-checkpoint/current.json
+            .ci/gerbil-source-build-checkpoint/generations/*/receipt.json
           if-no-files-found: warn

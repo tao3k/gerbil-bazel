@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      refresh_lock:
+        description: Generate and verify the cross-platform Bazel module lock
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -18,6 +24,7 @@ env:
 
 jobs:
   bazel:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.refresh_lock }}
     name: Bazel (${{ matrix.runner }}, ${{ matrix.gerbil_provider }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
@@ -99,6 +106,7 @@ jobs:
       - name: Validate source build attempt policy
         run: |
           tools/ci/test_source_build_identity.sh
+          tools/ci/test_source_build_checkpoint.sh
           tools/ci/test_bootstrap_gerbil.sh
           tools/ci/test_gerbil_bootstrap_attempt.sh
           tools/ci/test_source_producer_workflow.sh
@@ -129,3 +137,98 @@ jobs:
             .ci/gerbil-version.txt
             .ci/receipts/*.json
           if-no-files-found: warn
+
+  lock-linux-seed:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}
+    name: Lock refresh (linux-amd64 seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out gerbil-bazel
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: gerbil-bazel-lock-Linux-X64
+
+      - name: Generate the Linux module-extension evaluation
+        run: |
+          bazelisk mod deps --config=lock_update
+          bazelisk mod deps --lockfile_mode=error
+
+      - name: Upload the Linux lock seed
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gerbil-bazel-module-lock-linux-${{ github.run_id }}
+          path: MODULE.bazel.lock
+          if-no-files-found: error
+
+  lock-darwin-merge:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}
+    name: Lock refresh (darwin-arm64 merge)
+    needs: lock-linux-seed
+    runs-on: macos-26
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out gerbil-bazel
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download the Linux lock seed
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: gerbil-bazel-module-lock-linux-${{ github.run_id }}
+          path: .ci/lock-linux
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: gerbil-bazel-lock-macOS-ARM64
+
+      - name: Merge the Darwin module-extension evaluation
+        run: |
+          cp .ci/lock-linux/MODULE.bazel.lock MODULE.bazel.lock
+          bazelisk mod deps --config=lock_update
+          bazelisk mod deps --lockfile_mode=error
+
+      - name: Upload the merged cross-platform lock
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gerbil-bazel-module-lock-${{ github.run_id }}
+          path: MODULE.bazel.lock
+          if-no-files-found: error
+
+  lock-linux-verify:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}
+    name: Lock verify (linux-amd64 merged)
+    needs: lock-darwin-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out gerbil-bazel
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download the merged cross-platform lock
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: gerbil-bazel-module-lock-${{ github.run_id }}
+          path: .ci/lock-merged
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: gerbil-bazel-lock-Linux-X64
+
+      - name: Verify the merged lock on Linux
+        run: |
+          cp .ci/lock-merged/MODULE.bazel.lock MODULE.bazel.lock
+          bazelisk mod deps --lockfile_mode=error

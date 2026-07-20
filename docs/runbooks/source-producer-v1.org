@@ -10,8 +10,12 @@ after the workflow is registered on the default branch.  It does not authorize
 merging a pull request, provisioning a runner, changing billing, deleting a
 cache, or publishing a release.  Each action requires separate authority.
 
-The producer preserves the upstream Gerbil lifecycle.  It does not schedule
-private bootstrap stages or replace =configure -> make -jN -> make install=.
+The producer preserves upstream Gerbil stage ownership.  It invokes only the
+stage commands exposed by the exact pinned =build.sh=, preserves their declared
+order and dynamic parallelism, and leaves Scheme dependency decisions to
+upstream =std/make=.  Checkpoint recovery does not reuse the top-level =make=
+entrypoint because that revision's prepare phase deletes the outputs needed for
+resume.
 
 * Lifecycle
 
@@ -24,13 +28,23 @@ flowchart TD
   E --> F["Resolve identity and exact installation-cache result"]
   F --> G{"Admission"}
   G -->|"cache hit"| H["Materialized capability; not a cold-capacity proof"]
-  G -->|"cold miss + explicit runner"| I["Restore compatible non-authoritative ccache"]
+  G -->|"cold miss + explicit runner"| I["Restore compatible ccache and exact-identity<br/>safe stage checkpoint"]
   G -->|"cold miss + implicit runner"| J["Blocked admission receipt"]
-  I --> Q["12-minute internal bootstrap guard"]
-  Q --> K{"Bootstrap attempt receipt"}
+  I --> V{"Checkpoint valid?"}
+  V -->|"yes"| W["Copy safe generation to live tree;<br/>resume after completed boundary"]
+  V -->|"no"| X["Exact checkout and configure"]
+  W --> Q["12-minute internal bootstrap guard"]
+  X --> Q
+  Q --> Y["Run remaining upstream-exposed stages<br/>with dynamic available CPUs"]
+  Y --> Z["Advance only after a completed<br/>declared stage boundary"]
+  Y --> K{"Bootstrap attempt receipt"}
+  Z --> S["Refresh atomic checkpoint telemetry<br/>restore outcome + restored generation/boundary/index<br/>last observed safe boundary/index"]
+  S --> K
   K -->|"ready"| R["Save run-attempt ccache generation"]
-  K -->|"failed / timed-out / interrupted"| M["Stop and retain typed evidence"]
+  K -->|"failed / timed-out / interrupted"| M["Discard live tree; stop and retain typed evidence"]
+  M --> AA["Save last safe checkpoint generation when present"]
   M --> R
+  AA -->|"Separately authorized retry"| E
   R -->|"ready path"| L["Verify immutable success, materialization, package, and artifacts"]
   R -->|"authorized retry after failure; not cold proof"| E
   H --> L
@@ -47,10 +61,32 @@ a rerun never tries to overwrite an immutable GitHub cache entry.  A typed
 =timed-out= attempt therefore retains its ccache work for an explicitly
 authorized retry instead of losing it with the ephemeral runner.
 
+Source-build checkpoint recovery is also progressive and non-authoritative,
+but it serves the upstream Scheme frontend rather than the native compiler.
+Its restore prefix contains the exact =installDigest= and has no cross-revision
+fallback.  A valid generation contains a copy of the exact checkout at one of
+the declared completed boundaries =stage1=, =stdlib=, or =tools=.  The live
+tree used by the next stage is separate.  A timeout therefore cannot mutate the
+safe generation, and only that safe generation is eligible for the rotating
+failure-path cache save.
+
+Validation recomputes the generation's canonical file-content manifest and
+its SHA-256 receipt binding before use, then recomputes the same manifest after
+copying into a sibling temporary source root.  A non-sentinel mutation,
+missing file, corrupt manifest, or copy mismatch rejects recovery before the
+live source root is replaced.
+
+The top-level upstream =make= is intentionally not used for checkpoint resume:
+at this pinned revision its prepare phase deletes =bootstrap/bin|lib= and
+=build/bin|lib=.  Resume invokes only the revision-local stage commands exposed
+by upstream =build.sh= and preserves their order from output identity.  It does
+not implement Scheme dependency or timestamp rules in this repository.
+
 Do not treat that retry as a zero-cache cold-capacity proof.  A partial ccache
 generation cannot authorize the Gerbil prefix, and an installation cache entry
 is still created only after the bootstrap produces a fresh, exact, validated
-=ready= receipt.  Promotion remains independent of both cache layers.
+=ready= receipt.  A source-build checkpoint also cannot authorize a prefix.
+Promotion remains independent of all recovery cache layers.
 
 * Preconditions
 
@@ -66,7 +102,8 @@ following:
   variable changes.
 
 The known four-core hosted runner does not satisfy the cold 12-minute proof.
-Do not dispatch an implicit =ubuntu-latest= cold build as a retry strategy.
+Do not dispatch an implicit =ubuntu-latest= cold build as a retry strategy and
+do not classify checkpoint-assisted completion as a cold-capacity pass.
 The first authorized default-branch dispatch,
 [[https://github.com/tao3k/gerbil-bazel/actions/runs/29728030899][Source Producer run 29728030899]] at merge commit
 =50f85078393edb74c25569c32dc787054860b5ac=, was explicitly admitted on
@@ -74,6 +111,30 @@ The first authorized default-branch dispatch,
 exactly 720 seconds in =upstream-build= with =signal=TERM=, no success receipt,
 and no materialized capability; the overall job ended after 12 minutes 18
 seconds with exit 124.  This is valid guard evidence, not a capacity pass.
+After compiler-cache continuity was merged, runs
+[[https://github.com/tao3k/gerbil-bazel/actions/runs/29730633648][29730633648]] and
+[[https://github.com/tao3k/gerbil-bazel/actions/runs/29731507084][29731507084]]
+both restored or advanced ccache yet still spent about 448--449 seconds in
+Scheme compilation before the same 720-second =TERM=.  This proves that another
+identical ccache-only retry has low evidence value; it is the reason the safe
+stage checkpoint exists.
+
+The first hosted stage-checkpoint acceptance used
+[[https://github.com/tao3k/gerbil-bazel/actions/runs/29738946094][Source Producer run 29738946094]] at pull-request head
+=94e748ebc003c66fbac5f1cd36035a982d6dfc33=.  Attempt 1 stopped at the same
+720-second guard and saved the =stage1= boundary in 87,425,458 bytes.  Attempt 2
+restored that exact cache, completed =stdlib=, timed out in =libgerbil=, and
+advanced the safe boundary to =stdlib= in 124,317,846 bytes.  Attempt 3 restored
+=stdlib=, completed the remaining upstream build in 5 minutes 49 seconds, and
+closed materialization, activation, producer verification, relocatable
+packaging, independent package-consumer validation, capability upload, and
+receipt upload in 7 minutes 41 seconds.  It created the authoritative exact
+installation cache for
+=installDigest=587c0509c35a07228df5b028de6be98841bbfce8c8127f551b43290be4ef5e6b=.
+This proves bounded, monotonic checkpoint convergence on the hosted runner; it
+does not convert the three-attempt recovery proof into a one-attempt cold
+capacity pass and does not authorize promotion.
+
 The internal wrapper sends =TERM= when the 12-minute deadline expires, waits
 the declarative 30-second termination grace, and then permits GNU =timeout= to
 send =KILL=.  The 30-minute workflow job limit is only the catastrophic outer
@@ -148,6 +209,12 @@ For a genuine first cold-capacity proof, all of the following are mandatory:
   build;
 - =gerbil-bootstrap-attempt.json= has outcome =ready=, exit code =0=, no signal,
   =successReceiptPresent=true=, and =successReceiptValidated=true=;
+- a current =gerbil-bootstrap-attempt.json= has schema
+  =gerbil-bazel.gerbil-bootstrap-attempt.v2= and contains the closed nested
+  =checkpoint= snapshot.  A restored attempt records exact restored
+  boundary/index/generation; every attempt records the last observed safe
+  boundary/index or JSON =false=.  =not-observed= is an observability failure
+  that requires investigation even when another field appears healthy;
 - the immutable =bootstrap.receipt.json= has outcome =ready= and contains all
   four successful upstream phases;
 - the installation materialization is =built=, not =cache-hit=;
@@ -156,10 +223,33 @@ For a genuine first cold-capacity proof, all of the following are mandatory:
 - the run head SHA is the expected =main= head;
 - the capability archive and its digest are present exactly once.
 
+For checkpoint-assisted readiness, additionally verify that the restored
+=gerbil-bazel.source-build-checkpoint.v1= receipt carries the same exact
+=installDigest=, output-identity digest, source ref, source root, prefix root,
+tree-manifest digest, stage sequence, and one declared safe boundary.  The immutable ready receipt
+must state the restored boundary and last safe boundary.  The v2 current
+attempt receipt must carry restore outcome, restored boundary/index/generation,
+and the last observed safe boundary/index derived from progress.  Only
+=stage1/4=, =stdlib/5=, and =tools/10= are valid pairs; a restored boundary
+cannot be later than the last observed safe boundary.  A checkpoint cache action hit
+without a valid typed receipt is a cold fallback, not recovery evidence.
+
+Checkpoint publication and progress publication are separate atomic writes.
+Termination between them can leave the attempt snapshot conservatively behind
+the authoritative checkpoint pointer, but it cannot make the attempt overclaim
+an unobserved boundary.  When they differ, validate the typed checkpoint
+receipt and manifest and use that receipt as recovery authority; =pending= and
+=not-observed= never authorize materialization or promotion.
+
 A =cache-hit= run is valid materialization and packaging evidence, but it does
 not prove that the selected runner can complete a cold source build within 12
 minutes.  Do not delete an exact installation cache merely to force a cold
 proof without separate destructive-action approval.
+
+A checkpoint-assisted =ready= run is valid built materialization and packaging
+evidence after the final immutable receipt closes.  It proves bounded
+convergence across exact-identity attempts; it does not prove one-attempt cold
+capacity.  Every retry remains an explicit operator action.
 
 The following outcomes prohibit promotion:
 

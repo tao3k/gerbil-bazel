@@ -51,6 +51,7 @@ scenario-runner-test:
 
 source-identity-test:
     tools/ci/test_source_build_identity.sh
+    tools/ci/test_source_build_checkpoint.sh
     tools/ci/test_bootstrap_gerbil.sh
     tools/ci/test_gerbil_bootstrap_attempt.sh
     tools/ci/test_install_materialization.sh
@@ -62,8 +63,14 @@ promotion-authorization-test:
 
 check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
+lock-check:
+    {{ bazel }} mod deps --lockfile_mode=error
+
+lock-update:
+    {{ bazel }} mod deps --config=lock_update
+
 mod-tidy:
-    {{ bazel }} mod tidy
+    {{ bazel }} mod tidy --config=lock_update
 
 prebuilt-test:
     tools/ci/test_repository_provider.sh prebuilt

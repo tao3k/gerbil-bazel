@@ -1,0 +1,5 @@
+# Normal development and CI commands must not mutate dependency resolution.
+common --lockfile_mode=error
+
+# Dependency maintenance is an explicit, reviewable operation.
+common:lock_update --lockfile_mode=update
