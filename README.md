@@ -70,6 +70,11 @@ falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
 
+Source production is a separate, explicit operation.  The
+[Source Producer v1 runbook](docs/runbooks/source-producer-v1.org) defines
+default-branch registration, runner selection, cold-build receipt acceptance,
+and the independent promotion boundary.
+
 Both `auto` providers and the explicit `prebuilt` provider support the same
 project-library view as `host`. Declare `project_root_marker`,
 `project_library_relative_path`, and `project_dependency_packages`; the

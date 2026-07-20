@@ -52,6 +52,7 @@ scenario-runner-test:
 source-identity-test:
     tools/ci/test_source_build_identity.sh
     tools/ci/test_bootstrap_gerbil.sh
+    tools/ci/test_gerbil_bootstrap_attempt.sh
     tools/ci/test_install_materialization.sh
     tools/ci/test_source_producer_admission.sh
 

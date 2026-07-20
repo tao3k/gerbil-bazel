@@ -13,6 +13,33 @@ build_cores="${GERBIL_BUILD_CORES:-}"
 require_ccache="${GERBIL_REQUIRE_CCACHE:-0}"
 started_at="$SECONDS"
 phases='[]'
+progress_receipt="${GERBIL_BOOTSTRAP_PROGRESS_RECEIPT:-}"
+
+write_progress() {
+  local phase=$1
+  local state=$2
+  local exit_code=${3:-false}
+  local progress_dir
+  local progress_name
+  local progress_tmp
+  if [[ -z "$progress_receipt" ]]; then
+    return
+  fi
+  progress_dir="$(dirname "$progress_receipt")"
+  progress_name="$(basename "$progress_receipt")"
+  mkdir -p "$progress_dir"
+  progress_tmp="$(mktemp "$progress_dir/.$progress_name.tmp.XXXXXX")"
+  if ! jq -n \
+    --arg phase "$phase" \
+    --arg state "$state" \
+    --argjson exit_code "$exit_code" \
+    '{phase: $phase, state: $state, exit_code: $exit_code}' \
+    >"$progress_tmp"; then
+    rm -f "$progress_tmp"
+    return 1
+  fi
+  mv "$progress_tmp" "$progress_receipt"
+}
 
 source_build_config_json="$(
   jq -cSe '
@@ -56,6 +83,7 @@ run_phase() {
   shift
   local phase_started_at=$SECONDS
   local exit_code
+  write_progress "$name" running false
   set +e
   "$@"
   exit_code=$?
@@ -73,10 +101,12 @@ run_phase() {
       }]'
   )"
   if [[ "$exit_code" -ne 0 ]]; then
+    write_progress "$name" failed "$exit_code" || true
     printf 'Gerbil source build phase failed: %s (exit %s)\n' \
       "$name" "$exit_code" >&2
     exit "$exit_code"
   fi
+  write_progress "$name" completed "$exit_code"
 }
 
 if [[ -z "$build_cores" ]]; then
@@ -169,7 +199,9 @@ fi
 
 gerbil_version="$("$GERBIL_PREFIX/bin/gxi" --version)"
 elapsed_seconds="$((SECONDS - started_at))"
-jq -n \
+bootstrap_receipt="$GERBIL_PREFIX/bootstrap.receipt.json"
+bootstrap_receipt_tmp="$(mktemp "$GERBIL_PREFIX/.bootstrap.receipt.json.tmp.XXXXXX")"
+if ! jq -n \
   --arg schema gerbil-bazel.gerbil-bootstrap-receipt.v1 \
   --arg source_ref "$GERBIL_REF" \
   --arg source_url "$gerbil_source_url" \
@@ -204,6 +236,10 @@ jq -n \
     elapsed_seconds: $elapsed_seconds,
     phases: $phases,
     source_build_identity: $source_build_identity
-  }' >"$GERBIL_PREFIX/bootstrap.receipt.json"
+  }' >"$bootstrap_receipt_tmp"; then
+  rm -f "$bootstrap_receipt_tmp"
+  exit 1
+fi
+mv "$bootstrap_receipt_tmp" "$bootstrap_receipt"
 
-jq -c . "$GERBIL_PREFIX/bootstrap.receipt.json"
+jq -c . "$bootstrap_receipt"

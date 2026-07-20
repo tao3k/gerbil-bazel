@@ -1,0 +1,170 @@
+#+title: Source Producer v1 Operations Runbook
+#+author: gerbil-bazel maintainers
+#+language: en
+#+options: toc:2 num:t
+
+* Purpose
+
+This runbook is the operator handoff for the first Linux Source Producer proof
+after the workflow is registered on the default branch.  It does not authorize
+merging a pull request, provisioning a runner, changing billing, deleting a
+cache, or publishing a release.  Each action requires separate authority.
+
+The producer preserves the upstream Gerbil lifecycle.  It does not schedule
+private bootstrap stages or replace =configure -> make -jN -> make install=.
+
+* Lifecycle
+
+#+begin_src mermaid
+flowchart TD
+  A["Merge approved PR into main"] --> B["Source Producer registered on default branch"]
+  B --> C["Provision or select explicit Linux runner label"]
+  C --> D["Set GERBIL_SOURCE_RUNNER"]
+  D --> E["Dispatch Source Producer from main"]
+  E --> F["Resolve identity and exact installation-cache result"]
+  F --> G{"Admission"}
+  G -->|"cache hit"| H["Materialized capability; not a cold-capacity proof"]
+  G -->|"cold miss + explicit runner"| I["12-minute internal bootstrap guard"]
+  G -->|"cold miss + implicit runner"| J["Blocked admission receipt"]
+  I --> K{"Bootstrap attempt receipt"}
+  K -->|"ready"| L["Verify immutable success, materialization, package, and artifacts"]
+  K -->|"failed / timed-out / interrupted"| M["Stop and retain evidence"]
+  H --> L
+  L --> N{"Independent promotion approval"}
+  N -->|"approved exact run / SHA / installDigest"| O["Dispatch Publish prebuilt Gerbil capability"]
+  N -->|"not approved"| P["No release mutation"]
+#+end_src
+
+* Preconditions
+
+Before changing repository or organization settings, verify all of the
+following:
+
+- the feature pull request is approved, mergeable, and green;
+- the exact expected head SHA is recorded;
+- the =Source Producer= workflow is present on =main=;
+- the selected runner label is registered and is an explicit Linux x86-64
+  source-producer capability;
+- the operator has separate authority for runner provisioning and repository
+  variable changes.
+
+The known four-core hosted runner does not satisfy the cold 12-minute proof.
+Do not dispatch an implicit =ubuntu-latest= cold build as a retry strategy.
+The internal wrapper sends =TERM= when the 12-minute deadline expires, waits
+the declarative 30-second termination grace, and then permits GNU =timeout= to
+send =KILL=.  The 30-minute workflow job limit is only the catastrophic outer
+ceiling.
+
+* Register the runner selection
+
+Set the repository variable only after the runner label has been provisioned or
+verified through the repository or organization runner settings:
+
+#+begin_src sh
+repository=tao3k/gerbil-bazel
+runner_label='<explicit-linux-x64-runner-label>'
+gh variable set GERBIL_SOURCE_RUNNER \
+  --repo "$repository" \
+  --body "$runner_label"
+gh variable list --repo "$repository"
+#+end_src
+
+This variable selects scheduling policy.  It is not an attestation of actual
+CPU, system, architecture, or memory.  The materialization receipt observes the
+actual runner facts after execution.
+
+* Verify registration and dispatch
+
+The workflow must be discoverable from the default branch before dispatch:
+
+#+begin_src sh
+repository=tao3k/gerbil-bazel
+gh workflow view source-producer.yml --repo "$repository" --ref main
+gh workflow run source-producer.yml --repo "$repository" --ref main
+#+end_src
+
+Record the run ID and verify that it belongs to the expected =main= head before
+watching it:
+
+#+begin_src sh
+repository=tao3k/gerbil-bazel
+expected_head_sha='<exact-main-head-sha>'
+run_id="$(
+  gh run list \
+    --repo "$repository" \
+    --workflow source-producer.yml \
+    --branch main \
+    --event workflow_dispatch \
+    --limit 1 \
+    --json databaseId,headSha \
+    --jq '.[0].databaseId'
+)"
+observed_head_sha="$(
+  gh run view "$run_id" --repo "$repository" --json headSha --jq .headSha
+)"
+test "$observed_head_sha" = "$expected_head_sha"
+gh run watch "$run_id" --repo "$repository" --exit-status
+#+end_src
+
+Do not infer success from the job conclusion alone.  Download all artifacts for
+independent receipt verification:
+
+#+begin_src sh
+repository=tao3k/gerbil-bazel
+audit_dir=".ci/audit/source-producer-$run_id"
+mkdir -p "$audit_dir"
+gh run download "$run_id" --repo "$repository" --dir "$audit_dir"
+#+end_src
+
+* Receipt acceptance
+
+For a genuine first cold-capacity proof, all of the following are mandatory:
+
+- =source-producer-admission.json= has outcome =admitted= and requires a source
+  build;
+- =gerbil-bootstrap-attempt.json= has outcome =ready=, exit code =0=, no signal,
+  =successReceiptPresent=true=, and =successReceiptValidated=true=;
+- the immutable =bootstrap.receipt.json= has outcome =ready= and contains all
+  four successful upstream phases;
+- the installation materialization is =built=, not =cache-hit=;
+- identity, attempt, bootstrap, materialization, manifest, and package evidence
+  carry the same =installDigest=;
+- the run head SHA is the expected =main= head;
+- the capability archive and its digest are present exactly once.
+
+A =cache-hit= run is valid materialization and packaging evidence, but it does
+not prove that the selected runner can complete a cold source build within 12
+minutes.  Do not delete an exact installation cache merely to force a cold
+proof without separate destructive-action approval.
+
+The following outcomes prohibit promotion:
+
+| Attempt outcome | Operator decision                                                  |
+|-----------------+--------------------------------------------------------------------|
+| =failed=        | Inspect =lastPhase= and the preserved exit code.                   |
+| =timed-out=     | Treat the runner as insufficient for the 12-minute policy.         |
+| =interrupted=   | Resolve cancellation or infrastructure state first.                |
+| missing         | Treat the run as unproven; the 30-minute ceiling is not a receipt. |
+
+* Independent promotion
+
+Promotion is a separate manual workflow.  Do not dispatch it until the exact
+source run ID, head SHA, =installDigest=, and downloaded evidence have been
+independently accepted.
+
+#+begin_src sh
+repository=tao3k/gerbil-bazel
+run_id='<accepted-source-run-id>'
+head_sha='<accepted-source-run-head-sha>'
+install_digest='<accepted-install-digest>'
+gh workflow run publish-prebuilt.yml \
+  --repo "$repository" \
+  --ref main \
+  -f source_run_id="$run_id" \
+  -f head_sha="$head_sha" \
+  -f install_digest="$install_digest"
+#+end_src
+
+The publish workflow must still independently authorize provenance, validate
+the immutable evidence chain, reject an existing release tag, and fail closed
+before performing a release mutation.

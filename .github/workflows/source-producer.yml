@@ -30,6 +30,7 @@ jobs:
             build-essential \
             ca-certificates \
             ccache \
+            coreutils \
             git \
             jq \
             libsqlite3-dev \
@@ -43,6 +44,7 @@ jobs:
         run: |
           tools/ci/test_source_build_identity.sh
           tools/ci/test_bootstrap_gerbil.sh
+          tools/ci/test_gerbil_bootstrap_attempt.sh
           tools/ci/test_install_materialization.sh
 
       - name: Resolve Linux source build identity
@@ -82,16 +84,24 @@ jobs:
 
       - name: Build Gerbil on Linux
         if: steps.gerbil-install-cache.outputs.cache-hit != 'true'
-        timeout-minutes: ${{ fromJSON(steps.gerbil-source-build-identity.outputs.build_timeout_minutes) }}
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ci/ccache
           CCACHE_MAXSIZE: 2G
+          GERBIL_BOOTSTRAP_ATTEMPT_RECEIPT: ${{ github.workspace }}/.ci/receipts/gerbil-bootstrap-attempt.json
+          GERBIL_BUILD_TIMEOUT_MINUTES: ${{ steps.gerbil-source-build-identity.outputs.build_timeout_minutes }}
           GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
           GERBIL_REQUIRE_CCACHE: "1"
           GERBIL_SOURCE_BUILD_CONFIG: ${{ github.workspace }}/tools/ci/gerbil_source_build_config.json
           GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
           GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
-        run: tools/ci/bootstrap_gerbil.sh
+          GERBIL_TERMINATION_GRACE_SECONDS: ${{ steps.gerbil-source-build-identity.outputs.termination_grace_seconds }}
+        run: |
+          tools/ci/run_gerbil_bootstrap_attempt.sh \
+            "$GERBIL_BUILD_TIMEOUT_MINUTES" \
+            "$GERBIL_TERMINATION_GRACE_SECONDS" \
+            "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT" \
+            "$GERBIL_BOOTSTRAP_ATTEMPT_RECEIPT" \
+            tools/ci/bootstrap_gerbil.sh
 
       - name: Record Linux Gerbil materialization
         env:

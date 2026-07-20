@@ -81,6 +81,13 @@ config_json="$(
       $timeout <= 360 and
       ($timeout | floor) == $timeout
     ) |
+    select(
+      .executionPolicy.terminationGraceSeconds as $grace |
+      ($grace | type) == "number" and
+      $grace > 0 and
+      $grace <= 300 and
+      ($grace | floor) == $grace
+    ) |
     select(.executionPolicy.parallelism == {
       source: "available-logical-cpus",
       makeArgument: "-j"
@@ -94,6 +101,7 @@ if [[ -z "$config_json" ]]; then
 fi
 
 build_timeout_minutes="$(jq -er '.executionPolicy.buildTimeoutMinutes' <<<"$config_json")"
+termination_grace_seconds="$(jq -er '.executionPolicy.terminationGraceSeconds' <<<"$config_json")"
 output_config_json="$(jq -cS '.outputIdentity' <<<"$config_json")"
 config_digest="$(printf '%s' "$config_json" | sha256_stream)"
 output_config_digest="$(printf '%s' "$output_config_json" | sha256_stream)"
@@ -206,4 +214,5 @@ printf 'install_digest=%s\n' "$install_digest"
 printf 'compiler_cache_namespace_digest=%s\n' "$compiler_cache_namespace_digest"
 printf 'config_digest=%s\n' "$config_digest"
 printf 'build_timeout_minutes=%s\n' "$build_timeout_minutes"
+printf 'termination_grace_seconds=%s\n' "$termination_grace_seconds"
 printf 'receipt=%s\n' "$receipt_path"

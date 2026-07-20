@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tao3k.github.io/gerbil-bazel/schemas/gerbil-bazel.gerbil-bootstrap-attempt.v1.schema.json",
+  "title": "Gerbil Bazel Bootstrap Attempt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "outcome",
+    "installDigest",
+    "configDigest",
+    "timeoutMinutes",
+    "terminationGraceSeconds",
+    "elapsedSeconds",
+    "lastPhase",
+    "exitCode",
+    "signal",
+    "successReceiptPresent",
+    "successReceiptValidated"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.gerbil-bootstrap-attempt.v1"
+    },
+    "outcome": {
+      "enum": [
+        "ready",
+        "failed",
+        "timed-out",
+        "interrupted"
+      ]
+    },
+    "installDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timeoutMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 360
+    },
+    "terminationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "elapsedSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lastPhase": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "enum": [
+            "source-prepare",
+            "configure",
+            "upstream-build",
+            "install"
+          ]
+        }
+      ]
+    },
+    "exitCode": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      ]
+    },
+    "signal": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "enum": [
+            "INT",
+            "TERM"
+          ]
+        }
+      ]
+    },
+    "successReceiptPresent": {
+      "type": "boolean"
+    },
+    "successReceiptValidated": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": 0
+          },
+          "signal": {
+            "const": false
+          },
+          "successReceiptPresent": {
+            "const": true
+          },
+          "successReceiptValidated": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          },
+          "signal": {
+            "const": false
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "timed-out"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": false
+          },
+          "signal": {
+            "const": "TERM"
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "interrupted"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": false
+          },
+          "signal": {
+            "enum": [
+              "INT",
+              "TERM"
+            ]
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

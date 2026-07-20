@@ -96,6 +96,12 @@ jobs:
       - name: Validate source producer admission policy
         run: tools/ci/test_source_producer_admission.sh
 
+      - name: Validate source build attempt policy
+        run: |
+          tools/ci/test_source_build_identity.sh
+          tools/ci/test_bootstrap_gerbil.sh
+          tools/ci/test_gerbil_bootstrap_attempt.sh
+
       - name: Validate the public Bazel API
         env:
           RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json

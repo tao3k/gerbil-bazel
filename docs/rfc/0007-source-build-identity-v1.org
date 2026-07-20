@@ -56,7 +56,9 @@ The installation digest includes:
 - output-affecting build environment;
 - the digest of the declarative =outputIdentity= configuration.
 
-The execution policy includes available-host parallelism, ccache capacity, and the 12-minute source-build timeout.
+The execution policy includes available-host parallelism, ccache capacity, the
+12-minute source-build timeout, and the bounded termination grace used after a
+timed-out build receives =TERM=.
 Changing execution policy or observability MUST change the full configuration
 digest but MUST NOT invalidate an otherwise identical native installation.  The
 timeout therefore does not contribute to =installDigest=.
@@ -131,6 +133,23 @@ architecture facts; those remain owned by the materialization receipt.  An
 explicit runner admission remains subject to the identity-owned 12-minute
 source-build guard.
 
+Every admitted cache-miss execution emits
+=gerbil-bazel.gerbil-bootstrap-attempt.v1=.  This current-run receipt is
+separate from the immutable successful bootstrap receipt.  It records exactly
+one of =ready=, =failed=, =timed-out=, or =interrupted=, together with the
+identity digests, policy-owned timeout and termination grace, elapsed time,
+last observed upstream phase, exit or signal evidence, and whether the
+immutable success receipt exists and validates against the exact install
+identity.  It MUST NOT contain runner name, system,
+architecture, or CPU observations.
+
+The attempt wrapper owns the internal 12-minute enforcement and invokes the
+unchanged bootstrap command exactly once.  The bootstrap command continues to
+own =configure -> make -jN -> make install=.  A non-ready attempt preserves its
+failure status and MUST NOT manufacture an immutable =ready= bootstrap receipt.
+The 30-minute GitHub job limit remains a catastrophic outer ceiling, not the
+normal source-build timeout and not a substitute for typed attempt evidence.
+
 The current run emits =gerbil-bazel.install-materialization-receipt.v1=.  Its
 =materialization= field is exactly =cache-hit= or =built=, and its
 =installDigest= must match the embedded source-build identity in the producer
@@ -174,8 +193,12 @@ flowchart LR
   S["Declared runner selection"] --> Q{"Source producer admission"}
   L --> Q
   Q -->|"cache hit"| M
-  Q -->|"cold miss + explicit runner"| U["Upstream source lifecycle"]
-  U --> M
+  Q -->|"cold miss + explicit runner"| GUARD["Internal 12-minute bootstrap guard<br/>policy-owned termination grace"]
+  JOB["30-minute catastrophic job ceiling"] -.-> GUARD
+  GUARD --> U["One unchanged upstream lifecycle<br/>configure -> make -jN -> make install"]
+  U --> ATTEMPT{"Current-run bootstrap attempt receipt"}
+  ATTEMPT -->|"ready + immutable success receipt"| M
+  ATTEMPT -->|"failed / timed-out / interrupted"| STOP["Stop; promotion prohibited"]
   Q -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
   X["Successful main Source Producer run"] --> PROMOTE{"Explicit promotion authorization"}
   Y["Non-main Source Producer run<br/>unique open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
