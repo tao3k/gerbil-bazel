@@ -32,6 +32,10 @@ flowchart TD
   D["Compiler, linker, libraries, output environment"] --> E["Compiler cache namespace"]
   B --> E
   E --> F["compilerCacheNamespaceDigest"]
+  F --> L["Run-attempt compiler-cache key"]
+  L --> M["Restore newest compatible generation"]
+  M --> N["Save after completed success or failure"]
+  N -->|"Next retry"| M
   G["Exact Gerbil source ref and URL"] --> H["Installation identity"]
   E --> H
   H --> I["installDigest"]
@@ -45,6 +49,22 @@ reuse valid object entries while producing a distinct installation digest.
 The namespace includes the ccache path and version so incompatible cache
 storage implementations cannot share a namespace; those fields do not affect
 the installation digest.
+
+GitHub execution treats compiler-cache generations as non-authoritative,
+progressive acceleration.  Restore and save are separate pinned action steps.
+The primary key contains both =github.run_id= and =github.run_attempt=, while
+restore prefixes first select the newest compatible namespace and then permit
+the version-scoped migration fallback.  After a source-build step completes
+with either =success= or =failure=, including a typed timeout, CI saves that
+attempt's ccache directory under its unique primary key.  A later attempt may
+therefore recover valid compiler outputs instead of discarding all work from
+an ephemeral runner.
+
+This compiler cache is never installation evidence.  It cannot make an
+incomplete prefix admissible, cannot create an immutable bootstrap success
+receipt, and cannot turn a warm-cache retry into a zero-cache capacity proof.
+Only the exact installation cache or a newly validated =ready= bootstrap
+receipt may authorize materialization.
 
 The installation digest includes:
 

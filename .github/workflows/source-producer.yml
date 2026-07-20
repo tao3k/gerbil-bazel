@@ -46,6 +46,7 @@ jobs:
           tools/ci/test_bootstrap_gerbil.sh
           tools/ci/test_gerbil_bootstrap_attempt.sh
           tools/ci/test_install_materialization.sh
+          tools/ci/test_source_producer_workflow.sh
 
       - name: Resolve Linux source build identity
         id: gerbil-source-build-identity
@@ -55,10 +56,11 @@ jobs:
         run: tools/ci/source_build_identity.sh >> "$GITHUB_OUTPUT"
 
       - name: Restore Linux compiler cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: gerbil-compiler-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci/ccache
-          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-${{ github.run_id }}
+          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-
             gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-
@@ -83,6 +85,7 @@ jobs:
             .ci/receipts/source-producer-admission.json
 
       - name: Build Gerbil on Linux
+        id: gerbil-build
         if: steps.gerbil-install-cache.outputs.cache-hit != 'true'
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ci/ccache
@@ -102,6 +105,18 @@ jobs:
             "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT" \
             "$GERBIL_BOOTSTRAP_ATTEMPT_RECEIPT" \
             tools/ci/bootstrap_gerbil.sh
+
+      - name: Save Linux compiler cache
+        if: >-
+          always() &&
+          steps.gerbil-install-cache.outputs.cache-hit != 'true' &&
+          (steps.gerbil-build.outcome == 'success' ||
+          steps.gerbil-build.outcome == 'failure')
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ci/ccache
+          key: ${{ steps.gerbil-compiler-cache.outputs.cache-primary-key }}
 
       - name: Record Linux Gerbil materialization
         env:

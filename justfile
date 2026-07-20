@@ -55,6 +55,7 @@ source-identity-test:
     tools/ci/test_gerbil_bootstrap_attempt.sh
     tools/ci/test_install_materialization.sh
     tools/ci/test_source_producer_admission.sh
+    tools/ci/test_source_producer_workflow.sh
 
 promotion-authorization-test:
     tools/ci/test_authorize_prebuilt_promotion.sh
