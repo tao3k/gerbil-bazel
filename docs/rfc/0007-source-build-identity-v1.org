@@ -66,6 +66,15 @@ CI selects the requested source-producer runner from the
 This scheduling label is execution policy, not output identity; the current-run
 materialization receipt observes the actual runner facts separately.
 
+GitHub MUST register the =Source Producer= workflow from the default branch
+before an explicit dispatch can target another ref.  A cache scoped to a
+pull-request merge ref is not evidence that a branch or default-branch
+dispatch can restore it.  The post-restore admission gate uses only the exact
+cache result and the declared =GERBIL_SOURCE_RUNNER= selection: cache hits are
+admitted, cold misses require an explicit registered runner label, and an
+implicit default-runner cold miss is blocked before source compilation.
+Admission does not duplicate or predict runner capacity facts.
+
 * Upstream ownership
 
 #+begin_src mermaid
@@ -94,15 +103,15 @@ does not reproduce gxpkg or =std/make= semantics.
 
 * Atomic invalidation scenarios
 
-| Scenario | Installation digest | Compiler-cache namespace |
-|-
-| Same inputs | unchanged | unchanged |
-| Gerbil revision changes | changes | unchanged |
-| Output configure arguments change | changes | changes |
-| Compiler or native library changes | changes | changes |
-| ccache implementation changes | unchanged | changes |
-| ccache capacity changes | unchanged | unchanged |
-| Receipt or logging implementation changes | unchanged | unchanged |
+| Scenario                                  | Installation digest | Compiler-cache namespace |
+|-------------------------------------------+---------------------+--------------------------|
+| Same inputs                               | unchanged           | unchanged                |
+| Gerbil revision changes                   | changes             | unchanged                |
+| Output configure arguments change         | changes             | changes                  |
+| Compiler or native library changes        | changes             | changes                  |
+| ccache implementation changes             | unchanged           | changes                  |
+| ccache capacity changes                   | unchanged           | unchanged                |
+| Receipt or logging implementation changes | unchanged           | unchanged                |
 
 The checked-in identity test MUST prove every row without compiling Gerbil.
 The next real CI cache miss is then a controlled “empty installation plus warm
@@ -113,6 +122,14 @@ compiler cache” scenario, not an unclassified cold retry.
 The source-build identity receipt is producer evidence.  A restored bootstrap
 receipt remains immutable evidence of the build that produced the installation;
 it must not be rewritten to claim that the current run observed a cache hit.
+
+Before materialization, the producer emits
+=gerbil-bazel.source-producer-admission.v1=.  It records the exact cache result,
+whether the runner label was explicit, whether a source build is required, and
+the admitted or blocked decision.  It MUST NOT record inferred CPU, system, or
+architecture facts; those remain owned by the materialization receipt.  An
+explicit runner admission remains subject to the identity-owned 12-minute
+source-build guard.
 
 The current run emits =gerbil-bazel.install-materialization-receipt.v1=.  Its
 =materialization= field is exactly =cache-hit= or =built=, and its
@@ -151,10 +168,18 @@ flowchart LR
   I --> K
   K --> C["Capability manifest + package receipt"]
   K --> A["Relocatable archive + SHA-256"]
-  W["Explicit Source Producer dispatch"] --> I
-  X["Successful main Source Producer run"] --> Q{"Explicit promotion authorization"}
-  Y["Non-main Source Producer run<br/>unique open same-repository PR<br/>base main + exact head SHA"] --> Q
-  Q --> Z["Promotion authorization receipt"]
+  REGISTER["Source Producer registered on default branch"] --> W["Explicit Source Producer dispatch"]
+  W --> I
+  I --> L["Exact installation-cache lookup"]
+  S["Declared runner selection"] --> Q{"Source producer admission"}
+  L --> Q
+  Q -->|"cache hit"| M
+  Q -->|"cold miss + explicit runner"| U["Upstream source lifecycle"]
+  U --> M
+  Q -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
+  X["Successful main Source Producer run"] --> PROMOTE{"Explicit promotion authorization"}
+  Y["Non-main Source Producer run<br/>unique open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
+  PROMOTE --> Z["Promotion authorization receipt"]
   Z --> V
   C --> V{"Promotion validation"}
   A --> V

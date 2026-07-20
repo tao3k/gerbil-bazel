@@ -16,9 +16,11 @@ build:
 test:
     {{ bazel }} test \
       //gerbil:run_project_test \
-      //gerbil:project_receipt_schema_test \
-      //gerbil:project_receipt_v1_instances_test \
-      //gerbil:resource_guard_test \
+        //gerbil:project_receipt_schema_test \
+        //gerbil:project_receipt_v1_instances_test \
+        //gerbil:source_producer_admission_schema_test \
+        //gerbil:source_producer_admission_v1_instances_test \
+        //gerbil:resource_guard_test \
       //gerbil:validate_json_test \
       //tests/smoke:guarded_project_receipt_test \
       //tests/smoke:gxpkg_native_package_test \
@@ -51,6 +53,7 @@ source-identity-test:
     tools/ci/test_source_build_identity.sh
     tools/ci/test_bootstrap_gerbil.sh
     tools/ci/test_install_materialization.sh
+    tools/ci/test_source_producer_admission.sh
 
 promotion-authorization-test:
     tools/ci/test_authorize_prebuilt_promotion.sh

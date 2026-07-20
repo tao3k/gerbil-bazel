@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tao3k.github.io/gerbil-bazel/schemas/gerbil-bazel.source-producer-admission.v1.schema.json",
+  "title": "Gerbil Bazel Source Producer Admission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "outcome",
+    "cacheHit",
+    "runnerExplicit",
+    "configuredRunner",
+    "selectedRunner",
+    "sourceBuildRequired",
+    "admitted",
+    "reason"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.source-producer-admission.v1"
+    },
+    "outcome": {
+      "enum": [
+        "admitted",
+        "blocked"
+      ]
+    },
+    "cacheHit": {
+      "type": "boolean"
+    },
+    "runnerExplicit": {
+      "type": "boolean"
+    },
+    "configuredRunner": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selectedRunner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceBuildRequired": {
+      "type": "boolean"
+    },
+    "admitted": {
+      "type": "boolean"
+    },
+    "reason": {
+      "enum": [
+        "complete-installation-cache-hit",
+        "explicit-runner-cold-build",
+        "implicit-default-runner-cold-miss"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "complete-installation-cache-hit"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "admitted"
+          },
+          "cacheHit": {
+            "const": true
+          },
+          "sourceBuildRequired": {
+            "const": false
+          },
+          "admitted": {
+            "const": true
+          },
+          "reason": {
+            "const": "complete-installation-cache-hit"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "explicit-runner-cold-build"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "admitted"
+          },
+          "cacheHit": {
+            "const": false
+          },
+          "runnerExplicit": {
+            "const": true
+          },
+          "configuredRunner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceBuildRequired": {
+            "const": true
+          },
+          "admitted": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "implicit-default-runner-cold-miss"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "blocked"
+          },
+          "cacheHit": {
+            "const": false
+          },
+          "runnerExplicit": {
+            "const": false
+          },
+          "configuredRunner": {
+            "type": "null"
+          },
+          "sourceBuildRequired": {
+            "const": true
+          },
+          "admitted": {
+            "const": false
+          },
+          "reason": {
+            "const": "implicit-default-runner-cold-miss"
+          }
+        }
+      }
+    }
+  ]
+}

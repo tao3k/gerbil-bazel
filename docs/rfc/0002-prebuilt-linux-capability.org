@@ -109,7 +109,13 @@ requirements SHALL NOT be copied into the Linux source-build path.
 
 #+begin_src mermaid
 flowchart LR
-  DISPATCH["Explicit Source Producer dispatch"] --> SRC
+  REGISTER["Source Producer registered on default branch"] --> DISPATCH["Explicit Source Producer dispatch"]
+  DISPATCH --> IDENTITY["Source identity + exact installation-cache lookup"]
+  IDENTITY --> ADMISSION{"Source producer admission"}
+  ADMISSION -->|"complete cache hit"| PREFIX["Complete cached Gerbil prefix"]
+  PREFIX --> PROD
+  ADMISSION -->|"cold miss + explicit runner"| SRC
+  ADMISSION -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> QUERY["Immutable gambuild-C: read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"]
@@ -284,6 +290,17 @@ SHA equals the pull-request head SHA.  It fails closed for a missing,
 ambiguous, forked, closed, wrong-base, or SHA-drifted pull request.  This keeps
 the producer available for deliberate capability refreshes without placing a
 cold source build on the regular consumer-CI path.
+
+The =Source Producer= workflow MUST first be registered from the default
+branch before GitHub can accept an explicit dispatch.  A cache created under a
+pull-request merge ref MUST NOT be treated as dispatch-accessible branch or
+default-branch state.  After the exact installation-cache lookup, the producer
+emits =gerbil-bazel.source-producer-admission.v1=.  A complete cache hit is
+admitted on the selected runner.  A cold miss is admitted only when
+=GERBIL_SOURCE_RUNNER= explicitly selects a registered runner label; an
+implicit =ubuntu-latest= cold miss is blocked immediately with the admission
+receipt.  Admission is not a capacity attestation: the existing 12-minute
+build guard and the later materialization receipt remain the execution proof.
 
 1. copies the installed prefix into an isolated staging tree;
 2. rejects absolute symlinks;

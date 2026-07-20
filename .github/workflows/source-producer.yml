@@ -68,6 +68,18 @@ jobs:
           path: .ci/gerbil-prefix
           key: gerbil-install-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
 
+      - name: Admit source producer execution
+        env:
+          GERBIL_INSTALL_CACHE_HIT: ${{ steps.gerbil-install-cache.outputs.cache-hit }}
+          GERBIL_CONFIGURED_RUNNER: ${{ vars.GERBIL_SOURCE_RUNNER }}
+          GERBIL_SELECTED_RUNNER: ${{ vars.GERBIL_SOURCE_RUNNER || 'ubuntu-latest' }}
+        run: |
+          tools/ci/source_producer_admission.sh \
+            "$GERBIL_INSTALL_CACHE_HIT" \
+            "$GERBIL_CONFIGURED_RUNNER" \
+            "$GERBIL_SELECTED_RUNNER" \
+            .ci/receipts/source-producer-admission.json
+
       - name: Build Gerbil on Linux
         if: steps.gerbil-install-cache.outputs.cache-hit != 'true'
         timeout-minutes: ${{ fromJSON(steps.gerbil-source-build-identity.outputs.build_timeout_minutes) }}

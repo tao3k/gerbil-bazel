@@ -93,6 +93,9 @@ jobs:
       - name: Validate the platform-adaptive repository provider
         run: tools/ci/test_repository_provider.sh auto
 
+      - name: Validate source producer admission policy
+        run: tools/ci/test_source_producer_admission.sh
+
       - name: Validate the public Bazel API
         env:
           RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json
