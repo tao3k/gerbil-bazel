@@ -130,6 +130,12 @@ SHA-256 continues to prove byte integrity.  Promotion succeeds only when the
 identity receipt, manifest, package receipt, archive digest, and requested
 release identity form one closed chain.
 
+Promotion also emits =gerbil-bazel.prebuilt-promotion-authorization.v1=.  An
+explicit dispatch can authorize a successful =main= producer or an open
+same-repository pull request with base =main= and an exact head SHA.  The
+authorization receipt is validated with the capability evidence and attached
+to the immutable release; fork or ambiguous producer provenance fails closed.
+
 #+begin_src mermaid
 flowchart LR
   E["Current runner capability<br/>name / system / architecture / available CPUs"] --> M
@@ -141,6 +147,10 @@ flowchart LR
   I --> K
   K --> C["Capability manifest + package receipt"]
   K --> A["Relocatable archive + SHA-256"]
+  X["Successful main producer run"] --> Q{"Explicit promotion authorization"}
+  Y["Open same-repository PR<br/>base main + exact head SHA"] --> Q
+  Q --> Z["Promotion authorization receipt"]
+  Z --> V
   C --> V{"Promotion validation"}
   A --> V
   I --> V

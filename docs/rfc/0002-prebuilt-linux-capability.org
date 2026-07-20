@@ -48,6 +48,18 @@ capability for downstream consumers.
 
 * Decision
 
+Capability promotion MUST be an explicit, receipt-producing operation.  It MAY
+authorize either a successful =main= producer run or a successful run for an
+open same-repository pull request whose base is =main= and whose head SHA is the
+exact requested release target.  Fork runs, non-main bases, closed pull
+requests, SHA drift, and duplicate or expired artifacts MUST fail closed.
+
+The authorization decision emits
+=gerbil-bazel.prebuilt-promotion-authorization.v1=.  This receipt is attached to
+the immutable release beside the archive evidence, so publication authority is
+auditable without weakening the independent =installDigest= and archive
+SHA-256 proofs.
+
 The library SHALL expose a separate =gerbil.prebuilt(...)= tag. It imports an
 immutable, relocatable Gerbil archive by URL and SHA-256, validates the embedded
 capability manifest, matches the archive to the execution platform, and
@@ -104,7 +116,11 @@ flowchart LR
   FINAL --> COMPILE
   COMPILE --> ENV["Consumer derives GAMBOPT + public compiler boundaries"]
   ENV --> ARC["Archive + SHA-256 + manifest"]
-  ARC --> RELEASE["Immutable release asset"]
+  ARC --> PROMOTE{"Explicit promotion authorization"}
+  MAIN["Successful main producer run"] --> PROMOTE
+  PR["Open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
+  PROMOTE --> AUTH["Promotion authorization receipt"]
+  AUTH --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
   REPO --> CACHE["Bazel repository cache"]
@@ -240,6 +256,11 @@ remain consumer-host capabilities and are discovered adaptively rather than
 frozen into the producer artifact.
 
 * Producer lifecycle
+
+The promotion workflow is manually dispatched with an exact source run ID,
+head SHA, and =installDigest=.  It fetches the run, pull-request metadata when
+applicable, and the artifact inventory once; then it validates the complete
+authorization frontier before downloading or publishing capability bytes.
 
 The existing pinned, upstream-parallel Linux bootstrap remains the rare
 producer. After the source build and public Bazel API validation succeed, the

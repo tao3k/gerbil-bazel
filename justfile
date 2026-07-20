@@ -49,7 +49,10 @@ source-identity-test:
     tools/ci/test_bootstrap_gerbil.sh
     tools/ci/test_install_materialization.sh
 
-check: query build test source-identity-test auto-test prebuilt-test
+promotion-authorization-test:
+    tools/ci/test_authorize_prebuilt_promotion.sh
+
+check: query build test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
 mod-tidy:
     {{ bazel }} mod tidy

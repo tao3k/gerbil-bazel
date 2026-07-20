@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: Successful main-branch CI run containing the Linux capability
+        description: Authorized CI run containing the Linux capability
         required: true
         type: string
       head_sha:
@@ -19,6 +19,7 @@ on:
 permissions:
   actions: read
   contents: write
+  pull-requests: read
 
 concurrency:
   group: prebuilt-capability-${{ inputs.install_digest }}
@@ -34,40 +35,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check out gerbil-bazel
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate promotion authorization semantics
+        run: tools/ci/test_authorize_prebuilt_promotion.sh
+
       - name: Authorize the source run
         env:
+          ARTIFACT_NAME: ${{ env.ARTIFACT_NAME }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
           EXPECTED_INSTALL_DIGEST: ${{ inputs.install_digest }}
+          GERBIL_PROMOTION_AUTHORIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/prebuilt-promotion-authorization.json
           REPOSITORY: ${{ github.repository }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         shell: bash
-        run: |
-          if [[ ! "$EXPECTED_INSTALL_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
-            printf 'invalid expected installation digest: %s\n' \
-              "$EXPECTED_INSTALL_DIGEST" >&2
-            exit 64
-          fi
-          conclusion="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .conclusion)"
-          event="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .event)"
-          head_branch="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .head_branch)"
-          head_sha="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .head_sha)"
-          workflow_name="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .name)"
-          artifact_count="$(
-            gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" \
-              | jq -r --arg name "$ARTIFACT_NAME" \
-                '[.artifacts[] | select(.name == $name and .expired == false)] | length'
-          )"
-          if [[ "$workflow_name" != CI ||
-                "$conclusion" != success ||
-                "$head_branch" != main ||
-                "$head_sha" != "$EXPECTED_HEAD_SHA" ||
-                "$artifact_count" != 1 ||
-                ( "$event" != push && "$event" != workflow_dispatch ) ]]; then
-            printf 'source run %s is not an authorized main-branch capability producer\n' \
-              "$SOURCE_RUN_ID" >&2
-            exit 1
-          fi
+        run: tools/ci/authorize_prebuilt_promotion.sh
 
       - name: Download the verified capability
         uses: actions/download-artifact@v8
@@ -80,7 +64,10 @@ jobs:
 
       - name: Validate immutable release inputs
         env:
+          AUTHORIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/prebuilt-promotion-authorization.json
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
           EXPECTED_INSTALL_DIGEST: ${{ inputs.install_digest }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
@@ -106,7 +93,19 @@ jobs:
           expected_sha256="$(awk 'NR == 1 {print $1}' "${digests[0]}")"
           observed_sha256="$(sha256sum "$archive" | awk '{print $1}')"
           identity_sha256="$(sha256sum "$identity" | awk '{print $1}')"
-          if [[ "$expected_sha256" != "$observed_sha256" ||
+          if ! jq -e \
+                --arg repository "$REPOSITORY" \
+                --arg expected_head_sha "$EXPECTED_HEAD_SHA" \
+                --arg expected_install_digest "$EXPECTED_INSTALL_DIGEST" \
+                '.schema == "gerbil-bazel.prebuilt-promotion-authorization.v1" and
+                 .outcome == "authorized" and
+                 .repository == $repository and
+                 .sourceRun.headSha == $expected_head_sha and
+                 .installDigest == $expected_install_digest and
+                 .artifact.count == 1 and
+                 .artifact.expired == false' \
+                "$AUTHORIZATION_RECEIPT" >/dev/null ||
+             [[ "$expected_sha256" != "$observed_sha256" ||
                 "$(jq -r .archiveSha256 "$receipt")" != "$observed_sha256" ||
                 "$(jq -r .sourceBuildIdentitySha256 "$receipt")" != "$identity_sha256" ||
                 "$(jq -r .schema "$receipt")" != gerbil-bazel.prebuilt-capability-package-receipt.v1 ||
@@ -132,13 +131,14 @@ jobs:
 
       - name: Publish the immutable capability release
         env:
+          AUTHORIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/prebuilt-promotion-authorization.json
           EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           shopt -s nullglob
-          assets=(capability/*)
+          assets=(capability/* "$AUTHORIZATION_RECEIPT")
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$REPOSITORY" \
             --target "$EXPECTED_HEAD_SHA" \
