@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import platform
@@ -23,9 +22,7 @@ SCHEMA = "gerbil-bazel.build-scenario-receipt.v1"
 PROJECT_COMPILE_MNEMONIC = "GerbilProjectCompile"
 DEFAULT_TARGET = "//tests/smoke:compile"
 DEPENDENCY_FLAG = "--//tests/smoke:dependency_state=changed"
-CONFIGURATION_FINGERPRINT = hashlib.sha1(
-    b"gerbil-bazel.configuration-delta.v1"
-).hexdigest()
+CONFIGURATION_FLAG = "--//tests/smoke:configuration_state=changed"
 
 
 @dataclass(frozen=True)
@@ -68,10 +65,8 @@ SCENARIOS = (
     ),
     Scenario(
         identifier="configuration-delta",
-        intent="Change the native ABI identity consumed by every project action.",
-        build_flags=(
-            "--repo_env=GERBIL_NATIVE_ABI=" + CONFIGURATION_FINGERPRINT,
-        ),
+        intent="Change a declared environment input shared by every project action.",
+        build_flags=(DEPENDENCY_FLAG, CONFIGURATION_FLAG),
         expected_labels=frozenset(
             {
                 "//tests/smoke:compile",
@@ -122,6 +117,47 @@ def command_version(command: Sequence[str]) -> str:
     if completed.returncode != 0:
         return "unavailable"
     return completed.stdout.strip()
+
+
+def bazel_target_version(
+    bazel: str,
+    target: str,
+    *,
+    workspace: Path,
+    output_user_root: Path,
+) -> str:
+    command = (
+        bazel,
+        f"--output_user_root={output_user_root}",
+        "run",
+        "--color=no",
+        "--curses=no",
+        "--noshow_progress",
+        "--disk_cache=",
+        "--remote_cache=",
+        target,
+        "--",
+        "--version",
+    )
+    completed = subprocess.run(
+        command,
+        check=False,
+        cwd=workspace,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"failed to read {target} version through Bazel: "
+            f"{detail or f'exit {completed.returncode}'}"
+        )
+
+    version = completed.stdout.strip()
+    if not version:
+        raise RuntimeError(f"empty version output from Bazel target {target}")
+    return version
 
 
 def decode_json_stream(path: Path) -> list[dict[str, Any]]:
@@ -280,7 +316,7 @@ def optimization_decision(scenarios: Iterable[dict[str, Any]]) -> dict[str, Any]
     elif "dependency-delta" in failed:
         candidate = "project-dependency-invalidation"
     elif "configuration-delta" in failed:
-        candidate = "toolchain-configuration-identity"
+        candidate = "project-action-configuration-identity"
     elif failed:
         candidate = "scenario-specific-correctness"
     else:
@@ -348,11 +384,16 @@ def main(argv: Sequence[str]) -> int:
                 "architecture": platform.machine().lower(),
                 "availableLogicalCpuCount": available_cpu_count(),
             },
-            "toolchain": {
-                "bazel": bazel,
-                "bazelVersion": command_version((bazel, "--version")),
-                "gerbilVersion": command_version(("gxi", "--version")),
-            },
+        "toolchain": {
+            "bazel": bazel,
+            "bazelVersion": command_version((bazel, "--version")),
+            "gerbilVersion": bazel_target_version(
+                bazel,
+                "@local_gerbil//:gxi",
+                workspace=workspace,
+                output_user_root=output_user_root,
+            ),
+        },
             "isolation": {
                 "freshOutputUserRoot": True,
                 "sharedActionCachesEnabled": False,

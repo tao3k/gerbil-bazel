@@ -44,6 +44,9 @@ scenario-test:
       --bazel {{ bazel }} \
       --receipt {{ scenario_receipt }}
 
+scenario-runner-test:
+    python3 tools/bench/run_build_scenarios_test.py
+
 source-identity-test:
     tools/ci/test_source_build_identity.sh
     tools/ci/test_bootstrap_gerbil.sh
@@ -52,7 +55,7 @@ source-identity-test:
 promotion-authorization-test:
     tools/ci/test_authorize_prebuilt_promotion.sh
 
-check: query build test source-identity-test promotion-authorization-test auto-test prebuilt-test
+check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
 mod-tidy:
     {{ bazel }} mod tidy

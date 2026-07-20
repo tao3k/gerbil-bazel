@@ -32,11 +32,19 @@ fi
 run_json="$("$gh_command" api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
 artifacts_json="$("$gh_command" api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts")"
 
+workflow_name="$(jq -er .name <<<"$run_json")"
+case "$workflow_name" in
+  CI | "Source Producer") ;;
+  *)
+    printf 'unsupported capability producer workflow: %s\n' "$workflow_name" >&2
+    exit 1
+    ;;
+esac
+
 if ! jq -e \
   --arg repository "$REPOSITORY" \
   --arg expected_head_sha "$EXPECTED_HEAD_SHA" \
-  '.name == "CI" and
-   .conclusion == "success" and
+  '.conclusion == "success" and
    .head_sha == $expected_head_sha and
    .head_repository.full_name == $repository' \
   <<<"$run_json" >/dev/null; then
@@ -61,14 +69,65 @@ head_branch="$(jq -er .head_branch <<<"$run_json")"
 authorization=
 pull_request_json=null
 
+authorize_pull_request_number() {
+  local pull_request_number=$1
+  local pr_json
+  pr_json="$("$gh_command" api "repos/${REPOSITORY}/pulls/${pull_request_number}")"
+  if ! jq -e \
+    --arg repository "$REPOSITORY" \
+    --arg expected_head_sha "$EXPECTED_HEAD_SHA" \
+    --arg head_branch "$head_branch" \
+    --argjson pull_request_number "$pull_request_number" \
+    '.number == $pull_request_number and
+     .state == "open" and
+     .base.ref == "main" and
+     .base.repo.full_name == $repository and
+     .head.ref == $head_branch and
+     .head.sha == $expected_head_sha and
+     .head.repo.full_name == $repository' \
+    <<<"$pr_json" >/dev/null; then
+    printf 'producer is not bound to an open same-repository main-base PR\n' >&2
+    return 1
+  fi
+  authorization=same-repository-pull-request
+  pull_request_json="$(
+    jq -cS \
+      '{number, state, headRef: .head.ref, headSha: .head.sha,
+        headRepository: .head.repo.full_name, baseRef: .base.ref,
+        baseRepository: .base.repo.full_name}' \
+      <<<"$pr_json"
+  )"
+}
+
 case "$event" in
-  push | workflow_dispatch)
+  push)
     if [[ "$head_branch" != main ]]; then
-      printf 'main-branch producer event resolved from non-main branch: %s\n' \
+      printf 'main push producer resolved from non-main branch: %s\n' \
         "$head_branch" >&2
       exit 1
     fi
     authorization=main-branch
+    ;;
+  workflow_dispatch)
+    if [[ "$head_branch" == main ]]; then
+      authorization=main-branch
+    elif [[ "$workflow_name" == "Source Producer" ]]; then
+      repository_owner="${REPOSITORY%%/*}"
+      pull_requests_json="$(
+        "$gh_command" api \
+          "repos/${REPOSITORY}/pulls?state=open&base=main&head=${repository_owner}:${head_branch}"
+      )"
+      pull_request_count="$(jq -er 'length' <<<"$pull_requests_json")"
+      if [[ "$pull_request_count" != 1 ]]; then
+        printf 'dispatched producer must resolve exactly one open same-repository PR\n' >&2
+        exit 1
+      fi
+      pull_request_number="$(jq -er '.[0].number' <<<"$pull_requests_json")"
+      authorize_pull_request_number "$pull_request_number"
+    else
+      printf 'non-main dispatch is restricted to the Source Producer workflow\n' >&2
+      exit 1
+    fi
     ;;
   pull_request)
     pull_request_count="$(jq -er '.pull_requests | length' <<<"$run_json")"
@@ -77,31 +136,7 @@ case "$event" in
       exit 1
     fi
     pull_request_number="$(jq -er '.pull_requests[0].number' <<<"$run_json")"
-    pr_json="$("$gh_command" api "repos/${REPOSITORY}/pulls/${pull_request_number}")"
-    if ! jq -e \
-      --arg repository "$REPOSITORY" \
-      --arg expected_head_sha "$EXPECTED_HEAD_SHA" \
-      --arg head_branch "$head_branch" \
-      --argjson pull_request_number "$pull_request_number" \
-      '.number == $pull_request_number and
-       .state == "open" and
-       .base.ref == "main" and
-       .base.repo.full_name == $repository and
-       .head.ref == $head_branch and
-       .head.sha == $expected_head_sha and
-       .head.repo.full_name == $repository' \
-      <<<"$pr_json" >/dev/null; then
-      printf 'pull-request producer is not an open same-repository main-base PR\n' >&2
-      exit 1
-    fi
-    authorization=same-repository-pull-request
-    pull_request_json="$(
-      jq -cS \
-        '{number, state, headRef: .head.ref, headSha: .head.sha,
-          headRepository: .head.repo.full_name, baseRef: .base.ref,
-          baseRepository: .base.repo.full_name}' \
-        <<<"$pr_json"
-    )"
+    authorize_pull_request_number "$pull_request_number"
     ;;
   *)
     printf 'unsupported source producer event: %s\n' "$event" >&2
@@ -117,6 +152,7 @@ jq -nS \
   --arg install_digest "$EXPECTED_INSTALL_DIGEST" \
   --argjson source_run_id "$SOURCE_RUN_ID" \
   --arg event "$event" \
+  --arg workflow_name "$workflow_name" \
   --arg head_branch "$head_branch" \
   --arg head_sha "$EXPECTED_HEAD_SHA" \
   --arg artifact_name "$ARTIFACT_NAME" \
@@ -129,7 +165,7 @@ jq -nS \
     installDigest: $install_digest,
     sourceRun: {
       id: $source_run_id,
-      workflow: "CI",
+      workflow: $workflow_name,
       event: $event,
       headBranch: $head_branch,
       headSha: $head_sha,

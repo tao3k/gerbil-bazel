@@ -8,7 +8,7 @@
 Proposed.
 
 This RFC defines the scenario evidence required before changing Gerbil Bazel
-cache keys, dependency boundaries, toolchain configuration identity, or native
+cache keys, dependency boundaries, project action configuration identity, or native
 source provisioning. It complements RFC 0005's upstream-native ownership
 contract. The receipt schema remains
 =gerbil-bazel.build-scenario-receipt.v1= for the complete v1 lifetime.
@@ -31,7 +31,8 @@ flowchart LR
   D --> E["configuration-delta"]
   C -->|"Gerbil actions execute"| X["Fix action cache identity"]
   D -->|"Independent branch executes"| Y["Fix dependency frontier"]
-  E -->|"Affected actions do not execute"| Z["Fix toolchain configuration identity"]
+  S["Public configuration_state build setting"] --> E
+  E -->|"Affected actions do not execute"| Z["Fix project action configuration identity"]
   C -->|"0 Gerbil actions"| F["Structural reuse ready"]
   D -->|"Only dependency plus aggregate"| F
   E -->|"All affected project actions"| F
@@ -63,10 +64,12 @@ build setting. It MUST execute only =dependency_compile= and the aggregate
 
 ** configuration-delta
 
-The runner changes the native ABI identity through the repository environment.
-All three project actions MUST execute because the native ABI fingerprint is a
-declared action input. The test does not hard-code a CPU count and does not
-alter the upstream Gerbil scheduler.
+The runner preserves the =dependency-delta= setting and changes exactly one
+provider-neutral =configuration_state= Bazel setting.  The setting projects a
+shared value through the public =env= attribute of all three project actions,
+so all three actions MUST execute.  The immutable provider ABI remains
+unchanged.  The test does not hard-code a CPU count and does not alter the
+upstream Gerbil scheduler.
 
 * Receipt and decision
 
@@ -75,12 +78,17 @@ flowchart TD
   A["Bazel execution log"] --> B["Filter GerbilProjectCompile"]
   B --> C["Compare observed and expected labels"]
   C --> D["gerbil-bazel.build-scenario-receipt.v1"]
+  V["Bazel-selected @local_gerbil//:gxi --version"] --> D
   D --> E{"First failing boundary"}
   E -->|"identical-rerun"| F["Action cache reuse"]
   E -->|"dependency-delta"| G["Dependency invalidation"]
-  E -->|"configuration-delta"| H["Toolchain configuration identity"]
+  E -->|"configuration-delta"| H["Project action configuration identity"]
   E -->|"none"| I["Upstream source provisioning"]
 #+end_src
+
+- The Gerbil version MUST be read from the Bazel-selected
+  =@local_gerbil//:gxi= target through the same isolated =output_user_root=.
+  The runner MUST NOT require a host =gxi= on =PATH= or =GERBIL_PREFIX=.
 
 The receipt records host capability, resolved Bazel and Gerbil versions,
 isolation policy, elapsed milliseconds, exact action labels, assertions, and a

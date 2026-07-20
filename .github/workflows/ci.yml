@@ -14,37 +14,33 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GERBIL_REF: 07c8481588a8b07dbf05832687817cd398902ac0
   GERBIL_VERSION_LABEL: v0.18.2-07c84815
 
 jobs:
   bazel:
-    name: Bazel (${{ matrix.runner }}, ${{ matrix.gerbil_source }})
+    name: Bazel (${{ matrix.runner }}, ${{ matrix.gerbil_provider }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.timeout_minutes }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ${{ vars.GERBIL_SOURCE_RUNNER || 'ubuntu-latest' }}
-            gerbil_source: source
-            timeout_minutes: 30
+          - runner: ubuntu-latest
+            gerbil_provider: immutable-prebuilt
           - runner: macos-26
-            gerbil_source: homebrew-bottle
-            timeout_minutes: 15
+            gerbil_provider: homebrew-host
 
     steps:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Linux build dependencies
-        if: matrix.gerbil_source == 'source'
+      - name: Install Linux consumer dependencies
+        if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             build-essential \
             ca-certificates \
-            ccache \
             git \
             jq \
             libsqlite3-dev \
@@ -54,67 +50,12 @@ jobs:
             sqlite3 \
             zlib1g-dev
 
-      - name: Validate source build identity semantics
-        if: matrix.gerbil_source == 'source'
-        run: |
-          tools/ci/test_source_build_identity.sh
-          tools/ci/test_bootstrap_gerbil.sh
-
-      - name: Resolve Linux source build identity
-        if: matrix.gerbil_source == 'source'
-        id: gerbil-source-build-identity
-        env:
-          GERBIL_REF: ${{ env.GERBIL_REF }}
-          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
-        run: tools/ci/source_build_identity.sh >> "$GITHUB_OUTPUT"
-
-      - name: Restore Linux compiler cache
-        if: matrix.gerbil_source == 'source'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .ci/ccache
-          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-${{ github.run_id }}
-          restore-keys: |
-            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-
-            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-
-
-      - name: Restore Linux Gerbil installation
-        if: matrix.gerbil_source == 'source'
-        id: gerbil-install-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .ci/gerbil-prefix
-          key: gerbil-install-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
-
-      - name: Build Gerbil on Linux
-        if: matrix.gerbil_source == 'source' && steps.gerbil-install-cache.outputs.cache-hit != 'true'
-        timeout-minutes: ${{ fromJSON(steps.gerbil-source-build-identity.outputs.build_timeout_minutes) }}
-        env:
-          CCACHE_DIR: ${{ github.workspace }}/.ci/ccache
-          CCACHE_MAXSIZE: 2G
-          GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
-          GERBIL_REQUIRE_CCACHE: "1"
-          GERBIL_SOURCE_BUILD_CONFIG: ${{ github.workspace }}/tools/ci/gerbil_source_build_config.json
-          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
-          GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
-        run: tools/ci/bootstrap_gerbil.sh
-
-      - name: Record Linux Gerbil materialization
-        if: matrix.gerbil_source == 'source'
-        env:
-          GERBIL_INSTALL_CACHE_HIT: ${{ steps.gerbil-install-cache.outputs.cache-hit == 'true' }}
-          GERBIL_INSTALL_DIGEST: ${{ steps.gerbil-source-build-identity.outputs.install_digest }}
-          GERBIL_INSTALL_MATERIALIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/gerbil-install-materialization-${{ runner.os }}-${{ runner.arch }}.json
-          GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
-          GERBIL_RUNNER_NAME: ${{ runner.name }}
-        run: tools/ci/record_install_materialization.sh
-
       - name: Set up Homebrew
-        if: matrix.gerbil_source == 'homebrew-bottle'
+        if: matrix.gerbil_provider == 'homebrew-host'
         uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
 
       - name: Install the tao3k Gerbil bottle
-        if: matrix.gerbil_source == 'homebrew-bottle'
+        if: matrix.gerbil_provider == 'homebrew-host'
         timeout-minutes: 2
         env:
           GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme
@@ -126,26 +67,14 @@ jobs:
           brew info --json=v2 "$GERBIL_FORMULA" \
             | jq -e '.formulae[0].installed | any(.poured_from_bottle == true)'
 
-      - name: Activate Gerbil
+      - name: Activate the Homebrew host capability
+        if: matrix.gerbil_provider == 'homebrew-host'
         env:
-          GERBIL_SOURCE: ${{ matrix.gerbil_source }}
           GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme
         run: |
-          if [[ "$GERBIL_SOURCE" == source ]]; then
-            gerbil_prefix="$GITHUB_WORKSPACE/.ci/gerbil-prefix"
-          else
-            gerbil_prefix="$(brew --prefix "$GERBIL_FORMULA")"
-          fi
+          gerbil_prefix="$(brew --prefix "$GERBIL_FORMULA")"
           echo "$gerbil_prefix/bin" >> "$GITHUB_PATH"
           echo "GERBIL_PREFIX=$gerbil_prefix" >> "$GITHUB_ENV"
-
-      - name: Verify Gerbil capability
-        run: |
-          mkdir -p .ci
-          command -v gxi
-          command -v gxc
-          gxi --version | tee .ci/gerbil-version.txt
-          grep -E 'Gerbil (v0\.18\.2|07c8481)' .ci/gerbil-version.txt
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
@@ -181,27 +110,6 @@ jobs:
           jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
 
-      - name: Package the relocatable Linux capability
-        if: matrix.gerbil_source == 'source'
-        env:
-          GERBIL_CAPABILITY_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
-          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
-        run: tools/ci/package_prebuilt_capability.sh
-
-      - name: Validate the packaged Linux capability as a consumer
-        if: matrix.gerbil_source == 'source'
-        env:
-          GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
-        run: tools/ci/test_repository_provider.sh prebuilt
-
-      - name: Upload the Linux capability
-        if: matrix.gerbil_source == 'source'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gerbil-prebuilt-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
-          path: .ci/capabilities/*
-          if-no-files-found: error
-
       - name: Upload validation receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -209,7 +117,5 @@ jobs:
           name: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-receipt
           path: |
             .ci/gerbil-version.txt
-            .ci/gerbil-source-build-identity.json
             .ci/receipts/*.json
-            .ci/gerbil-prefix/bootstrap.receipt.json
           if-no-files-found: warn

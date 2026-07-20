@@ -18,6 +18,7 @@ cat >"$test_root/bin/gh" <<'EOF'
 case "${2:-}" in
   */actions/runs/*/artifacts) file=artifacts.json ;;
   */actions/runs/*) file=run.json ;;
+  *"/pulls?"*) file=pr-list.json ;;
   */pulls/*) file=pr.json ;;
   *) exit 64 ;;
 esac
@@ -78,6 +79,7 @@ write_pr() {
         repo: {full_name: $repository}
       }
     }' >"$fixture_dir/pr.json"
+  jq -s '.' "$fixture_dir/pr.json" >"$fixture_dir/pr-list.json"
 }
 
 run_authorized() {
@@ -125,11 +127,25 @@ write_artifacts 1
 write_main_run
 run_authorized main main-branch
 
+jq '.name = "Source Producer" | .event = "workflow_dispatch"' \
+  "$fixture_dir/run.json" >"$fixture_dir/run.tmp"
+mv "$fixture_dir/run.tmp" "$fixture_dir/run.json"
+run_authorized explicit-source-producer main-branch
+
 write_pr_run
 write_pr
 run_authorized same-repository-pr same-repository-pull-request
 jq -e '.pullRequest.number == 9 and .pullRequest.baseRef == "main"' \
   "$test_root/same-repository-pr.json" >/dev/null
+
+jq '.name = "Source Producer" |
+    .event = "workflow_dispatch" |
+    .pull_requests = []' \
+  "$fixture_dir/run.json" >"$fixture_dir/run.tmp"
+mv "$fixture_dir/run.tmp" "$fixture_dir/run.json"
+run_authorized dispatched-pr-producer same-repository-pull-request
+
+write_pr_run
 
 jq '.head.repo.full_name = "fork/gerbil-bazel"' \
   "$fixture_dir/pr.json" >"$fixture_dir/pr.tmp"

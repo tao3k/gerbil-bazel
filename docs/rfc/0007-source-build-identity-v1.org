@@ -131,10 +131,14 @@ identity receipt, manifest, package receipt, archive digest, and requested
 release identity form one closed chain.
 
 Promotion also emits =gerbil-bazel.prebuilt-promotion-authorization.v1=.  An
-explicit dispatch can authorize a successful =main= producer or an open
-same-repository pull request with base =main= and an exact head SHA.  The
-authorization receipt is validated with the capability evidence and attached
-to the immutable release; fork or ambiguous producer provenance fails closed.
+explicit =Source Producer= dispatch can authorize a successful =main= producer
+or a non-=main= run bound to exactly one open same-repository pull request with
+base =main= and an exact head SHA.  The authorization derives the branch from
+the successful producer run and queries GitHub for the unique pull request; it
+does not trust a caller-supplied pull-request number.  The authorization
+receipt is validated with the capability evidence and attached to the
+immutable release; a missing, forked, closed, wrong-base, ambiguous, or
+SHA-drifted producer provenance fails closed.
 
 #+begin_src mermaid
 flowchart LR
@@ -147,8 +151,9 @@ flowchart LR
   I --> K
   K --> C["Capability manifest + package receipt"]
   K --> A["Relocatable archive + SHA-256"]
-  X["Successful main producer run"] --> Q{"Explicit promotion authorization"}
-  Y["Open same-repository PR<br/>base main + exact head SHA"] --> Q
+  W["Explicit Source Producer dispatch"] --> I
+  X["Successful main Source Producer run"] --> Q{"Explicit promotion authorization"}
+  Y["Non-main Source Producer run<br/>unique open same-repository PR<br/>base main + exact head SHA"] --> Q
   Q --> Z["Promotion authorization receipt"]
   Z --> V
   C --> V{"Promotion validation"}
@@ -156,6 +161,7 @@ flowchart LR
   I --> V
   V --> R["Digest-addressed immutable release"]
   R --> D["prebuilt or auto provider"]
+  G["Regular consumer CI"] --> D
   D -->|"expected installDigest + archive SHA-256"| T["Validated Gerbil toolchain"]
 #+end_src
 

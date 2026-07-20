@@ -73,6 +73,15 @@ provider before repository creation: native =host= on Darwin and immutable
 archive architecture that does not match the consumer host. It SHALL NOT
 instantiate both providers and defer selection to toolchain resolution.
 
+Regular CI SHALL be a capability consumer only.  The repository root uses
+=gerbil.auto(...)= with the Homebrew host capability on Darwin and the
+digest-addressed immutable release on Linux.  Regular CI SHALL NOT bootstrap
+Gerbil source, materialize a producer prefix, package an archive, or upload a
+producer artifact.  The pinned Linux capability has installation digest
+=ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208= and
+archive SHA-256
+=741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7=.
+
 Because provider selection observes both =module_ctx.os.name= and
 =module_ctx.os.arch=, the public module extension SHALL be declared
 =os_dependent=True= and =arch_dependent=True=. A checked-in Bzlmod lockfile
@@ -100,6 +109,7 @@ requirements SHALL NOT be copied into the Linux source-build path.
 
 #+begin_src mermaid
 flowchart LR
+  DISPATCH["Explicit Source Producer dispatch"] --> SRC
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> QUERY["Immutable gambuild-C: read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"]
@@ -117,11 +127,12 @@ flowchart LR
   COMPILE --> ENV["Consumer derives GAMBOPT + public compiler boundaries"]
   ENV --> ARC["Archive + SHA-256 + manifest"]
   ARC --> PROMOTE{"Explicit promotion authorization"}
-  MAIN["Successful main producer run"] --> PROMOTE
-  PR["Open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
+  MAIN["Successful main Source Producer run"] --> PROMOTE
+  PR["Source Producer on one open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
   PROMOTE --> AUTH["Promotion authorization receipt"]
   AUTH --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
+  CI["Regular CI consumer"] --> AUTO
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
   REPO --> CACHE["Bazel repository cache"]
   PROJECT["Consumer project library"] --> AUTO
@@ -265,6 +276,14 @@ authorization frontier before downloading or publishing capability bytes.
 The existing pinned, upstream-parallel Linux bootstrap remains the rare
 producer. After the source build and public Bazel API validation succeed, the
 producer:
+
+The source producer is a separate =workflow_dispatch=-only workflow.  A
+non-=main= dispatch is promotable only when its runtime branch resolves to
+exactly one open same-repository pull request with base =main= and the run head
+SHA equals the pull-request head SHA.  It fails closed for a missing,
+ambiguous, forked, closed, wrong-base, or SHA-drifted pull request.  This keeps
+the producer available for deliberate capability refreshes without placing a
+cold source build on the regular consumer-CI path.
 
 1. copies the installed prefix into an isolated staging tree;
 2. rejects absolute symlinks;

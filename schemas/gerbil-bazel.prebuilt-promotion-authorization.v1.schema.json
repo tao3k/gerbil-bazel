@@ -32,7 +32,7 @@
       ],
       "properties": {
         "id": {"type": "integer", "minimum": 1},
-        "workflow": {"const": "CI"},
+        "workflow": {"enum": ["CI", "Source Producer"]},
         "event": {"enum": ["push", "workflow_dispatch", "pull_request"]},
         "headBranch": {"type": "string", "minLength": 1},
         "headSha": {"$ref": "#/$defs/gitSha"},
