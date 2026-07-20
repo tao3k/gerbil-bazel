@@ -24,16 +24,33 @@ flowchart TD
   E --> F["Resolve identity and exact installation-cache result"]
   F --> G{"Admission"}
   G -->|"cache hit"| H["Materialized capability; not a cold-capacity proof"]
-  G -->|"cold miss + explicit runner"| I["12-minute internal bootstrap guard"]
+  G -->|"cold miss + explicit runner"| I["Restore compatible non-authoritative ccache"]
   G -->|"cold miss + implicit runner"| J["Blocked admission receipt"]
-  I --> K{"Bootstrap attempt receipt"}
-  K -->|"ready"| L["Verify immutable success, materialization, package, and artifacts"]
-  K -->|"failed / timed-out / interrupted"| M["Stop and retain evidence"]
+  I --> Q["12-minute internal bootstrap guard"]
+  Q --> K{"Bootstrap attempt receipt"}
+  K -->|"ready"| R["Save run-attempt ccache generation"]
+  K -->|"failed / timed-out / interrupted"| M["Stop and retain typed evidence"]
+  M --> R
+  R -->|"ready path"| L["Verify immutable success, materialization, package, and artifacts"]
+  R -->|"authorized retry after failure; not cold proof"| E
   H --> L
   L --> N{"Independent promotion approval"}
   N -->|"approved exact run / SHA / installDigest"| O["Dispatch Publish prebuilt Gerbil capability"]
   N -->|"not approved"| P["No release mutation"]
 #+end_src
+
+Compiler-cache recovery is progressive but non-authoritative.  The workflow
+restores the newest compatible cache generation before a source build and
+saves a new generation after the build step completes with either =success= or
+=failure=.  The primary key rotates by both workflow run ID and run attempt, so
+a rerun never tries to overwrite an immutable GitHub cache entry.  A typed
+=timed-out= attempt therefore retains its ccache work for an explicitly
+authorized retry instead of losing it with the ephemeral runner.
+
+Do not treat that retry as a zero-cache cold-capacity proof.  A partial ccache
+generation cannot authorize the Gerbil prefix, and an installation cache entry
+is still created only after the bootstrap produces a fresh, exact, validated
+=ready= receipt.  Promotion remains independent of both cache layers.
 
 * Preconditions
 
@@ -50,6 +67,13 @@ following:
 
 The known four-core hosted runner does not satisfy the cold 12-minute proof.
 Do not dispatch an implicit =ubuntu-latest= cold build as a retry strategy.
+The first authorized default-branch dispatch,
+[[https://github.com/tao3k/gerbil-bazel/actions/runs/29728030899][Source Producer run 29728030899]] at merge commit
+=50f85078393edb74c25569c32dc787054860b5ac=, was explicitly admitted on
+=ubuntu-latest= with an installation-cache miss.  Its typed attempt stopped at
+exactly 720 seconds in =upstream-build= with =signal=TERM=, no success receipt,
+and no materialized capability; the overall job ended after 12 minutes 18
+seconds with exit 124.  This is valid guard evidence, not a capacity pass.
 The internal wrapper sends =TERM= when the 12-minute deadline expires, waits
 the declarative 30-second termination grace, and then permits GNU =timeout= to
 send =KILL=.  The 30-minute workflow job limit is only the catastrophic outer
