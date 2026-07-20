@@ -137,6 +137,18 @@ jobs:
           RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json
         run: tools/ci/validate.sh
 
+      - name: Validate build scenario frontiers
+        run: |
+          receipt=.ci/receipts/build-scenarios-${{ runner.os }}-${{ runner.arch }}.json
+          tools/bench/run_build_scenarios.py --receipt "$receipt"
+          jq -e '
+            .schema == "gerbil-bazel.build-scenario-receipt.v1" and
+            .status == "passed" and
+            .decision.status == "ready"
+          ' "$receipt" >/dev/null
+          jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
+            schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
+
       - name: Package the relocatable Linux capability
         if: matrix.gerbil_source == 'source'
         env:

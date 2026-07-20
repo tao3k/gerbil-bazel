@@ -1,6 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-bazel := "bazelisk"
+bazel := env_var_or_default("BAZEL", "bazelisk")
+scenario_receipt := env_var_or_default("SCENARIO_RECEIPT", ".ci/receipts/build-scenarios.json")
 
 default: check
 
@@ -37,6 +38,11 @@ dev:
 
 dev-test:
     {{ bazel }} run //tests/smoke:dev_test
+
+scenario-test:
+    tools/bench/run_build_scenarios.py \
+      --bazel {{ bazel }} \
+      --receipt {{ scenario_receipt }}
 
 check: query build test auto-test prebuilt-test
 

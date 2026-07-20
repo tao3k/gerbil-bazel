@@ -1,3 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["gerbil-bazel.project-receipt.v1.schema.json"])
+exports_files([
+    "gerbil-bazel.build-scenario-receipt.v1.schema.json",
+    "gerbil-bazel.project-receipt.v1.schema.json",
+])
