@@ -1,0 +1,110 @@
+#+title: RFC 0007: Source Build Identity v1
+#+author: gerbil-bazel maintainers
+#+language: en
+#+options: toc:2 num:t
+
+* Status
+
+Proposed.
+
+This RFC defines the cache identity for an upstream Gerbil source installation
+and its compiler-cache namespace. The schema and configuration contract remain
+at v1 until the complete identity is stable.
+
+* Evidence
+
+The Linux installation cache currently contains a successful build receipt for
+Gerbil revision =07c8481588a8b07dbf05832687817cd398902ac0=. That build used four
+available logical CPUs, observed 680 ccache compiler operations, and took 1,381
+seconds. The producing CI step ran from 19:54:40Z to 20:17:41Z on 2026-07-18.
+
+The previous installation cache key included the digest of the complete
+=bootstrap_gerbil.sh=. Therefore a receipt-only or logging-only script change
+invalidated a native installation even when the source, compiler, libraries,
+and output-affecting configure arguments were unchanged.
+
+* Identity split
+
+#+begin_src mermaid
+flowchart TD
+  A["gerbil_source_build_config.json"] --> B["outputIdentity"]
+  A --> C["executionPolicy"]
+  D["Compiler, linker, libraries, output environment"] --> E["Compiler cache namespace"]
+  B --> E
+  E --> F["compilerCacheNamespaceDigest"]
+  G["Exact Gerbil source ref and URL"] --> H["Installation identity"]
+  E --> H
+  H --> I["installDigest"]
+  C --> J["Runtime execution policy only"]
+  J -->|"No output change"| K["Does not invalidate installation"]
+#+end_src
+
+The compiler-cache namespace excludes the Gerbil source revision because
+ccache validates compiler inputs by content. A revision change may therefore
+reuse valid object entries while producing a distinct installation digest.
+The namespace includes the ccache path and version so incompatible cache
+storage implementations cannot share a namespace; those fields do not affect
+the installation digest.
+
+The installation digest includes:
+
+- exact source revision and source URL;
+- operating system and architecture;
+- compiler command, resolved path, and version;
+- linker path and version;
+- OpenSSL, SQLite, and zlib package versions;
+- output-affecting build environment;
+- the digest of the declarative =outputIdentity= configuration.
+
+The execution policy includes available-host parallelism and ccache capacity.
+Changing execution policy or observability MUST change the full configuration
+digest but MUST NOT invalidate an otherwise identical native installation.
+
+* Upstream ownership
+
+#+begin_src mermaid
+sequenceDiagram
+  participant CI as "GitHub CI"
+  participant ID as "Source identity"
+  participant Cache as "Actions cache"
+  participant Upstream as "Gerbil upstream"
+  CI->>ID: Resolve compiler, libraries, config, exact ref
+  ID-->>CI: installDigest and compilerCacheNamespaceDigest
+  CI->>Cache: Restore installation by installDigest
+  alt Installation miss
+    CI->>Cache: Restore ccache namespace
+    CI->>Upstream: ./configure with declared arguments
+    CI->>Upstream: make -jN
+    CI->>Upstream: make install
+    CI->>Cache: Save installation and compiler cache
+  else Installation hit
+    Cache-->>CI: Exact native installation
+  end
+#+end_src
+
+Gerbil upstream continues to own configure, build scheduling, bootstrap stages,
+and installation. The identity layer does not invoke private stage scripts and
+does not reproduce gxpkg or =std/make= semantics.
+
+* Atomic invalidation scenarios
+
+| Scenario | Installation digest | Compiler-cache namespace |
+|-
+| Same inputs | unchanged | unchanged |
+| Gerbil revision changes | changes | unchanged |
+| Output configure arguments change | changes | changes |
+| Compiler or native library changes | changes | changes |
+| ccache implementation changes | unchanged | changes |
+| ccache capacity changes | unchanged | unchanged |
+| Receipt or logging implementation changes | unchanged | unchanged |
+
+The checked-in identity test MUST prove every row without compiling Gerbil.
+The next real CI cache miss is then a controlled “empty installation plus warm
+compiler cache” scenario, not an unclassified cold retry.
+
+* Receipts
+
+=gerbil-bazel.source-build-identity.v1= records the complete inputs and both
+digests. The bootstrap receipt MUST record the identity and phase durations for
+source preparation, configure, upstream build, and install. Generated receipts
+remain CI artifacts under =.ci= and are never committed.

@@ -1,0 +1,24 @@
+{
+  "schema": "gerbil-bazel.source-build-config.v1",
+  "contractVersion": 1,
+  "outputIdentity": {
+    "configureArguments": [
+      "--enable-march="
+    ],
+    "upstreamEntrypoints": {
+      "configure": "./configure",
+      "build": "make",
+      "install": "make install"
+    }
+  },
+  "executionPolicy": {
+    "parallelism": {
+      "source": "available-logical-cpus",
+      "makeArgument": "-j"
+    },
+    "compilerCache": {
+      "tool": "ccache",
+      "maxSize": "2G"
+    }
+  }
+}

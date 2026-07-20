@@ -44,7 +44,11 @@ scenario-test:
       --bazel {{ bazel }} \
       --receipt {{ scenario_receipt }}
 
-check: query build test auto-test prebuilt-test
+source-identity-test:
+    tools/ci/test_source_build_identity.sh
+    tools/ci/test_bootstrap_gerbil.sh
+
+check: query build test source-identity-test auto-test prebuilt-test
 
 mod-tidy:
     {{ bazel }} mod tidy

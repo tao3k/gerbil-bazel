@@ -54,14 +54,29 @@ jobs:
             sqlite3 \
             zlib1g-dev
 
+      - name: Validate source build identity semantics
+        if: matrix.gerbil_source == 'source'
+        run: |
+          tools/ci/test_source_build_identity.sh
+          tools/ci/test_bootstrap_gerbil.sh
+
+      - name: Resolve Linux source build identity
+        if: matrix.gerbil_source == 'source'
+        id: gerbil-source-build-identity
+        env:
+          GERBIL_REF: ${{ env.GERBIL_REF }}
+          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
+        run: tools/ci/source_build_identity.sh >> "$GITHUB_OUTPUT"
+
       - name: Restore Linux compiler cache
         if: matrix.gerbil_source == 'source'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci/ccache
-          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}-${{ github.run_id }}
+          key: gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-${{ github.run_id }}
           restore-keys: |
-            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}-
+            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.gerbil-source-build-identity.outputs.compiler_cache_namespace_digest }}-
+            gerbil-ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-
 
       - name: Restore Linux Gerbil installation
         if: matrix.gerbil_source == 'source'
@@ -69,7 +84,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci/gerbil-prefix
-          key: gerbil-install-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ env.GERBIL_REF }}-${{ hashFiles('tools/ci/bootstrap_gerbil.sh') }}
+          key: gerbil-install-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
 
       - name: Build Gerbil on Linux
         if: matrix.gerbil_source == 'source' && steps.gerbil-install-cache.outputs.cache-hit != 'true'
@@ -78,6 +93,8 @@ jobs:
           CCACHE_MAXSIZE: 2G
           GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
           GERBIL_REQUIRE_CCACHE: "1"
+          GERBIL_SOURCE_BUILD_CONFIG: ${{ github.workspace }}/tools/ci/gerbil_source_build_config.json
+          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
           GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
         run: tools/ci/bootstrap_gerbil.sh
 
@@ -176,6 +193,7 @@ jobs:
           name: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-receipt
           path: |
             .ci/gerbil-version.txt
+            .ci/gerbil-source-build-identity.json
             .ci/receipts/*.json
             .ci/gerbil-prefix/bootstrap.receipt.json
           if-no-files-found: warn
