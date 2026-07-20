@@ -71,8 +71,26 @@ config_json="$(
     select(.outputIdentity.configureArguments | type == "array") |
     select(.outputIdentity.upstreamEntrypoints == {
       configure: "./configure",
-      build: "make",
+      buildStage: "./build.sh",
       install: "make install"
+    }) |
+    select(.outputIdentity.stageBuild == {
+      strategy: "upstream-exposed-stage-sequence",
+      sequence: [
+        "prepare",
+        "gambit",
+        "boot-gxi",
+        "stage0",
+        "stage1",
+        "stdlib",
+        "libgerbil",
+        "lang",
+        "r7rs-large",
+        "srfi",
+        "tools"
+      ],
+      checkpointBoundaries: ["stage1", "stdlib", "tools"],
+      checkpointSchema: "gerbil-bazel.source-build-checkpoint.v1"
     }) |
     select(
       .executionPolicy.buildTimeoutMinutes as $timeout |

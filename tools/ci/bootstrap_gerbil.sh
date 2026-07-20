@@ -14,6 +14,18 @@ require_ccache="${GERBIL_REQUIRE_CCACHE:-0}"
 started_at="$SECONDS"
 phases='[]'
 progress_receipt="${GERBIL_BOOTSTRAP_PROGRESS_RECEIPT:-}"
+checkpoint_root="${GERBIL_SOURCE_BUILD_CHECKPOINT_ROOT:-}"
+checkpoint_restored=false
+checkpoint_restore_outcome=not-configured
+checkpoint_restored_boundary=false
+checkpoint_restored_boundary_index=false
+checkpoint_restored_generation=false
+checkpoint_last_safe_boundary=false
+checkpoint_last_safe_boundary_index=false
+resume_stage_index=0
+if [[ -n "$checkpoint_root" ]]; then
+  checkpoint_restore_outcome=pending
+fi
 
 write_progress() {
   local phase=$1
@@ -33,7 +45,40 @@ write_progress() {
     --arg phase "$phase" \
     --arg state "$state" \
     --argjson exit_code "$exit_code" \
-    '{phase: $phase, state: $state, exit_code: $exit_code}' \
+    --arg checkpoint_restore_outcome "$checkpoint_restore_outcome" \
+    --arg checkpoint_restored_boundary "$checkpoint_restored_boundary" \
+    --argjson checkpoint_restored_boundary_index "$checkpoint_restored_boundary_index" \
+    --arg checkpoint_restored_generation "$checkpoint_restored_generation" \
+    --arg checkpoint_last_safe_boundary "$checkpoint_last_safe_boundary" \
+    --argjson checkpoint_last_safe_boundary_index "$checkpoint_last_safe_boundary_index" \
+    '{
+      phase: $phase,
+      state: $state,
+      exit_code: $exit_code,
+      checkpoint: {
+        restoreOutcome: $checkpoint_restore_outcome,
+        restoredBoundary: (
+          if $checkpoint_restored_boundary == "false"
+          then false
+          else $checkpoint_restored_boundary
+          end
+        ),
+        restoredBoundaryIndex: $checkpoint_restored_boundary_index,
+        restoredGeneration: (
+          if $checkpoint_restored_generation == "false"
+          then false
+          else $checkpoint_restored_generation
+          end
+        ),
+        lastSafeBoundary: (
+          if $checkpoint_last_safe_boundary == "false"
+          then false
+          else $checkpoint_last_safe_boundary
+          end
+        ),
+        lastSafeBoundaryIndex: $checkpoint_last_safe_boundary_index
+      }
+    }' \
     >"$progress_tmp"; then
     rm -f "$progress_tmp"
     return 1
@@ -48,8 +93,26 @@ source_build_config_json="$(
     select(.outputIdentity.configureArguments | type == "array") |
     select(.outputIdentity.upstreamEntrypoints == {
       configure: "./configure",
-      build: "make",
+      buildStage: "./build.sh",
       install: "make install"
+    }) |
+    select(.outputIdentity.stageBuild == {
+      strategy: "upstream-exposed-stage-sequence",
+      sequence: [
+        "prepare",
+        "gambit",
+        "boot-gxi",
+        "stage0",
+        "stage1",
+        "stdlib",
+        "libgerbil",
+        "lang",
+        "r7rs-large",
+        "srfi",
+        "tools"
+      ],
+      checkpointBoundaries: ["stage1", "stdlib", "tools"],
+      checkpointSchema: "gerbil-bazel.source-build-checkpoint.v1"
     }) |
     select(.executionPolicy.parallelism == {
       source: "available-logical-cpus",
@@ -64,6 +127,16 @@ while IFS= read -r argument; do
 done < <(jq -er '.outputIdentity.configureArguments[]' <<<"$source_build_config_json")
 configured_ccache_max_size="$(
   jq -er '.executionPolicy.compilerCache.maxSize' <<<"$source_build_config_json"
+)"
+stage_sequence=()
+while IFS= read -r stage; do
+  stage_sequence+=("$stage")
+done < <(
+  jq -er '.outputIdentity.stageBuild.sequence[]' <<<"$source_build_config_json"
+)
+checkpoint_boundaries="$(
+  jq -cS '.outputIdentity.stageBuild.checkpointBoundaries' \
+    <<<"$source_build_config_json"
 )"
 
 source_build_identity=null
@@ -139,8 +212,55 @@ fi
 export CC="$compiler"
 
 prepare_source() {
+  local restored_boundary
+  local restored_generation
+  local stage_index
   mkdir -p "$(dirname "$GERBIL_SRC")" "$(dirname "$GERBIL_PREFIX")" || return
-  rm -rf "$GERBIL_SRC" "$GERBIL_PREFIX" || return
+  rm -rf "$GERBIL_PREFIX" || return
+  if [[ -n "$checkpoint_root" ]]; then
+    if [[ ! -f "$checkpoint_root/current.json" ]]; then
+      checkpoint_restore_outcome=not-found
+      write_progress source-prepare running false
+    elif restored_boundary="$(
+      "$repo_root/tools/ci/source_build_checkpoint.sh" \
+        restore \
+        "$checkpoint_root" \
+        "$GERBIL_SRC" \
+        "$GERBIL_PREFIX" \
+        "$source_build_identity_receipt" 2>/dev/null
+    )"; then
+      checkpoint_restore_outcome=rejected
+      if ! restored_generation="$(
+        jq -er '.generation | select(type == "string" and length > 0)' \
+          "$checkpoint_root/current.json"
+      )"; then
+        write_progress source-prepare failed 65 || true
+        return 65
+      fi
+      for stage_index in "${!stage_sequence[@]}"; do
+        if [[ "${stage_sequence[$stage_index]}" == "$restored_boundary" ]]; then
+          checkpoint_restore_outcome=restored
+          checkpoint_restored=true
+          checkpoint_restored_boundary="$restored_boundary"
+          checkpoint_restored_boundary_index="$stage_index"
+          checkpoint_restored_generation="$restored_generation"
+          checkpoint_last_safe_boundary="$restored_boundary"
+          checkpoint_last_safe_boundary_index="$stage_index"
+          resume_stage_index="$((stage_index + 1))"
+          write_progress source-prepare running false
+          return
+        fi
+      done
+      write_progress source-prepare failed 65 || true
+      printf 'restored checkpoint has no matching stage index: %s\n' \
+        "$restored_boundary" >&2
+      return 65
+    else
+      checkpoint_restore_outcome=rejected
+      write_progress source-prepare running false
+    fi
+  fi
+  rm -rf "$GERBIL_SRC" || return
   git init --quiet "$GERBIL_SRC" || return
   git -C "$GERBIL_SRC" remote add origin "$gerbil_source_url" || return
   git -C "$GERBIL_SRC" fetch --depth=1 origin "$GERBIL_REF" || return
@@ -148,14 +268,43 @@ prepare_source() {
 }
 
 configure_source() {
+  if [[ "$checkpoint_restored" == true ]]; then
+    return
+  fi
   cd "$GERBIL_SRC" || return
   ./configure --prefix="$GERBIL_PREFIX" "${configure_arguments[@]}"
 }
 
+is_checkpoint_boundary() {
+  local stage=$1
+  jq -e --arg stage "$stage" 'index($stage) != null' \
+    <<<"$checkpoint_boundaries" >/dev/null
+}
+
 build_source() {
+  local stage
+  local stage_index
   cd "$GERBIL_SRC" || return
   export GERBIL_BUILD_CORES="$build_cores"
-  make -j"$build_cores"
+  export GERBIL_BUILD_FLAGS="-j$build_cores"
+  for stage_index in "${!stage_sequence[@]}"; do
+    if (( stage_index < resume_stage_index )); then
+      continue
+    fi
+    stage="${stage_sequence[$stage_index]}"
+    ./build.sh "$stage" || return
+    if [[ -n "$checkpoint_root" ]] && is_checkpoint_boundary "$stage"; then
+      "$repo_root/tools/ci/source_build_checkpoint.sh" \
+        "save:$stage" \
+        "$checkpoint_root" \
+        "$GERBIL_SRC" \
+        "$GERBIL_PREFIX" \
+      "$source_build_identity_receipt" || return
+      checkpoint_last_safe_boundary="$stage"
+      checkpoint_last_safe_boundary_index="$stage_index"
+      write_progress upstream-build running false
+    fi
+  done
 }
 
 install_source() {
@@ -214,6 +363,9 @@ if ! jq -n \
   --argjson ccache_direct_hits "$ccache_direct_hits" \
   --argjson ccache_preprocessed_hits "$ccache_preprocessed_hits" \
   --argjson ccache_misses "$ccache_misses" \
+  --argjson checkpoint_restored "$checkpoint_restored" \
+  --arg checkpoint_restored_boundary "$checkpoint_restored_boundary" \
+  --arg checkpoint_last_safe_boundary "$checkpoint_last_safe_boundary" \
   --argjson elapsed_seconds "$elapsed_seconds" \
   --argjson phases "$phases" \
   --argjson source_build_identity "$source_build_identity" \
@@ -232,6 +384,21 @@ if ! jq -n \
       direct_hits: $ccache_direct_hits,
       preprocessed_hits: $ccache_preprocessed_hits,
       misses: $ccache_misses
+    },
+    checkpoint: {
+      restored: $checkpoint_restored,
+      restoredBoundary: (
+        if $checkpoint_restored_boundary == "false"
+        then false
+        else $checkpoint_restored_boundary
+        end
+      ),
+      lastSafeBoundary: (
+        if $checkpoint_last_safe_boundary == "false"
+        then false
+        else $checkpoint_last_safe_boundary
+        end
+      )
     },
     elapsed_seconds: $elapsed_seconds,
     phases: $phases,

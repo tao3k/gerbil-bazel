@@ -1,0 +1,538 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tao3k.github.io/gerbil-bazel/schemas/gerbil-bazel.gerbil-bootstrap-attempt.v2.schema.json",
+  "title": "Gerbil Bazel Bootstrap Attempt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "outcome",
+    "installDigest",
+    "configDigest",
+    "timeoutMinutes",
+    "terminationGraceSeconds",
+    "elapsedSeconds",
+    "lastPhase",
+    "exitCode",
+    "signal",
+    "successReceiptPresent",
+    "successReceiptValidated",
+    "checkpoint"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.gerbil-bootstrap-attempt.v2"
+    },
+    "outcome": {
+      "enum": [
+        "ready",
+        "failed",
+        "timed-out",
+        "interrupted"
+      ]
+    },
+    "installDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timeoutMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 360
+    },
+    "terminationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "elapsedSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lastPhase": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "enum": [
+            "source-prepare",
+            "configure",
+            "upstream-build",
+            "install"
+          ]
+        }
+      ]
+    },
+    "exitCode": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      ]
+    },
+    "signal": {
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "enum": [
+            "INT",
+            "TERM"
+          ]
+        }
+      ]
+    },
+    "successReceiptPresent": {
+      "type": "boolean"
+    },
+    "successReceiptValidated": {
+      "type": "boolean"
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "restoreOutcome",
+        "restoredBoundary",
+        "restoredBoundaryIndex",
+        "restoredGeneration",
+        "lastSafeBoundary",
+        "lastSafeBoundaryIndex"
+      ],
+      "properties": {
+        "restoreOutcome": {
+          "enum": [
+            "not-observed",
+            "not-configured",
+            "not-found",
+            "pending",
+            "rejected",
+            "restored"
+          ]
+        },
+        "restoredBoundary": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "enum": [
+                "stage1",
+                "stdlib",
+                "tools"
+              ]
+            }
+          ]
+        },
+        "restoredBoundaryIndex": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "enum": [
+                4,
+                5,
+                10
+              ]
+            }
+          ]
+        },
+        "restoredGeneration": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "type": "string",
+              "pattern": "^generation-(stage1|stdlib|tools)-[0-9]+-[0-9]+$"
+            }
+          ]
+        },
+        "lastSafeBoundary": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "enum": [
+                "stage1",
+                "stdlib",
+                "tools"
+              ]
+            }
+          ]
+        },
+        "lastSafeBoundaryIndex": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "enum": [
+                4,
+                5,
+                10
+              ]
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "restoredBoundary": {
+                  "const": false
+                },
+                "restoredBoundaryIndex": {
+                  "const": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "restoredBoundary": {
+                  "const": "stage1"
+                },
+                "restoredBoundaryIndex": {
+                  "const": 4
+                }
+              }
+            },
+            {
+              "properties": {
+                "restoredBoundary": {
+                  "const": "stdlib"
+                },
+                "restoredBoundaryIndex": {
+                  "const": 5
+                }
+              }
+            },
+            {
+              "properties": {
+                "restoredBoundary": {
+                  "const": "tools"
+                },
+                "restoredBoundaryIndex": {
+                  "const": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "lastSafeBoundary": {
+                  "const": false
+                },
+                "lastSafeBoundaryIndex": {
+                  "const": false
+                }
+              }
+            },
+            {
+              "properties": {
+                "lastSafeBoundary": {
+                  "const": "stage1"
+                },
+                "lastSafeBoundaryIndex": {
+                  "const": 4
+                }
+              }
+            },
+            {
+              "properties": {
+                "lastSafeBoundary": {
+                  "const": "stdlib"
+                },
+                "lastSafeBoundaryIndex": {
+                  "const": 5
+                }
+              }
+            },
+            {
+              "properties": {
+                "lastSafeBoundary": {
+                  "const": "tools"
+                },
+                "lastSafeBoundaryIndex": {
+                  "const": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "restoreOutcome": {
+                "const": "restored"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "restoredBoundary": {
+                "enum": [
+                  "stage1",
+                  "stdlib",
+                  "tools"
+                ]
+              },
+              "restoredBoundaryIndex": {
+                "enum": [
+                  4,
+                  5,
+                  10
+                ]
+              },
+              "restoredGeneration": {
+                "type": "string"
+              },
+              "lastSafeBoundary": {
+                "enum": [
+                  "stage1",
+                  "stdlib",
+                  "tools"
+                ]
+              },
+              "lastSafeBoundaryIndex": {
+                "enum": [
+                  4,
+                  5,
+                  10
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "restoredBoundary": {
+                "const": false
+              },
+              "restoredBoundaryIndex": {
+                "const": false
+              },
+              "restoredGeneration": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "restoreOutcome": {
+                "enum": [
+                  "not-observed",
+                  "not-configured",
+                  "pending"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "lastSafeBoundary": {
+                "const": false
+              },
+              "lastSafeBoundaryIndex": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "restoredBoundary": {
+                "const": "stage1"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "restoredGeneration": {
+                "pattern": "^generation-stage1-[0-9]+-[0-9]+$"
+              },
+              "lastSafeBoundary": {
+                "enum": [
+                  "stage1",
+                  "stdlib",
+                  "tools"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "restoredBoundary": {
+                "const": "stdlib"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "restoredGeneration": {
+                "pattern": "^generation-stdlib-[0-9]+-[0-9]+$"
+              },
+              "lastSafeBoundary": {
+                "enum": [
+                  "stdlib",
+                  "tools"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "restoredBoundary": {
+                "const": "tools"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "restoredGeneration": {
+                "pattern": "^generation-tools-[0-9]+-[0-9]+$"
+              },
+              "lastSafeBoundary": {
+                "const": "tools"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "ready"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": 0
+          },
+          "signal": {
+            "const": false
+          },
+          "successReceiptPresent": {
+            "const": true
+          },
+          "successReceiptValidated": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          },
+          "signal": {
+            "const": false
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "timed-out"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": false
+          },
+          "signal": {
+            "const": "TERM"
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "interrupted"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": false
+          },
+          "signal": {
+            "enum": [
+              "INT",
+              "TERM"
+            ]
+          },
+          "successReceiptValidated": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

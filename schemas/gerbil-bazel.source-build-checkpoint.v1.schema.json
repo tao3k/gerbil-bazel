@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tao3k.github.io/gerbil-bazel/schemas/gerbil-bazel.source-build-checkpoint.v1.schema.json",
+  "title": "Gerbil Bazel Source Build Checkpoint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "outcome",
+    "installDigest",
+    "outputIdentityDigest",
+    "source",
+    "sourceRoot",
+    "prefixRoot",
+    "treeManifestDigest",
+    "boundary",
+    "boundaryIndex",
+    "stageSequence",
+    "checkpointBoundaries"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.source-build-checkpoint.v1"
+    },
+    "outcome": {
+      "const": "safe-boundary"
+    },
+    "installDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "outputIdentityDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "url"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "sourceRoot": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "prefixRoot": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "treeManifestDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "boundary": {
+      "enum": ["stage1", "stdlib", "tools"]
+    },
+    "boundaryIndex": {
+      "enum": [4, 5, 10]
+    },
+    "stageSequence": {
+      "const": [
+        "prepare",
+        "gambit",
+        "boot-gxi",
+        "stage0",
+        "stage1",
+        "stdlib",
+        "libgerbil",
+        "lang",
+        "r7rs-large",
+        "srfi",
+        "tools"
+      ]
+    },
+    "checkpointBoundaries": {
+      "const": ["stage1", "stdlib", "tools"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"boundary": {"const": "stage1"}},
+        "required": ["boundary"]
+      },
+      "then": {
+        "properties": {"boundaryIndex": {"const": 4}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"boundary": {"const": "stdlib"}},
+        "required": ["boundary"]
+      },
+      "then": {
+        "properties": {"boundaryIndex": {"const": 5}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"boundary": {"const": "tools"}},
+        "required": ["boundary"]
+      },
+      "then": {
+        "properties": {"boundaryIndex": {"const": 10}}
+      }
+    }
+  ]
+}

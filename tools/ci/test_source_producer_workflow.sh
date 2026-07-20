@@ -25,8 +25,10 @@ end
 cache_sha = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 restore = step_named(steps, "Restore Linux compiler cache")
 installation = step_named(steps, "Restore Linux Gerbil installation")
+checkpoint_restore = step_named(steps, "Restore Linux source-build checkpoint")
 build = step_named(steps, "Build Gerbil on Linux")
 save = step_named(steps, "Save Linux compiler cache")
+checkpoint_save = step_named(steps, "Save Linux source-build checkpoint")
 materialization = step_named(steps, "Record Linux Gerbil materialization")
 
 assert(restore["id"] == "gerbil-compiler-cache", "compiler-cache restore id drifted")
@@ -59,6 +61,36 @@ assert(
   "installation cache must remain keyed only by the exact install digest"
 )
 
+assert(
+  checkpoint_restore["uses"] == "actions/cache/restore@#{cache_sha}",
+  "source-build checkpoint restore action drifted"
+)
+assert(
+  checkpoint_restore["id"] == "gerbil-source-build-checkpoint",
+  "source-build checkpoint restore id drifted"
+)
+assert(
+  normalized(checkpoint_restore["if"]) ==
+    "steps.gerbil-install-cache.outputs.cache-hit != 'true'",
+  "installation cache must supersede source-build checkpoint restore"
+)
+assert(
+  checkpoint_restore.fetch("with").fetch("path") ==
+    ".ci/gerbil-source-build-checkpoint",
+  "source-build checkpoint restore path drifted"
+)
+assert(
+  checkpoint_restore.fetch("with").fetch("key") ==
+    "gerbil-source-build-checkpoint-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}-${{ github.run_id }}-${{ github.run_attempt }}",
+  "source-build checkpoint key must bind exact identity and rotate per attempt"
+)
+assert(
+  checkpoint_restore.fetch("with").fetch("restore-keys").lines.map(&:strip).reject(&:empty?) == [
+    "gerbil-source-build-checkpoint-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}-",
+  ],
+  "source-build checkpoint must restore only the exact installation identity"
+)
+
 assert(build["id"] == "gerbil-build", "Gerbil build step id drifted")
 assert(
   normalized(build["if"]) == "steps.gerbil-install-cache.outputs.cache-hit != 'true'",
@@ -79,15 +111,66 @@ assert(
   "compiler-cache save must run only after a completed build success or failure"
 )
 
+assert(
+  checkpoint_save["uses"] == "actions/cache/save@#{cache_sha}",
+  "source-build checkpoint save action drifted"
+)
+assert(
+  checkpoint_save["continue-on-error"] == true,
+  "source-build checkpoint cache must remain non-authoritative"
+)
+assert(
+  checkpoint_save.fetch("with").fetch("path") ==
+    ".ci/gerbil-source-build-checkpoint",
+  "source-build checkpoint save path drifted"
+)
+assert(
+  checkpoint_save.fetch("with").fetch("key") ==
+    "${{ steps.gerbil-source-build-checkpoint.outputs.cache-primary-key }}",
+  "source-build checkpoint save must use the restore primary key"
+)
+assert(
+  normalized(checkpoint_save["if"]) ==
+    "always() && steps.gerbil-install-cache.outputs.cache-hit != 'true' && " \
+    "steps.gerbil-build.outcome == 'failure' && " \
+    "steps.gerbil-build.outputs.checkpoint_available == 'true'",
+  "source-build checkpoint may save only a validated safe boundary after failure"
+)
+assert(
+  build.fetch("env").fetch("GERBIL_SOURCE_BUILD_CHECKPOINT_ROOT") ==
+    "${{ github.workspace }}/.ci/gerbil-source-build-checkpoint",
+  "build step must use the declared checkpoint root"
+)
+assert(
+  build.fetch("run").include?("checkpoint_available=$checkpoint_available"),
+  "build step must expose validated checkpoint availability"
+)
+
 restore_index = steps.index(restore)
 installation_index = steps.index(installation)
+checkpoint_restore_index = steps.index(checkpoint_restore)
 build_index = steps.index(build)
 save_index = steps.index(save)
+checkpoint_save_index = steps.index(checkpoint_save)
 materialization_index = steps.index(materialization)
 assert(restore_index < installation_index, "compiler cache must restore before installation admission")
-assert(installation_index < build_index, "installation cache must gate the source build")
+assert(
+  installation_index < checkpoint_restore_index,
+  "installation cache must precede source-build checkpoint restore"
+)
+assert(
+  checkpoint_restore_index < build_index,
+  "source-build checkpoint must restore before the build"
+)
 assert(save_index == build_index + 1, "compiler cache must save immediately after the build attempt")
-assert(save_index < materialization_index, "compiler-cache evidence must precede materialization")
+assert(
+  checkpoint_save_index == save_index + 1,
+  "source-build checkpoint save must follow compiler-cache preservation"
+)
+assert(
+  checkpoint_save_index < materialization_index,
+  "all recovery cache evidence must precede materialization"
+)
 
-puts "source producer compiler-cache workflow policy: ok"
+puts "source producer recovery-cache workflow policy: ok"
 RUBY

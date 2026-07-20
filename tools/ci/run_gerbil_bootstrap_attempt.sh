@@ -49,11 +49,100 @@ success_receipt="${GERBIL_PREFIX:?GERBIL_PREFIX is required}/bootstrap.receipt.j
 started_at=$SECONDS
 timeout_pid=
 received_signal=
+default_checkpoint_snapshot='{
+  "restoreOutcome": "not-observed",
+  "restoredBoundary": false,
+  "restoredBoundaryIndex": false,
+  "restoredGeneration": false,
+  "lastSafeBoundary": false,
+  "lastSafeBoundaryIndex": false
+}'
 
 read_last_phase() {
   if [[ -f "$progress_receipt" ]]; then
     jq -er '.phase | select(type == "string" and length > 0)' \
       "$progress_receipt" 2>/dev/null || true
+  fi
+}
+
+read_checkpoint_snapshot() {
+  local checkpoint_json=
+  if [[ -f "$progress_receipt" ]]; then
+    checkpoint_json="$(
+      jq -cSe '
+        def valid_boundary_index($boundary; $index):
+          ($boundary == false and $index == false) or
+          ($boundary == "stage1" and $index == 4) or
+          ($boundary == "stdlib" and $index == 5) or
+          ($boundary == "tools" and $index == 10);
+        .checkpoint |
+        . as $checkpoint |
+        select((keys | sort) == ([
+          "lastSafeBoundary",
+          "lastSafeBoundaryIndex",
+          "restoreOutcome",
+          "restoredBoundary",
+          "restoredBoundaryIndex",
+          "restoredGeneration"
+        ] | sort)) |
+        select([
+          "not-observed",
+          "not-configured",
+          "not-found",
+          "pending",
+          "rejected",
+          "restored"
+        ] | index($checkpoint.restoreOutcome) != null) |
+        select(valid_boundary_index(
+          $checkpoint.restoredBoundary;
+          $checkpoint.restoredBoundaryIndex
+        )) |
+        select(valid_boundary_index(
+          $checkpoint.lastSafeBoundary;
+          $checkpoint.lastSafeBoundaryIndex
+        )) |
+        select(
+          if ["not-observed", "not-configured", "pending"] |
+               index($checkpoint.restoreOutcome) != null then
+            $checkpoint.lastSafeBoundary == false and
+            $checkpoint.lastSafeBoundaryIndex == false
+          else
+            true
+          end
+        ) |
+        select(
+          if $checkpoint.restoreOutcome == "restored" then
+            $checkpoint.restoredBoundary != false and
+            (
+              ($checkpoint.restoredBoundary == "stage1" and
+                ($checkpoint.restoredGeneration |
+                  type == "string" and
+                  test("^generation-stage1-[0-9]+-[0-9]+$"))) or
+              ($checkpoint.restoredBoundary == "stdlib" and
+                ($checkpoint.restoredGeneration |
+                  type == "string" and
+                  test("^generation-stdlib-[0-9]+-[0-9]+$"))) or
+              ($checkpoint.restoredBoundary == "tools" and
+                ($checkpoint.restoredGeneration |
+                  type == "string" and
+                  test("^generation-tools-[0-9]+-[0-9]+$")))
+            ) and
+            $checkpoint.lastSafeBoundary != false and
+            $checkpoint.lastSafeBoundaryIndex >=
+              $checkpoint.restoredBoundaryIndex
+          else
+            $checkpoint.restoredBoundary == false and
+            $checkpoint.restoredBoundaryIndex == false and
+            $checkpoint.restoredGeneration == false
+          end
+        )
+      ' "$progress_receipt" 2>/dev/null || true
+    )"
+  fi
+  if [[ -n "$checkpoint_json" ]]; then
+    printf '%s\n' "$checkpoint_json"
+  else
+    printf '%s\n' "$default_checkpoint_snapshot"
   fi
 }
 
@@ -64,11 +153,13 @@ write_attempt_receipt() {
   local success_receipt_present=$4
   local success_receipt_validated=$5
   local last_phase
+  local checkpoint_json
   local last_phase_known=false
   local signal_known=false
   local attempt_tmp
 
   last_phase="$(read_last_phase)"
+  checkpoint_json="$(read_checkpoint_snapshot)"
   case "$last_phase" in
     source-prepare | configure | upstream-build | install) last_phase_known=true ;;
     *) last_phase= ;;
@@ -80,7 +171,7 @@ write_attempt_receipt() {
   mkdir -p "$attempt_dir"
   attempt_tmp="$(mktemp "$attempt_dir/.$attempt_name.tmp.XXXXXX")"
   if ! jq -n \
-    --arg schema gerbil-bazel.gerbil-bootstrap-attempt.v1 \
+    --arg schema gerbil-bazel.gerbil-bootstrap-attempt.v2 \
     --arg outcome "$outcome" \
     --arg install_digest "$install_digest" \
     --arg config_digest "$config_digest" \
@@ -94,6 +185,7 @@ write_attempt_receipt() {
     --argjson signal_known "$signal_known" \
     --argjson success_receipt_present "$success_receipt_present" \
     --argjson success_receipt_validated "$success_receipt_validated" \
+    --argjson checkpoint "$checkpoint_json" \
     '{
       schema: $schema,
       outcome: $outcome,
@@ -106,7 +198,8 @@ write_attempt_receipt() {
       exitCode: $exit_code,
       signal: (if $signal_known then $signal_name else false end),
       successReceiptPresent: $success_receipt_present,
-      successReceiptValidated: $success_receipt_validated
+      successReceiptValidated: $success_receipt_validated,
+      checkpoint: $checkpoint
     }' >"$attempt_tmp"; then
     rm -f "$attempt_tmp"
     return 1
