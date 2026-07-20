@@ -133,9 +133,16 @@ export CC="$gerbil_cc"
 export PATH="$tool_bin:$PATH"
 
 cleanup_tool_bin() {
-  rm -rf "$tool_bin"
+  local cleanup_status=$?
+  rm -rf "$tool_bin" || true
+  return "$cleanup_status"
 }
 trap cleanup_tool_bin EXIT
+
+failure_receipt_dir="${log}.failure-receipts"
+rm -rf "$failure_receipt_dir"
+mkdir -p "$failure_receipt_dir"
+export GERBIL_BAZEL_FAILURE_RECEIPT_DIR="$failure_receipt_dir"
 
 started_at=$(date +%s)
 set +e
@@ -156,14 +163,46 @@ else
   ) >"$log" 2>&1
 fi
 status=$?
-set -e
 finished_at=$(date +%s)
 
 if (( status != 0 )); then
+  failure_receipt_header_printed=false
+  failure_receipts=("$failure_receipt_dir"/*.jsonl)
+  if [[ -f ${failure_receipts[0]} ]]; then
+    printf 'Gerbil project typed failure receipts follow\n' >&2
+    failure_receipt_header_printed=true
+    for failure_receipt in "${failure_receipts[@]}"; do
+      while IFS= read -r failure_receipt_json; do
+        case "$failure_receipt_json" in
+          *'"kind":"gerbil-bazel.compiler-failure-receipt.v1"'*)
+            printf 'GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT %s\n' \
+              "$failure_receipt_json" >&2
+            ;;
+          *'"kind":"gerbil-bazel.compiler-input-receipt.v1"'*)
+            printf 'GERBIL_BAZEL_COMPILER_INPUT_RECEIPT %s\n' \
+              "$failure_receipt_json" >&2
+            ;;
+          *)
+            printf 'GERBIL_BAZEL_COMPILER_RECEIPT_INVALID %s\n' \
+              "$failure_receipt_json" >&2
+            ;;
+        esac
+      done <"$failure_receipt"
+    done
+  fi
+  if awk 'index($0, "GERBIL_BAZEL_COMPILER_") { found = 1 } END { exit(found ? 0 : 1) }' "$log"; then
+    if [[ $failure_receipt_header_printed == false ]]; then
+      printf 'Gerbil project typed failure receipts follow\n' >&2
+    fi
+    awk 'index($0, "GERBIL_BAZEL_COMPILER_") { start = index($0, "GERBIL_BAZEL_COMPILER_"); print substr($0, start) }' "$log" >&2
+  fi
   printf 'Gerbil project build failed with exit %d; final log follows\n' "$status" >&2
   tail -n 200 "$log" >&2
   exit "$status"
 fi
+
+set -e
+rm -rf "$failure_receipt_dir"
 
 library_output_required=${GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT:-0}
 case "$library_output_required" in

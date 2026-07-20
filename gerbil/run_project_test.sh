@@ -57,6 +57,12 @@ printf '%s\n' \
   '[[ "$GERBIL_LOADPATH" == "$GERBIL_PATH/lib:"* ]]' \
   'project_root=$(cd "$(dirname "$build_script")" && pwd -P)' \
   '[[ "$PWD" == "$project_root" ]]' \
+  'if [[ "${FAKE_RECEIPT_MODE:-generic}" == link-failure ]]; then' \
+  '  : "${GERBIL_BAZEL_FAILURE_RECEIPT_DIR:?}"' \
+'  printf '\''{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","status":23}\n'\'' >"$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gsc-test.jsonl"' \
+  '  for ((index = 0; index < 250; index++)); do printf "failure noise %03d\n" "$index"; done' \
+  '  exit 23' \
+  'fi' \
   'printf "generated\n" >"$project_root/src/generated.c"' \
   'if [[ "${FAKE_LIBRARY_OUTPUT:-0}" == 1 ]]; then' \
   '  mkdir -p "$GERBIL_PATH/lib/example"' \
@@ -102,6 +108,7 @@ run_fixture() {
 }
 
 FAKE_RECEIPT_MODE=generic run_fixture generic ''
+[[ ! -e "$root/generic.log.failure-receipts" ]]
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' \
   "$root/generic.receipt.json" >/dev/null
 grep -F '"libraryOutputRequired":false' \
@@ -124,6 +131,20 @@ GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT=1 \
 missing_library_status=$?
 set -e
 [[ "$missing_library_status" -eq 66 ]]
+
+set +e
+FAKE_RECEIPT_MODE=link-failure \
+  run_fixture link-failure '' 2>"$root/link-failure.stderr"
+link_failure_status=$?
+set -e
+[[ "$link_failure_status" -eq 23 ]]
+grep -F 'Gerbil project typed failure receipts follow' \
+  "$root/link-failure.stderr" >/dev/null
+grep -F 'GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT {' \
+  "$root/link-failure.stderr" >/dev/null
+grep -F '"kind":"gerbil-bazel.compiler-failure-receipt.v1"' \
+  "$root/link-failure.stderr" >/dev/null
+grep -F 'failure noise 249' "$root/link-failure.stderr" >/dev/null
 
 FAKE_RECEIPT_MODE=valid run_fixture prefixed 'PROJECT_RECEIPT '
 grep -F '"schema":"gerbil-bazel.project-receipt.v1"' \

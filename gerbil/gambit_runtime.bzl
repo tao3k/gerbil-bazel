@@ -153,7 +153,106 @@ case "$mode" in
     fi
     ;;
 esac
-exec "$raw_gsc" "${{gsc_options[@]}}" "$@"
+set +e
+"$raw_gsc" ${{gsc_options[@]+"${{gsc_options[@]}}"}} "$@"
+status=$?
+if (( status == 0 )); then
+  exit 0
+fi
+
+hex_stream() {{
+  od -An -v -tx1 | tr -d '[:space:]'
+}}
+
+encoding_failed=0
+argv_nul_hex=
+if (( $# != 0 )); then
+  argv_nul_hex=$(printf '%s\0' "$@" | hex_stream) || encoding_failed=1
+fi
+environment_nul_hex=$(
+  for name in GERBIL_HOME GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
+    if [[ ${{!name+x}} == x ]]; then
+      printf '%s=%s\0' "$name" "${{!name}}"
+    fi
+  done | hex_stream
+) || encoding_failed=1
+if (( encoding_failed != 0 )); then
+  printf 'GERBIL_BAZEL_COMPILER_RECEIPT_ENCODING_FAILURE driver=GERBIL_GSC mode=%s\n' "$mode" >&2
+  exit "$status"
+fi
+set +e
+receipt_temp=
+receipt_output=/dev/stderr
+failure_receipt_prefix='GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT '
+input_receipt_prefix='GERBIL_BAZEL_COMPILER_INPUT_RECEIPT '
+if [[ -n ${{GERBIL_BAZEL_FAILURE_RECEIPT_DIR:-}} ]]; then
+  if mkdir -p "$GERBIL_BAZEL_FAILURE_RECEIPT_DIR"; then
+    receipt_temp=$(mktemp "$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gsc.XXXXXXXX")
+    if [[ -n $receipt_temp ]]; then
+      receipt_output=$receipt_temp
+      failure_receipt_prefix=
+      input_receipt_prefix=
+    fi
+  fi
+fi
+receipt_write_failed=0
+exec 3>"$receipt_output" || receipt_write_failed=1
+printf '%s{{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"%s","status":%d,"argvNulHex":"%s","environmentNulHex":"%s"}}\n' \
+  "$failure_receipt_prefix" "$mode" "$status" "$argv_nul_hex" "$environment_nul_hex" >&3 || receipt_write_failed=1
+
+digest_command=()
+digest_algorithm=unavailable
+if command -v sha256sum >/dev/null 2>&1; then
+  digest_command=(sha256sum)
+  digest_algorithm=sha256
+elif command -v shasum >/dev/null 2>&1; then
+  digest_command=(shasum -a 256)
+  digest_algorithm=sha256
+fi
+
+input_index=0
+for argument in "$@"; do
+  case "$argument" in
+    *.c | *.scm)
+      if [[ -f $argument ]]; then
+        size=$(wc -c <"$argument" | tr -d '[:space:]')
+        if [[ ! $size =~ ^[0-9]+$ ]]; then
+          input_index=$((input_index + 1))
+          continue
+        fi
+        digest=
+        input_digest_algorithm=$digest_algorithm
+        if (( ${{#digest_command[@]}} != 0 )); then
+          if digest=$("${{digest_command[@]}}" "$argument"); then
+            digest=${{digest%% *}}
+          else
+            input_digest_algorithm=unavailable
+            digest=
+          fi
+        fi
+        if ! path_hex=$(printf '%s' "$argument" | hex_stream); then
+          input_index=$((input_index + 1))
+          continue
+        fi
+        printf '%s{{"kind":"gerbil-bazel.compiler-input-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"%s","index":%d,"pathHex":"%s","sizeBytes":%s,"digestAlgorithm":"%s","digest":"%s"}}\n' \
+          "$input_receipt_prefix" "$mode" "$input_index" "$path_hex" "$size" "$input_digest_algorithm" "$digest" >&3 || receipt_write_failed=1
+      fi
+      input_index=$((input_index + 1))
+      ;;
+  esac
+done
+exec 3>&- || receipt_write_failed=1
+if [[ -n $receipt_temp ]]; then
+  if (( receipt_write_failed == 0 )) && ln "$receipt_temp" "$receipt_temp.jsonl"; then
+    rm -f "$receipt_temp"
+  else
+    printf 'GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT {{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"%s","status":%d,"argvNulHex":"%s","environmentNulHex":"%s"}}\n' \
+      "$mode" "$status" "$argv_nul_hex" "$environment_nul_hex" >&2
+    printf 'GERBIL_BAZEL_COMPILER_RECEIPT_WRITE_FAILURE driver=GERBIL_GSC mode=%s\n' "$mode" >&2
+    rm -f "$receipt_temp"
+  fi
+fi
+exit "$status"
 """.format(
             platform_dynamic_link_options = _shell_quote(dynamic_link_options),
             producer_compiler = _shell_quote(str(producer_compiler)),
@@ -161,6 +260,114 @@ exec "$raw_gsc" "${{gsc_options[@]}}" "$@"
             producer_object_options = _shell_quote(producer_options.object),
             raw_gsc = _shell_quote(str(raw_gsc)),
         ),
+        executable = True,
+    )
+    return repository_ctx.path(wrapper)
+
+def _materialized_executable_linker(repository_ctx, raw_linker):
+    wrapper = "gerbil-gcc"
+    repository_ctx.file(
+        wrapper,
+        """#!/usr/bin/env bash
+set -euo pipefail
+raw_gcc={raw_gcc}
+set +e
+"$raw_gcc" "$@"
+status=$?
+if (( status == 0 )); then
+  exit 0
+fi
+
+hex_stream() {{
+  od -An -v -tx1 | tr -d '[:space:]'
+}}
+
+encoding_failed=0
+argv_nul_hex=
+if (( $# != 0 )); then
+  argv_nul_hex=$(printf '%s\0' "$@" | hex_stream) || encoding_failed=1
+fi
+environment_nul_hex=$(
+  for name in GERBIL_HOME GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
+    if [[ ${{!name+x}} == x ]]; then
+      printf '%s=%s\0' "$name" "${{!name}}"
+    fi
+  done | hex_stream
+) || encoding_failed=1
+if (( encoding_failed != 0 )); then
+  printf 'GERBIL_BAZEL_COMPILER_RECEIPT_ENCODING_FAILURE driver=GERBIL_GCC mode=final-link\n' >&2
+  exit "$status"
+fi
+set +e
+receipt_temp=
+receipt_output=/dev/stderr
+failure_receipt_prefix='GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT '
+input_receipt_prefix='GERBIL_BAZEL_COMPILER_INPUT_RECEIPT '
+if [[ -n ${{GERBIL_BAZEL_FAILURE_RECEIPT_DIR:-}} ]]; then
+  if mkdir -p "$GERBIL_BAZEL_FAILURE_RECEIPT_DIR"; then
+    receipt_temp=$(mktemp "$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gcc.XXXXXXXX")
+    if [[ -n $receipt_temp ]]; then
+      receipt_output=$receipt_temp
+      failure_receipt_prefix=
+      input_receipt_prefix=
+    fi
+  fi
+fi
+receipt_write_failed=0
+exec 3>"$receipt_output" || receipt_write_failed=1
+printf '%s{{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GCC","mode":"final-link","status":%d,"argvNulHex":"%s","environmentNulHex":"%s"}}\n' \
+  "$failure_receipt_prefix" "$status" "$argv_nul_hex" "$environment_nul_hex" >&3 || receipt_write_failed=1
+
+digest_command=()
+digest_algorithm=unavailable
+if command -v sha256sum >/dev/null 2>&1; then
+  digest_command=(sha256sum)
+  digest_algorithm=sha256
+elif command -v shasum >/dev/null 2>&1; then
+  digest_command=(shasum -a 256)
+  digest_algorithm=sha256
+fi
+
+input_index=0
+for argument in "$@"; do
+  if [[ -f $argument ]]; then
+    size=$(wc -c <"$argument" | tr -d '[:space:]')
+    if [[ ! $size =~ ^[0-9]+$ ]]; then
+      input_index=$((input_index + 1))
+      continue
+    fi
+    digest=
+    input_digest_algorithm=$digest_algorithm
+    if (( ${{#digest_command[@]}} != 0 )); then
+      if digest=$("${{digest_command[@]}}" "$argument"); then
+        digest=${{digest%% *}}
+      else
+        input_digest_algorithm=unavailable
+        digest=
+      fi
+    fi
+    if ! path_hex=$(printf '%s' "$argument" | hex_stream); then
+      input_index=$((input_index + 1))
+      continue
+    fi
+    printf '%s{{"kind":"gerbil-bazel.compiler-input-receipt.v1","version":1,"driver":"GERBIL_GCC","mode":"final-link","index":%d,"pathHex":"%s","sizeBytes":%s,"digestAlgorithm":"%s","digest":"%s"}}\n' \
+      "$input_receipt_prefix" "$input_index" "$path_hex" "$size" "$input_digest_algorithm" "$digest" >&3 || receipt_write_failed=1
+  fi
+  input_index=$((input_index + 1))
+done
+exec 3>&- || receipt_write_failed=1
+if [[ -n $receipt_temp ]]; then
+  if (( receipt_write_failed == 0 )) && ln "$receipt_temp" "$receipt_temp.jsonl"; then
+    rm -f "$receipt_temp"
+  else
+    printf 'GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT {{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GCC","mode":"final-link","status":%d,"argvNulHex":"%s","environmentNulHex":"%s"}}\n' \
+      "$status" "$argv_nul_hex" "$environment_nul_hex" >&2
+    printf 'GERBIL_BAZEL_COMPILER_RECEIPT_WRITE_FAILURE driver=GERBIL_GCC mode=final-link\n' >&2
+    rm -f "$receipt_temp"
+  fi
+fi
+exit "$status"
+""".format(raw_gcc = _shell_quote(str(raw_linker))),
         executable = True,
     )
     return repository_ctx.path(wrapper)
@@ -192,6 +399,8 @@ def normalized_gambit_runtime(
         producer_options,
         gambit_dynamic_link_options,
     )
+    executable_linker = gambit_executable_linker if gambit_executable_linker else str(compiler.path)
+    gcc = _materialized_executable_linker(repository_ctx, executable_linker)
     output = dict(environment)
     gambopt = output.get("GAMBOPT", repository_ctx.os.environ.get("GAMBOPT", ""))
     gambopt = _append_runtime_option(gambopt, "~~={}".format(gerbil_home))
@@ -200,7 +409,7 @@ def normalized_gambit_runtime(
     output.update({
         "CC": str(compiler.path),
         "GAMBOPT": gambopt,
-        "GERBIL_GCC": gambit_executable_linker if gambit_executable_linker else str(compiler.path),
+        "GERBIL_GCC": str(gcc),
         "GERBIL_GSC": str(gsc),
         "GERBIL_HOME": gerbil_home,
     })
@@ -212,6 +421,7 @@ def normalized_gambit_runtime(
         compiler_path = compiler.path,
         environment = output,
         executable_linker = gambit_executable_linker,
+        gcc_path = gcc,
         gsc_path = gsc,
         producer_dynamic_options = producer_options.dynamic,
         producer_object_options = producer_options.object,
