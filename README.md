@@ -16,9 +16,10 @@ gerbil.auto(
     name = "local_gerbil",
     expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
     linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_install_digest = "<install-digest>",
+    linux_prebuilt_sha256 = "<archive-sha256>",
     linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+        "<digest-addressed-immutable-release-archive-url>",
     ],
     project_dependency_packages = ["clan", "gslph"],
     project_root_marker = "//:MODULE.bazel",
@@ -51,6 +52,7 @@ Use the explicit immutable provider for a Linux-only consumer:
 ```starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
+    install_digest = "<install-digest>",
     name = "gerbil_linux_x86_64",
     expected_version_prefixes = ["0.18.2"],
     sha256 = "<archive-sha256>",

@@ -84,7 +84,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ci/gerbil-prefix
-          key: gerbil-install-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
+          key: gerbil-install-v1-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
 
       - name: Build Gerbil on Linux
         if: matrix.gerbil_source == 'source' && steps.gerbil-install-cache.outputs.cache-hit != 'true'
@@ -97,6 +97,15 @@ jobs:
           GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
           GERBIL_SRC: ${{ github.workspace }}/.ci/gerbil-src
         run: tools/ci/bootstrap_gerbil.sh
+
+      - name: Record Linux Gerbil materialization
+        if: matrix.gerbil_source == 'source'
+        env:
+          GERBIL_INSTALL_CACHE_HIT: ${{ steps.gerbil-install-cache.outputs.cache-hit == 'true' }}
+          GERBIL_INSTALL_DIGEST: ${{ steps.gerbil-source-build-identity.outputs.install_digest }}
+          GERBIL_INSTALL_MATERIALIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/gerbil-install-materialization-${{ runner.os }}-${{ runner.arch }}.json
+          GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
+        run: tools/ci/record_install_materialization.sh
 
       - name: Set up Homebrew
         if: matrix.gerbil_source == 'homebrew-bottle'
@@ -144,7 +153,11 @@ jobs:
           disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ env.GERBIL_VERSION_LABEL }}
 
       - name: Validate the prebuilt repository provider
-        run: tools/ci/test_repository_provider.sh prebuilt
+        run: |
+          tools/ci/test_repository_provider.sh prebuilt
+          GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
+            GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE="$(printf '0%.0s' {1..64})" \
+            tools/ci/test_repository_provider.sh prebuilt
 
       - name: Validate the platform-adaptive repository provider
         run: tools/ci/test_repository_provider.sh auto
@@ -169,20 +182,21 @@ jobs:
       - name: Package the relocatable Linux capability
         if: matrix.gerbil_source == 'source'
         env:
-          GERBIL_CAPABILITY_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64.tar.gz
+          GERBIL_CAPABILITY_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
+          GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT: ${{ github.workspace }}/.ci/gerbil-source-build-identity.json
         run: tools/ci/package_prebuilt_capability.sh
 
       - name: Validate the packaged Linux capability as a consumer
         if: matrix.gerbil_source == 'source'
         env:
-          GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64.tar.gz
+          GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
         run: tools/ci/test_repository_provider.sh prebuilt
 
       - name: Upload the Linux capability
         if: matrix.gerbil_source == 'source'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gerbil-prebuilt-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64
+          name: gerbil-prebuilt-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}
           path: .ci/capabilities/*
           if-no-files-found: error
 

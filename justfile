@@ -47,6 +47,7 @@ scenario-test:
 source-identity-test:
     tools/ci/test_source_build_identity.sh
     tools/ci/test_bootstrap_gerbil.sh
+    tools/ci/test_install_materialization.sh
 
 check: query build test source-identity-test auto-test prebuilt-test
 
@@ -55,6 +56,9 @@ mod-tidy:
 
 prebuilt-test:
     tools/ci/test_repository_provider.sh prebuilt
+    GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
+      GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE=$(printf '0%.0s' {1..64}) \
+      tools/ci/test_repository_provider.sh prebuilt
 
 auto-test:
     tools/ci/test_repository_provider.sh auto

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.prebuilt-capability-package-receipt.v1.schema.json",
+  "title": "Gerbil Bazel Prebuilt Capability Package Receipt v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "outcome",
+    "archive",
+    "archiveSha256",
+    "archiveSizeBytes",
+    "capabilityId",
+    "installDigest",
+    "sourceBuildIdentityReceipt",
+    "sourceBuildIdentitySha256",
+    "version",
+    "platform",
+    "relocationVerified",
+    "compilerRelocationVerified",
+    "archiveSeconds",
+    "relocationSeconds",
+    "elapsedSeconds"
+  ],
+  "properties": {
+    "schema": {"const": "gerbil-bazel.prebuilt-capability-package-receipt.v1"},
+    "outcome": {"const": "ready"},
+    "archive": {"type": "string", "minLength": 1},
+    "archiveSha256": {"$ref": "#/$defs/sha256"},
+    "archiveSizeBytes": {"type": "integer", "minimum": 1},
+    "capabilityId": {"type": "string", "minLength": 1},
+    "installDigest": {"$ref": "#/$defs/sha256"},
+    "sourceBuildIdentityReceipt": {"type": "string", "minLength": 1},
+    "sourceBuildIdentitySha256": {"$ref": "#/$defs/sha256"},
+    "version": {"type": "string", "minLength": 1},
+    "platform": {
+      "type": "object",
+      "required": ["os", "arch"],
+      "properties": {
+        "os": {"enum": ["darwin", "linux"]},
+        "arch": {"enum": ["aarch64", "x86_64"]}
+      },
+      "additionalProperties": false
+    },
+    "relocationVerified": {"const": true},
+    "compilerRelocationVerified": {"const": true},
+    "archiveSeconds": {"type": "integer", "minimum": 0},
+    "relocationSeconds": {"type": "integer", "minimum": 0},
+    "elapsedSeconds": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

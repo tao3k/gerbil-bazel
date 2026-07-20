@@ -270,6 +270,21 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     )
 
     manifest = _manifest(repository_ctx)
+    expected_install_digest = _hex_digest(
+        repository_ctx.attr.install_digest,
+        64,
+        "expected install digest",
+    )
+    install_digest = _hex_digest(
+        manifest.get("installDigest"),
+        64,
+        "manifest installDigest",
+    )
+    if install_digest != expected_install_digest:
+        fail("Gerbil capability install digest mismatch: expected {}, manifest declares {}".format(
+            expected_install_digest,
+            install_digest,
+        ))
     host = resolve_host_environment(
         repository_ctx,
         darwin_homebrew_formulae = repository_ctx.attr.darwin_homebrew_formulae,
@@ -382,6 +397,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
                 "object": runtime.producer_object_options,
             },
             "gerbilExecutableLinker": runtime.executable_linker,
+            "installDigest": install_digest,
             "nativeAbiFingerprint": native_abi,
             "platform": {
                 "arch": platform.architecture,
@@ -423,6 +439,7 @@ prebuilt_gerbil_repository = repository_rule(
         ]),
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
+        "install_digest": attr.string(mandatory = True),
         "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
         "project_dependency_packages": attr.string_list(),
         "project_library_relative_path": attr.string(default = ".gerbil/lib"),

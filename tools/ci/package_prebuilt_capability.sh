@@ -4,6 +4,7 @@ set -euo pipefail
 : "${GERBIL_CAPABILITY_ARCHIVE:?GERBIL_CAPABILITY_ARCHIVE is required}"
 : "${GERBIL_PREFIX:?GERBIL_PREFIX is required}"
 : "${GERBIL_REF:?GERBIL_REF is required}"
+: "${GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT:?GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT is required}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 prefix="$(cd "$GERBIL_PREFIX" && pwd)"
@@ -14,6 +15,18 @@ output_stem="${archive%.tar.gz}"
 stage="$(mktemp -d)"
 relocation_root="$(mktemp -d)"
 started_at="$SECONDS"
+
+identity_json="$(
+  jq -cSe \
+    --arg source_ref "$GERBIL_REF" \
+    'select(.schema == "gerbil-bazel.source-build-identity.v1") |
+     select(.digestAlgorithm == "sha256") |
+     select(.source.ref == $source_ref) |
+     select(.installDigest | test("^[0-9a-f]{64}$"))' \
+    "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT"
+)"
+install_digest="$(jq -er '.installDigest' <<<"$identity_json")"
+identity_sha256="$(sha256sum "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT" | awk '{print $1}')"
 
 cleanup() {
   rm -rf "$stage" "$relocation_root"
@@ -138,6 +151,7 @@ manifest="$stage/gerbil-bazel-capability.json"
 jq -n \
   --arg schema gerbil-bazel.prebuilt-capability-manifest.v1 \
   --arg capability_id "$capability_id" \
+  --arg install_digest "$install_digest" \
   --arg version "$version" \
   --arg native_abi "$native_abi" \
   --arg system "$system" \
@@ -148,6 +162,7 @@ jq -n \
   '{
     schema: $schema,
     capabilityId: $capability_id,
+    installDigest: $install_digest,
     version: $version,
     nativeAbiFingerprint: $native_abi,
     platform: {os: $system, arch: $architecture},
@@ -173,6 +188,7 @@ archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
 archive_size_bytes="$(stat -c '%s' "$archive")"
 printf '%s  %s\n' "$archive_sha256" "$(basename "$archive")" >"$output_stem.sha256"
 cp "$manifest" "$output_stem.manifest.json"
+cp "$GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT" "$output_stem.identity.json"
 
 relocation_started_at="$SECONDS"
 tar -xzf "$archive" -C "$relocation_root"
@@ -246,6 +262,9 @@ jq -n \
   --arg archive "$(basename "$archive")" \
   --arg archive_sha256 "$archive_sha256" \
   --arg capability_id "$capability_id" \
+  --arg install_digest "$install_digest" \
+  --arg identity_receipt "$(basename "$output_stem.identity.json")" \
+  --arg identity_sha256 "$identity_sha256" \
   --arg version "$version" \
   --arg system "$system" \
   --arg architecture "$architecture" \
@@ -260,6 +279,9 @@ jq -n \
     archiveSha256: $archive_sha256,
     archiveSizeBytes: $archive_size_bytes,
     capabilityId: $capability_id,
+    installDigest: $install_digest,
+    sourceBuildIdentityReceipt: $identity_receipt,
+    sourceBuildIdentitySha256: $identity_sha256,
     version: $version,
     platform: {os: $system, arch: $architecture},
     relocationVerified: true,

@@ -11,9 +11,8 @@ on:
         description: Expected source run commit SHA
         required: true
         type: string
-      release_tag:
-        description: New immutable capability release tag
-        default: gerbil-v0.18.2-07c84815-linux-x86_64
+      install_digest:
+        description: Expected source-build installation identity digest
         required: true
         type: string
 
@@ -22,12 +21,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: prebuilt-capability-${{ inputs.release_tag }}
+  group: prebuilt-capability-${{ inputs.install_digest }}
   cancel-in-progress: false
 
 env:
-  ARTIFACT_NAME: gerbil-prebuilt-v0.18.2-07c84815-linux-x86_64
+  ARTIFACT_NAME: gerbil-prebuilt-v0.18.2-07c84815-linux-x86_64-${{ inputs.install_digest }}
   CAPABILITY_ID: gerbil-07c8481588a8b07dbf05832687817cd398902ac0-linux-x86_64
+  RELEASE_TAG: gerbil-v0.18.2-07c84815-linux-x86_64-${{ inputs.install_digest }}
 
 jobs:
   publish:
@@ -38,10 +38,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          EXPECTED_INSTALL_DIGEST: ${{ inputs.install_digest }}
           REPOSITORY: ${{ github.repository }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         shell: bash
         run: |
+          if [[ ! "$EXPECTED_INSTALL_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'invalid expected installation digest: %s\n' \
+              "$EXPECTED_INSTALL_DIGEST" >&2
+            exit 64
+          fi
           conclusion="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .conclusion)"
           event="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .event)"
           head_branch="$(gh api "repos/${REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" --jq .head_branch)"
@@ -74,7 +80,7 @@ jobs:
 
       - name: Validate immutable release inputs
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_INSTALL_DIGEST: ${{ inputs.install_digest }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
@@ -82,28 +88,37 @@ jobs:
           archives=(capability/*.tar.gz)
           manifests=(capability/*.manifest.json)
           receipts=(capability/*.receipt.json)
+          identities=(capability/*.identity.json)
           digests=(capability/*.sha256)
           if (( ${#archives[@]} != 1 ||
                 ${#manifests[@]} != 1 ||
                 ${#receipts[@]} != 1 ||
+                ${#identities[@]} != 1 ||
                 ${#digests[@]} != 1 )); then
-            printf 'capability release requires one archive, manifest, receipt, and digest\n' >&2
+            printf 'capability release requires one archive, manifest, receipt, identity, and digest\n' >&2
             exit 1
           fi
 
           archive="${archives[0]}"
           manifest="${manifests[0]}"
           receipt="${receipts[0]}"
+          identity="${identities[0]}"
           expected_sha256="$(awk 'NR == 1 {print $1}' "${digests[0]}")"
           observed_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          identity_sha256="$(sha256sum "$identity" | awk '{print $1}')"
           if [[ "$expected_sha256" != "$observed_sha256" ||
                 "$(jq -r .archiveSha256 "$receipt")" != "$observed_sha256" ||
+                "$(jq -r .sourceBuildIdentitySha256 "$receipt")" != "$identity_sha256" ||
                 "$(jq -r .schema "$receipt")" != gerbil-bazel.prebuilt-capability-package-receipt.v1 ||
                 "$(jq -r .outcome "$receipt")" != ready ||
+                "$(jq -r .installDigest "$receipt")" != "$EXPECTED_INSTALL_DIGEST" ||
                 "$(jq -r .relocationVerified "$receipt")" != true ||
                 "$(jq -r .compilerRelocationVerified "$receipt")" != true ||
                 "$(jq -r .schema "$manifest")" != gerbil-bazel.prebuilt-capability-manifest.v1 ||
                 "$(jq -r .capabilityId "$manifest")" != "$CAPABILITY_ID" ||
+                "$(jq -r .installDigest "$manifest")" != "$EXPECTED_INSTALL_DIGEST" ||
+                "$(jq -r .schema "$identity")" != gerbil-bazel.source-build-identity.v1 ||
+                "$(jq -r .installDigest "$identity")" != "$EXPECTED_INSTALL_DIGEST" ||
                 "$(jq -r .platform.os "$manifest")" != linux ||
                 "$(jq -r .platform.arch "$manifest")" != x86_64 ]]; then
             printf 'capability release evidence is inconsistent or incomplete\n' >&2
@@ -119,7 +134,6 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
@@ -129,4 +143,4 @@ jobs:
             --repo "$REPOSITORY" \
             --target "$EXPECTED_HEAD_SHA" \
             --title "$RELEASE_TAG" \
-            --notes "Immutable relocatable Linux Gerbil capability. Consume only with the published SHA-256 through gerbil.prebuilt(...)."
+            --notes "Immutable relocatable Linux Gerbil capability. Verify both the published archive SHA-256 and installDigest through gerbil.prebuilt(...)."

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.prebuilt-capability-manifest.v1.schema.json",
+  "title": "Gerbil Bazel Prebuilt Capability Manifest v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "capabilityId",
+    "installDigest",
+    "version",
+    "nativeAbiFingerprint",
+    "platform",
+    "gerbilHome",
+    "tools",
+    "dependencyRoots",
+    "environment"
+  ],
+  "properties": {
+    "schema": {"const": "gerbil-bazel.prebuilt-capability-manifest.v1"},
+    "capabilityId": {"type": "string", "minLength": 1},
+    "installDigest": {"$ref": "#/$defs/sha256"},
+    "version": {"type": "string", "minLength": 1},
+    "nativeAbiFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "platform": {
+      "type": "object",
+      "required": ["os", "arch"],
+      "properties": {
+        "os": {"enum": ["darwin", "linux"]},
+        "arch": {"enum": ["aarch64", "x86_64"]}
+      },
+      "additionalProperties": false
+    },
+    "gerbilHome": {"type": "string", "minLength": 1},
+    "tools": {
+      "type": "object",
+      "required": ["gxc", "gxi", "gxpkg", "gxtest"],
+      "properties": {
+        "gxc": {"type": "string", "minLength": 1},
+        "gxi": {"type": "string", "minLength": 1},
+        "gxpkg": {"type": "string", "minLength": 1},
+        "gxtest": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "dependencyRoots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

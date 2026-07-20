@@ -2,6 +2,9 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "gerbil-bazel.build-scenario-receipt.v1.schema.json",
+    "gerbil-bazel.install-materialization-receipt.v1.schema.json",
+    "gerbil-bazel.prebuilt-capability-manifest.v1.schema.json",
+    "gerbil-bazel.prebuilt-capability-package-receipt.v1.schema.json",
     "gerbil-bazel.project-receipt.v1.schema.json",
     "gerbil-bazel.source-build-identity.v1.schema.json",
 ])

@@ -104,6 +104,46 @@ compiler cache” scenario, not an unclassified cold retry.
 
 * Receipts
 
+The source-build identity receipt is producer evidence.  A restored bootstrap
+receipt remains immutable evidence of the build that produced the installation;
+it must not be rewritten to claim that the current run observed a cache hit.
+
+The current run emits =gerbil-bazel.install-materialization-receipt.v1=.  Its
+=materialization= field is exactly =cache-hit= or =built=, and its
+=installDigest= must match the embedded source-build identity in the producer
+bootstrap receipt.  This separates production from materialization without
+duplicating upstream build semantics.
+
+Packaging copies the source-build identity receipt beside the archive.  The
+capability manifest and package receipt both carry the same =installDigest=.
+The package receipt also records the identity receipt SHA-256, while the archive
+SHA-256 continues to prove byte integrity.  Promotion succeeds only when the
+identity receipt, manifest, package receipt, archive digest, and requested
+release identity form one closed chain.
+
+#+begin_src mermaid
+flowchart LR
+  I["Source build identity receipt"] -->|"installDigest"| M{"Installation materialization"}
+  M -->|"cache-hit"| P["Complete Gerbil prefix"]
+  M -->|"built via upstream lifecycle"| P
+  P --> B["Immutable bootstrap producer receipt"]
+  P --> K["Capability packager"]
+  I --> K
+  K --> C["Capability manifest + package receipt"]
+  K --> A["Relocatable archive + SHA-256"]
+  C --> V{"Promotion validation"}
+  A --> V
+  I --> V
+  V --> R["Digest-addressed immutable release"]
+  R --> D["prebuilt or auto provider"]
+  D -->|"expected installDigest + archive SHA-256"| T["Validated Gerbil toolchain"]
+#+end_src
+
+Consumers declare both the expected =install_digest= and archive =sha256=.
+The repository rule fails closed when the manifest identity differs; it never
+falls back to a source build.  The =auto= tag uses
+=linux_prebuilt_install_digest= for the same Linux capability contract.
+
 =gerbil-bazel.source-build-identity.v1= records the complete inputs and both
 digests. The bootstrap receipt MUST record the identity and phase durations for
 source preparation, configure, upstream build, and install. Generated receipts

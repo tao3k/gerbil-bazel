@@ -122,6 +122,12 @@ flowchart LR
 
 * Public Bzlmod API
 
+Every prebuilt Linux declaration carries two independent proofs:
+=install_digest= identifies the exact source/configuration/native build inputs,
+while =sha256= identifies the downloaded archive bytes.  The =auto= form uses
+=linux_prebuilt_install_digest= for the same contract.  A mismatch fails closed
+before toolchain registration and never invokes a source-build fallback.
+
 Cross-platform consumers declare one capability repository:
 
 #+begin_src starlark
@@ -130,9 +136,10 @@ gerbil.auto(
     name = "local_gerbil",
     expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
     linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_install_digest = "<64 hexadecimal characters>",
+    linux_prebuilt_sha256 = "<64 hexadecimal characters>",
     linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+        "https://github.com/tao3k/gerbil-bazel/releases/download/<digest-addressed-capability>/<archive>",
     ],
     project_dependency_packages = ["clan", "gslph"],
     project_root_marker = "//:MODULE.bazel",
@@ -146,6 +153,7 @@ The explicit Linux-only provider remains available:
 #+begin_src starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
+    install_digest = "<64 hexadecimal characters>",
     name = "gerbil_linux_x86_64",
     expected_version_prefixes = ["0.18.2"],
     sha256 = "<64 hexadecimal characters>",
