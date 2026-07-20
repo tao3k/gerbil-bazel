@@ -10,6 +10,7 @@ gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.auto(
     name = "auto_gerbil",
     linux_prebuilt_arch = "@@ARCHITECTURE@@",
+    linux_prebuilt_install_digest = "@@INSTALL_DIGEST@@",
     linux_prebuilt_sha256 = "@@ARCHIVE_SHA256@@",
     linux_prebuilt_urls = ["@@ARCHIVE_URL@@"],
     project_dependency_packages = ["clan", "gslph", "missing-package"],

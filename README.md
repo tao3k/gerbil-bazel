@@ -16,9 +16,10 @@ gerbil.auto(
     name = "local_gerbil",
     expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
     linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_install_digest = "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
+    linux_prebuilt_sha256 = "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
     linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
     ],
     project_dependency_packages = ["clan", "gslph"],
     project_root_marker = "//:MODULE.bazel",
@@ -51,10 +52,13 @@ Use the explicit immutable provider for a Linux-only consumer:
 ```starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
+    install_digest = "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
     name = "gerbil_linux_x86_64",
-    expected_version_prefixes = ["0.18.2"],
-    sha256 = "<archive-sha256>",
-    urls = ["<immutable-release-archive-url>"],
+    expected_version_prefixes = ["Gerbil v0.18.2", "Gerbil 07c8481"],
+    sha256 = "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
+    urls = [
+        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
+    ],
 )
 use_repo(gerbil, "gerbil_linux_x86_64")
 register_toolchains("@gerbil_linux_x86_64//:registered_toolchain")
@@ -65,6 +69,11 @@ platform, runtime version, and native ABI shape. It fails closed and never
 falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
+
+Source production is a separate, explicit operation.  The
+[Source Producer v1 runbook](docs/runbooks/source-producer-v1.org) defines
+default-branch registration, runner selection, cold-build receipt acceptance,
+and the independent promotion boundary.
 
 Both `auto` providers and the explicit `prebuilt` provider support the same
 project-library view as `host`. Declare `project_root_marker`,

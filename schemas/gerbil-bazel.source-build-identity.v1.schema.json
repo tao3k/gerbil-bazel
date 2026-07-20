@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.source-build-identity.v1.schema.json",
+  "title": "Gerbil Bazel Source Build Identity v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "digestAlgorithm",
+    "source",
+    "config",
+    "nativeBuildIdentity",
+    "compilerCacheIdentity",
+    "compilerCacheNamespaceDigest",
+    "installDigest"
+  ],
+  "properties": {
+    "schema": {"const": "gerbil-bazel.source-build-identity.v1"},
+    "digestAlgorithm": {"const": "sha256"},
+    "source": {
+      "type": "object",
+      "required": ["ref", "url"],
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "required": ["digest", "outputIdentityDigest", "value"],
+      "properties": {
+        "digest": {"$ref": "#/$defs/sha256"},
+        "outputIdentityDigest": {"$ref": "#/$defs/sha256"},
+        "value": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "nativeBuildIdentity": {"type": "object"},
+    "compilerCacheIdentity": {"type": "object"},
+    "compilerCacheNamespaceDigest": {"$ref": "#/$defs/sha256"},
+    "installDigest": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

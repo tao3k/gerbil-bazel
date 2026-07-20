@@ -1,0 +1,337 @@
+#+title: RFC 0005: Upstream-Native Gerbil Build Ownership
+#+status: Proposed
+#+version: 1
+#+date: 2026-07-19
+
+* Decision
+
+Gerbil-Bazel MUST project the native Gerbil build system into Bazel.  It MUST
+NOT replace Gerbil's configuration, bootstrap, module dependency scheduling,
+compiler job scheduling, package lifecycle, or installation semantics.
+
+The upstream implementation is the semantic owner.  Bazel owns hermetic input
+declaration, toolchain selection, action isolation, content-addressed caching,
+remote execution compatibility, typed receipts, and performance gates around
+that implementation.
+
+This RFC becomes the maintenance contract when merged.  A change that cannot
+identify its upstream owner and explain its projection boundary MUST NOT be
+merged as a build optimization.
+
+* Evidence scope
+
+The source audit used the local upstream checkout:
+
+| Field | Value |
+|-------+-------|
+| Repository | =https://github.com/mighty-gerbils/gerbil.git= |
+| Audited revision | =0618730d4e30bf3f48538d6b09722ad3b6056414= |
+| Local checkout | =.data/gerbil= in the POO Flow integration workspace |
+| Gerbil-Bazel baseline | =efcbff933107c9beb04510aa4d745e74c9966714= |
+
+The POO Flow validation toolchain currently identifies Gerbil revision
+=07c8481588a8b07dbf05832687817cd398902ac0=.  That revision is not materialized
+in the audited local checkout.  The ownership model below is verified at
+=0618730d=, but it is not line-level proof for =07c84815=.
+
+Before changing behavior for a pinned Gerbil revision, maintainers MUST
+materialize that exact revision and repeat the owner audit.  Adjacent tags,
+installed binaries, Homebrew formulas, and a newer checkout are not substitute
+evidence.
+
+* Native ownership map
+
+| Native owner | Semantic responsibility | Bazel projection |
+|--------------+-------------------------+------------------|
+| =configure= | Gerbil prefix/version, integrated Gambit configuration, architecture, shared linkage, and standard-library feature selection | Declare configuration inputs and execute the native entry in an isolated source tree |
+| =Makefile= and root =build.sh= | Public =build=, =install=, =check=, and =clean= lifecycle | Invoke public targets; do not replace them with private compiler commands |
+| =src/build.sh= | Bootstrap and full source-build stage order | Treat the stage graph as an upstream-owned action unless an upstream public stage contract is used |
+| =src/std/build-spec.ss= | Declarative standard-library build specification, platform branches, feature gates, compiler kinds, flags, and extra inputs | Include the spec and all referenced inputs in the action identity; do not flatten it into a second module DSL |
+| =src/std/make.ss= | Spec normalization, import dependency graph, stale checks, coordinator threads, ready-work channel, worker pool, and final compiler-job flush | Supply the adaptive core budget and preserve the native scheduler |
+| =src/gerbil/compiler/base.ss= | Deferred compiler jobs and shared core quota | Observe and budget it; do not add another inner scheduler |
+| =src/tools/gxpkg.ss= | Package manifest, tag selection, dependency installation, cycle detection, package build state, and delegation to =build.ss= | Invoke =gxpkg= for package lifecycle transitions |
+| =install.sh= | Versioned installation tree, sources, and =current= links | Capture the native installed tree as the declared output |
+
+* Native source-build lifecycle
+
+#+begin_src mermaid
+flowchart TD
+  Configure["configure"] --> GambitConfigure["src/gambit/configure"]
+  Configure --> BuildEnv["generated build-env.sh: prefix and version"]
+  Configure --> StdFeatures["configured std build features"]
+  Make["make -jN"] --> BuildFlags["MAKEFLAGS to GERBIL_BUILD_FLAGS"]
+  BuildFlags --> CoreBudget["GERBIL_BUILD_CORES=N"]
+  CoreBudget --> Prepare["prepare build and bootstrap trees"]
+  Prepare --> Gambit["Gambit bootstrap and from-scratch"]
+  Gambit --> BootGXI["compile boot-gxi"]
+  BootGXI --> Stage0["Gerbil stage0 bootstrap"]
+  Stage0 --> Stage1["Gerbil core and Bach"]
+  Stage1 --> Stdlib["stdlib through std/build.ss and std/make"]
+  Stdlib --> LibGerbil["libgerbil"]
+  LibGerbil --> Languages["languages, R7RS, SRFI, and tools"]
+  Languages --> Install["install.sh versioned installation tree"]
+#+end_src
+
+The full source build is deliberately different from a package build.  Its
+=prepare= phase recreates the build and bootstrap directories.  A clean source
+toolchain action therefore needs a content-addressed cache around the native
+pipeline; it MUST NOT claim that =std/make= file timestamps make the complete
+bootstrap incremental.
+
+The public source-build parallel interface is a concrete =make -jN=.  The
+Makefile transports =MAKEFLAGS= into =GERBIL_BUILD_FLAGS=, and =src/build.sh=
+maps the concrete =-jN= value to =GERBIL_BUILD_CORES=.  A Bazel action MUST use
+this path instead of injecting an unrelated worker-count implementation.
+
+* Native module scheduler
+
+The standard-library =build-spec= is a configuration-sensitive value.  It can
+contain ordinary module names, =gxc:=, =gsc:=, =ssi:=, =static-include:=,
+=extra-inputs:=, platform conditionals, feature gates, and native compiler or
+linker options.
+
+=std/make= normalizes that value and owns the dependency-aware execution graph:
+
+#+begin_src mermaid
+flowchart TD
+  Spec["normalized build spec"] --> Completion["completion table by module id"]
+  Imports["Gerbil module import graph"] --> Coordinators["one coordinator per spec"]
+  Completion --> Coordinators
+  Coordinators --> Wait["wait for in-tree import completions"]
+  Wait --> Stale{"missing output, newer input, or newer imported library?"}
+  Stale -->|"no"| Done["post completion"]
+  Stale -->|"yes"| Ready["ready-work channel"]
+  Ready --> Workers["native worker pool"]
+  Workers --> Build["build spec through native compiler driver"]
+  Build --> Done
+  Coordinators --> Barrier["coordinator barrier"]
+  Barrier --> Close["close ready-work channel"]
+  Close --> Join["join native workers"]
+  Join --> Flush["execute pending compiler jobs"]
+#+end_src
+
+The stale decision is also upstream-owned.  It checks missing outputs, direct
+inputs newer than outputs, and imported library timestamps with the source
+directory removed from the dependency lookup path.  Bazel MUST NOT duplicate
+this logic with filename scans or an independently inferred module graph.
+
+* Parallelism contract
+
+=settings.parallelize= defaults to the native =gerbil-build-cores= result.
+An explicit integer is preserved.  The default true value reads
+=GERBIL_BUILD_CORES=, whose upstream default disables parallel make workers.
+The compiler backend independently uses the same environment variable as its
+shared deferred-job core quota.
+
+This produces two native phases, not a Bazel-owned nested scheduler:
+
+1. =std/make= runs dependency-ready frontend work through its worker pool.
+2. The compiler drains the deferred backend-job snapshot, starts those threads,
+   and constrains execution through the shared core quota.
+
+Gerbil upstream explicitly records CPU-and-memory auto-calibration as future
+work.  Until upstream supplies that policy, Gerbil-Bazel MAY use its Scheme
+resource guard to compute an action-local budget from available CPUs, memory,
+current runnable load, and measured peak RSS.  The guard MUST only project the
+result as a concrete =GERBIL_BUILD_CORES=N= or source-build =make -jN=.  It MUST
+NOT replace either native scheduler.
+
+Hard-coded logical CPU counts, fixed retry counts, sleeps, and unconditional
+serialization are prohibited.
+
+* Package lifecycle contract
+
+=gxpkg= owns package transitions:
+
+#+begin_src mermaid
+flowchart LR
+  GerbilPkg["gerbil.pkg depend declarations"] --> Install["gxpkg install"]
+  Install --> Fetch["fetch selected package tag or revision"]
+  Fetch --> Dependencies["recursively install declared dependencies"]
+  Dependencies --> Manifest["materialize package manifest"]
+  Manifest --> Build["package build.ss compile"]
+  Build --> Status["native built status and optional dependents"]
+#+end_src
+
+=pkg-build= forwards release, optimized, and debug modes and delegates actual
+compilation to the package's =build.ss=.  Gerbil-Bazel MUST NOT implement tag
+selection, recursive dependency installation, circular-build detection, or a
+parallel package database in Starlark or shell.
+
+A dependency action MAY be cached by a closure identity containing the exact
+Gerbil toolchain, =gerbil.pkg=, and dependency revisions.  It MUST call the
+native =gxpkg= transition.  Per-dependency Bazel actions require an upstream
+machine-readable dependency graph and receipt contract; until that exists, a
+single native dependency-closure action is the honest atomic boundary.
+
+Never run =gxpkg uninstall= in a package workspace.  Clean, update, dependency
+installation, and exact tag-conflict evidence are the supported maintenance
+routes.
+
+* Configuration identity
+
+A source-toolchain cache key MUST include at least:
+
+- exact Gerbil source revision and version string;
+- exact integrated Gambit revision and configure arguments;
+- target OS, architecture, and native ABI;
+- shared/static mode and standard-library feature vector;
+- compiler identity plus =CC=, =CFLAGS=, =CPPFLAGS=, and =LDFLAGS=;
+- SDK/toolchain capability on Darwin;
+- source patches, if an unavoidable and reviewed patch exists.
+
+=configure= delegates unrecognized integrated options to Gambit, creates the
+versioned Gerbil prefix, generates =build-env.sh=, and configures standard
+library features.  Because the native configure path updates its source-tree
+feature input, a hermetic action MUST run it in an isolated declared source
+tree.  It MUST NOT mutate the developer checkout.
+
+Darwin MUST use the configured Xcode Clang capability for the native toolchain.
+Gerbil-Bazel MUST NOT substitute a GNU compiler merely to make a Linux-shaped
+rule appear portable.  Platform differences belong in declared toolchain
+capabilities and upstream configure options, not repeated =env -u= command
+fragments.
+
+* Bazel ownership
+
+Gerbil-Bazel owns the following and no more:
+
+- Bazel module and repository selection;
+- exact toolchain files, environment, runfiles, and ABI fingerprints;
+- declared source, configuration, dependency, and extra-input closure;
+- sandbox-safe staging and declared installed/project output trees;
+- action and remote-cache identity;
+- failure-only observability and stable typed receipts;
+- adaptive resource admission before entering the native build;
+- comparable cold, warm, and identical-rerun performance receipts.
+
+For a Gerbil source toolchain, the default projection SHOULD be:
+
+#+begin_src mermaid
+flowchart LR
+  Inputs["Gerbil and Gambit revisions plus configuration"] --> BazelAction["hermetic Bazel source-toolchain action"]
+  Budget["Scheme resource guard"] -->|"concrete N"| NativeMake["configure; make -jN; make install DESTDIR"]
+  BazelAction --> NativeMake
+  NativeMake --> Prefix["declared versioned Gerbil prefix"]
+  Prefix --> Fingerprint["toolchain ABI and configuration fingerprint"]
+  Fingerprint --> Cache["local or remote content-addressed cache"]
+#+end_src
+
+For a Gerbil package, the default projection SHOULD preserve one native
+project action around =build.ss= and =std/make=.  Bazel may avoid the action
+entirely through its cache, but when the action executes it MUST let the native
+module scheduler run.
+
+* Optimization order
+
+Optimizations MUST be pursued in this order.
+
+** P0: Preserve native semantics
+
+1. Model exact configure and toolchain identity.
+2. Invoke the public source-build or package-build entry.
+3. Feed one adaptive core budget into the upstream interface.
+4. Keep =build.ss= and =gerbil.pkg= as declared build truth.
+
+** P1: Remove redundant work around the native action
+
+1. Cache the configured and installed Gerbil prefix by content identity.
+2. Route C compilation through =ccache= by the upstream =CC= and configured
+   Gambit producer path, never by wrapping =gxc= semantics.
+3. Cache the native dependency closure when its exact revisions are unchanged.
+4. Separate provider/toolchain construction, dependency installation, and
+   project compilation so a change invalidates only its owning boundary.
+5. Record phase timings so download, configure, bootstrap, standard library,
+   package dependency, and project compilation are distinguishable.
+
+** P2: Request or contribute upstream capabilities
+
+The following require an upstream contract before finer Bazel decomposition:
+
+- machine-readable configure and feature manifests;
+- a machine-readable =gxpkg= dependency closure and per-package receipt;
+- CPU-and-memory core calibration in =std/make=;
+- stable bootstrap-stage inputs and outputs;
+- a persistent incremental build-tree contract independent of file mtimes.
+
+Gerbil-Bazel MUST prefer contributing such a capability upstream over parsing
+human output or copying private implementation details.
+
+* Prohibited designs
+
+The following changes violate this RFC:
+
+- translating Gerbil imports into an independently scheduled Bazel module DAG;
+- compiling discovered source files directly with ad hoc =gxc= or =gsc= loops;
+- replacing =gxpkg= dependency and tag semantics with a Starlark package graph;
+- hard-coding worker counts from one developer or CI machine;
+- using retry, sleep, or serialization to hide a native race or memory fault;
+- treating =build.sh= stage functions as stable public Bazel APIs without an
+  upstream contract;
+- modifying an installed Gerbil/Gambit prefix after its toolchain fingerprint;
+- caching a prefix without its configure, compiler, feature, and ABI identity;
+- using undeclared host SDK paths or repeated environment-unset shell hacks;
+- claiming source-build incrementality from =std/make= while =prepare= has
+  recreated the complete bootstrap and build trees.
+
+* Maintenance gate
+
+Every build-system pull request MUST answer the following questions.
+
+1. Which exact upstream revision and native owner were audited?
+2. Does the change invoke or faithfully project that owner?
+3. Which declared input changes the Bazel action identity?
+4. Which native output becomes the declared Bazel output?
+5. Does the change preserve =configure=, =make=, =std/make=, =gxpkg=, and
+   =install.sh= ownership where applicable?
+6. Is the worker budget derived from the executing machine rather than fixed?
+7. Are Darwin and Linux toolchain differences declared, not patched ad hoc?
+8. Are cold, warm, and identical-rerun receipts comparable on the same runner,
+   revision, configuration, and cache state?
+9. Does a failure preserve the native exit code and typed evidence?
+10. Did the change avoid unrelated package-manager or scheduler behavior?
+
+A PR MUST be blocked when any of these conditions holds:
+
+- the exact upstream owner or revision is unknown;
+- a native lifecycle is reimplemented without an approved upstream contract;
+- a fixed machine-specific concurrency value is introduced;
+- a same-surface comparable build is at least 10 percent slower without an
+  accepted explanation and follow-up;
+- the complete POO Flow package check reaches or exceeds 12 minutes on either
+  required platform;
+- an identical rerun repeats compilation instead of producing a cache hit;
+- the installed prefix or project tree cannot be tied to a configuration and
+  toolchain fingerprint.
+
+The 12-minute ceiling is a temporary hard guard, not a performance target.  At
+the time of this RFC, the observed POO Flow checks were 11 minutes 49 seconds
+on macOS and 9 minutes 25 seconds on Ubuntu.  The macOS result is therefore a
+near-threshold risk and MUST drive the next cache and phase-attribution work.
+
+* Required receipts
+
+The maintenance record SHOULD preserve:
+
+| Receipt | Required fields |
+|---------+-----------------|
+| Source toolchain | Gerbil/Gambit revisions, configure digest, compiler/SDK identity, feature vector, core budget, phase durations, installed-tree digest |
+| Dependency closure | Gerbil toolchain digest, =gerbil.pkg= digest, exact dependency identities, =gxpkg= command, output-tree digest |
+| Project build | stable project receipt v1, resource-guard receipt, build-script digest, source/dependency identity, elapsed and critical-path time |
+| Failure | original status, native driver/mode, exact argv/environment evidence, existing input digests, bounded native log tail |
+
+Receipts observe ownership; they do not grant Gerbil-Bazel authority to change
+the observed native semantics.
+
+* First follow-up work
+
+1. Materialize and audit the exact =07c84815= source revision used by POO Flow.
+2. Add a source-toolchain configuration fingerprint covering the native inputs
+   listed in this RFC.
+3. Add phase receipts around native configure, Gambit, bootstrap, stdlib, tools,
+   and install boundaries without splitting their scheduling semantics.
+4. Verify =ccache= through the upstream =CC=/Gambit producer path on Linux and
+   Xcode Clang on Darwin.
+5. Compare the first cold build, warm dependency-preserving build, and identical
+   rerun before changing action granularity.
+

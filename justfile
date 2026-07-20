@@ -1,6 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-bazel := "bazelisk"
+bazel := env_var_or_default("BAZEL", "bazelisk")
+scenario_receipt := env_var_or_default("SCENARIO_RECEIPT", ".ci/receipts/build-scenarios.json")
 
 default: check
 
@@ -15,9 +16,11 @@ build:
 test:
     {{ bazel }} test \
       //gerbil:run_project_test \
-      //gerbil:project_receipt_schema_test \
-      //gerbil:project_receipt_v1_instances_test \
-      //gerbil:resource_guard_test \
+        //gerbil:project_receipt_schema_test \
+        //gerbil:project_receipt_v1_instances_test \
+        //gerbil:source_producer_admission_schema_test \
+        //gerbil:source_producer_admission_v1_instances_test \
+        //gerbil:resource_guard_test \
       //gerbil:validate_json_test \
       //tests/smoke:guarded_project_receipt_test \
       //tests/smoke:gxpkg_native_package_test \
@@ -38,13 +41,34 @@ dev:
 dev-test:
     {{ bazel }} run //tests/smoke:dev_test
 
-check: query build test auto-test prebuilt-test
+scenario-test:
+    tools/bench/run_build_scenarios.py \
+      --bazel {{ bazel }} \
+      --receipt {{ scenario_receipt }}
+
+scenario-runner-test:
+    python3 tools/bench/run_build_scenarios_test.py
+
+source-identity-test:
+    tools/ci/test_source_build_identity.sh
+    tools/ci/test_bootstrap_gerbil.sh
+    tools/ci/test_gerbil_bootstrap_attempt.sh
+    tools/ci/test_install_materialization.sh
+    tools/ci/test_source_producer_admission.sh
+
+promotion-authorization-test:
+    tools/ci/test_authorize_prebuilt_promotion.sh
+
+check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
 mod-tidy:
     {{ bazel }} mod tidy
 
 prebuilt-test:
     tools/ci/test_repository_provider.sh prebuilt
+    GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
+      GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE=$(printf '0%.0s' {1..64}) \
+      tools/ci/test_repository_provider.sh prebuilt
 
 auto-test:
     tools/ci/test_repository_provider.sh auto

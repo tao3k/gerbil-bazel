@@ -6,14 +6,40 @@ module(
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 
+GERBIL_LINUX_INSTALL_DIGEST = "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208"
+
+GERBIL_LINUX_SHA256 = "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7"
+
+GERBIL_LINUX_URLS = [
+    "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
+]
+
 gerbil = use_extension(
     "//gerbil:extensions.bzl",
     "gerbil",
     dev_dependency = True,
 )
-gerbil.host(name = "local_gerbil")
-gerbil.host(
+gerbil.auto(
+    name = "local_gerbil",
+    expected_version_prefixes = [
+        "Gerbil v0.18.2",
+        "Gerbil 07c8481",
+    ],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_install_digest = GERBIL_LINUX_INSTALL_DIGEST,
+    linux_prebuilt_sha256 = GERBIL_LINUX_SHA256,
+    linux_prebuilt_urls = GERBIL_LINUX_URLS,
+)
+gerbil.auto(
     name = "project_gerbil",
+    expected_version_prefixes = [
+        "Gerbil v0.18.2",
+        "Gerbil 07c8481",
+    ],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_install_digest = GERBIL_LINUX_INSTALL_DIGEST,
+    linux_prebuilt_sha256 = GERBIL_LINUX_SHA256,
+    linux_prebuilt_urls = GERBIL_LINUX_URLS,
     project_dependency_packages = [
         "clan",
         "gslph",

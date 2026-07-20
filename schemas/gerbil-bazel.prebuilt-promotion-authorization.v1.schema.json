@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.prebuilt-promotion-authorization.v1.schema.json",
+  "title": "Gerbil Bazel Prebuilt Promotion Authorization v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "outcome",
+    "authorization",
+    "repository",
+    "installDigest",
+    "sourceRun",
+    "artifact"
+  ],
+  "properties": {
+    "schema": {"const": "gerbil-bazel.prebuilt-promotion-authorization.v1"},
+    "outcome": {"const": "authorized"},
+    "authorization": {
+      "enum": ["main-branch", "same-repository-pull-request"]
+    },
+    "repository": {"$ref": "#/$defs/repository"},
+    "installDigest": {"$ref": "#/$defs/sha256"},
+    "sourceRun": {
+      "type": "object",
+      "required": [
+        "id",
+        "workflow",
+        "event",
+        "headBranch",
+        "headSha",
+        "headRepository"
+      ],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1},
+        "workflow": {"enum": ["CI", "Source Producer"]},
+        "event": {"enum": ["push", "workflow_dispatch", "pull_request"]},
+        "headBranch": {"type": "string", "minLength": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "headRepository": {"$ref": "#/$defs/repository"}
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["name", "count", "expired"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "count": {"const": 1},
+        "expired": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "pullRequest": {
+      "type": "object",
+      "required": [
+        "number",
+        "state",
+        "headRef",
+        "headSha",
+        "headRepository",
+        "baseRef",
+        "baseRepository"
+      ],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "state": {"const": "open"},
+        "headRef": {"type": "string", "minLength": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "headRepository": {"$ref": "#/$defs/repository"},
+        "baseRef": {"const": "main"},
+        "baseRepository": {"$ref": "#/$defs/repository"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "authorization": {"const": "same-repository-pull-request"}
+        },
+        "required": ["authorization"]
+      },
+      "then": {"required": ["pullRequest"]},
+      "else": {"not": {"required": ["pullRequest"]}}
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

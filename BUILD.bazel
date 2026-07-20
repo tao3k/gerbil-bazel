@@ -3,4 +3,5 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "LICENSE",
     "README.md",
+    "tools/ci/source_producer_admission.sh",
 ])

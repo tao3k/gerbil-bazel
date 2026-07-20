@@ -1,0 +1,143 @@
+#+title: RFC 0006: Build Scenario Receipt v1
+#+author: gerbil-bazel maintainers
+#+language: en
+#+options: toc:2 num:t
+
+* Status
+
+Proposed.
+
+This RFC defines the scenario evidence required before changing Gerbil Bazel
+cache keys, dependency boundaries, project action configuration identity, or native
+source provisioning. It complements RFC 0005's upstream-native ownership
+contract. The receipt schema remains
+=gerbil-bazel.build-scenario-receipt.v1= for the complete v1 lifetime.
+
+* Problem
+
+A lower or higher wall-clock total does not identify an optimization owner.
+The same observation can be caused by a cold Bazel output root, an invalid
+action key, an over-broad dependency edge, a changed native toolchain, an
+upstream Gerbil source build, or host pressure. Optimizing before separating
+these cases risks replacing upstream behavior or improving the wrong layer.
+
+* Scenario graph
+
+#+begin_src mermaid
+flowchart LR
+  A["Fresh isolated output root"] --> B["project-cold"]
+  B --> C["identical-rerun"]
+  C --> D["dependency-delta"]
+  D --> E["configuration-delta"]
+  C -->|"Gerbil actions execute"| X["Fix action cache identity"]
+  D -->|"Independent branch executes"| Y["Fix dependency frontier"]
+  S["Public configuration_state build setting"] --> E
+  E -->|"Affected actions do not execute"| Z["Fix project action configuration identity"]
+  C -->|"0 Gerbil actions"| F["Structural reuse ready"]
+  D -->|"Only dependency plus aggregate"| F
+  E -->|"All affected project actions"| F
+  F --> G["Measure exact upstream source provisioning"]
+#+end_src
+
+* Normative scenarios
+
+** project-cold
+
+The runner creates a fresh Bazel =output_user_root= and disables shared action
+caches. Building =//tests/smoke:compile= MUST execute the declared dependency,
+independent branch, and aggregate =GerbilProjectCompile= actions.
+
+This is a project cold build. It is not a Gerbil-from-source cold build.
+
+** identical-rerun
+
+The runner repeats the exact command in the same isolated output root. It MUST
+execute zero =GerbilProjectCompile= actions. Timing is recorded, but no fixed
+wall-clock threshold is embedded in the scenario because host capability and
+load differ across machines.
+
+** dependency-delta
+
+The runner selects the changed dependency fixture through the declared Bazel
+build setting. It MUST execute only =dependency_compile= and the aggregate
+=compile= action. It MUST NOT execute =independent_compile=.
+
+** configuration-delta
+
+The runner preserves the =dependency-delta= setting and changes exactly one
+provider-neutral =configuration_state= Bazel setting.  The setting projects a
+shared value through the public =env= attribute of all three project actions,
+so all three actions MUST execute.  The immutable provider ABI remains
+unchanged.  The test does not hard-code a CPU count and does not alter the
+upstream Gerbil scheduler.
+
+* Receipt and decision
+
+#+begin_src mermaid
+flowchart TD
+  A["Bazel execution log"] --> B["Filter GerbilProjectCompile"]
+  B --> C["Compare observed and expected labels"]
+  C --> D["gerbil-bazel.build-scenario-receipt.v1"]
+  V["Bazel-selected @local_gerbil//:gxi --version"] --> D
+  D --> E{"First failing boundary"}
+  E -->|"identical-rerun"| F["Action cache reuse"]
+  E -->|"dependency-delta"| G["Dependency invalidation"]
+  E -->|"configuration-delta"| H["Project action configuration identity"]
+  E -->|"none"| I["Upstream source provisioning"]
+#+end_src
+
+- The Gerbil version MUST be read from the Bazel-selected
+  =@local_gerbil//:gxi= target through the same isolated =output_user_root=.
+  The runner MUST NOT require a host =gxi= on =PATH= or =GERBIL_PREFIX=.
+
+The receipt records host capability, resolved Bazel and Gerbil versions,
+isolation policy, elapsed milliseconds, exact action labels, assertions, and a
+single optimization candidate. A failed structural assertion blocks timing
+optimization at a later layer.
+
+* Execution boundaries
+
+- The runner MAY orchestrate Bazel because scenario comparison is a host-level
+  build concern.
+- The runner MUST NOT implement Gerbil dependency scheduling, gxpkg lifecycle,
+  native compiler worker admission, or installation semantics.
+- CPU capability MUST be discovered from the available host affinity or system
+  CPU count. It MUST NOT be a checked-in machine constant.
+- Generated execution logs and receipts MUST remain build artifacts. They MUST
+  NOT be committed as fixture binaries.
+- Shared remote and disk action caches MUST be disabled for this suite so a
+  cold-project assertion is reproducible.
+
+* Commands
+
+Run the suite through the declarative project entrypoint:
+
+#+begin_src sh
+just scenario-test
+#+end_src
+
+Use an explicit Bazel executable when Bazelisk is not on =PATH=:
+
+#+begin_src sh
+BAZEL=/absolute/path/to/bazel just scenario-test
+#+end_src
+
+The default receipt is written to
+=.ci/receipts/build-scenarios.json=. The =.ci= tree is ignored by Git.
+
+* Follow-up source scenarios
+
+The project scenarios deliberately do not claim that a Gerbil source bootstrap
+is fast. Once all four structural assertions pass, the next suite MUST bind to
+the exact required Gerbil revision and distinguish:
+
+1. empty installation plus empty compiler cache;
+2. empty installation plus warm compiler cache;
+3. exact installation artifact cache hit;
+4. source revision change;
+5. build-configuration change.
+
+Those source scenarios must retain upstream =configure=, =make -jN=, and
+=make install= ownership. They must first add phase receipts around those
+public boundaries; they must not invoke private upstream stage scripts as a
+replacement scheduler.

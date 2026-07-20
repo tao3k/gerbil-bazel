@@ -48,6 +48,18 @@ capability for downstream consumers.
 
 * Decision
 
+Capability promotion MUST be an explicit, receipt-producing operation.  It MAY
+authorize either a successful =main= producer run or a successful run for an
+open same-repository pull request whose base is =main= and whose head SHA is the
+exact requested release target.  Fork runs, non-main bases, closed pull
+requests, SHA drift, and duplicate or expired artifacts MUST fail closed.
+
+The authorization decision emits
+=gerbil-bazel.prebuilt-promotion-authorization.v1=.  This receipt is attached to
+the immutable release beside the archive evidence, so publication authority is
+auditable without weakening the independent =installDigest= and archive
+SHA-256 proofs.
+
 The library SHALL expose a separate =gerbil.prebuilt(...)= tag. It imports an
 immutable, relocatable Gerbil archive by URL and SHA-256, validates the embedded
 capability manifest, matches the archive to the execution platform, and
@@ -60,6 +72,15 @@ provider before repository creation: native =host= on Darwin and immutable
 =prebuilt= on Linux. It SHALL reject unknown systems and a declared Linux
 archive architecture that does not match the consumer host. It SHALL NOT
 instantiate both providers and defer selection to toolchain resolution.
+
+Regular CI SHALL be a capability consumer only.  The repository root uses
+=gerbil.auto(...)= with the Homebrew host capability on Darwin and the
+digest-addressed immutable release on Linux.  Regular CI SHALL NOT bootstrap
+Gerbil source, materialize a producer prefix, package an archive, or upload a
+producer artifact.  The pinned Linux capability has installation digest
+=ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208= and
+archive SHA-256
+=741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7=.
 
 Because provider selection observes both =module_ctx.os.name= and
 =module_ctx.os.arch=, the public module extension SHALL be declared
@@ -88,6 +109,13 @@ requirements SHALL NOT be copied into the Linux source-build path.
 
 #+begin_src mermaid
 flowchart LR
+  REGISTER["Source Producer registered on default branch"] --> DISPATCH["Explicit Source Producer dispatch"]
+  DISPATCH --> IDENTITY["Source identity + exact installation-cache lookup"]
+  IDENTITY --> ADMISSION{"Source producer admission"}
+  ADMISSION -->|"complete cache hit"| PREFIX["Complete cached Gerbil prefix"]
+  PREFIX --> PROD
+  ADMISSION -->|"cold miss + explicit runner"| SRC
+  ADMISSION -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
   SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
   PROD --> RELOC["Relocated gxi runtime verification"]
   RELOC --> QUERY["Immutable gambuild-C: read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"]
@@ -104,8 +132,13 @@ flowchart LR
   FINAL --> COMPILE
   COMPILE --> ENV["Consumer derives GAMBOPT + public compiler boundaries"]
   ENV --> ARC["Archive + SHA-256 + manifest"]
-  ARC --> RELEASE["Immutable release asset"]
+  ARC --> PROMOTE{"Explicit promotion authorization"}
+  MAIN["Successful main Source Producer run"] --> PROMOTE
+  PR["Source Producer on one open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
+  PROMOTE --> AUTH["Promotion authorization receipt"]
+  AUTH --> RELEASE["Immutable release asset"]
   RELEASE --> AUTO["gerbil.auto extension selection"]
+  CI["Regular CI consumer"] --> AUTO
   AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
   REPO --> CACHE["Bazel repository cache"]
   PROJECT["Consumer project library"] --> AUTO
@@ -122,6 +155,12 @@ flowchart LR
 
 * Public Bzlmod API
 
+Every prebuilt Linux declaration carries two independent proofs:
+=install_digest= identifies the exact source/configuration/native build inputs,
+while =sha256= identifies the downloaded archive bytes.  The =auto= form uses
+=linux_prebuilt_install_digest= for the same contract.  A mismatch fails closed
+before toolchain registration and never invokes a source-build fallback.
+
 Cross-platform consumers declare one capability repository:
 
 #+begin_src starlark
@@ -130,9 +169,10 @@ gerbil.auto(
     name = "local_gerbil",
     expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
     linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_sha256 = "958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197",
+    linux_prebuilt_install_digest = "<64 hexadecimal characters>",
+    linux_prebuilt_sha256 = "<64 hexadecimal characters>",
     linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64/gerbil-v0.18.2-07c84815-linux-x86_64.tar.gz",
+        "https://github.com/tao3k/gerbil-bazel/releases/download/<digest-addressed-capability>/<archive>",
     ],
     project_dependency_packages = ["clan", "gslph"],
     project_root_marker = "//:MODULE.bazel",
@@ -146,6 +186,7 @@ The explicit Linux-only provider remains available:
 #+begin_src starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
+    install_digest = "<64 hexadecimal characters>",
     name = "gerbil_linux_x86_64",
     expected_version_prefixes = ["0.18.2"],
     sha256 = "<64 hexadecimal characters>",
@@ -233,9 +274,33 @@ frozen into the producer artifact.
 
 * Producer lifecycle
 
+The promotion workflow is manually dispatched with an exact source run ID,
+head SHA, and =installDigest=.  It fetches the run, pull-request metadata when
+applicable, and the artifact inventory once; then it validates the complete
+authorization frontier before downloading or publishing capability bytes.
+
 The existing pinned, upstream-parallel Linux bootstrap remains the rare
 producer. After the source build and public Bazel API validation succeed, the
 producer:
+
+The source producer is a separate =workflow_dispatch=-only workflow.  A
+non-=main= dispatch is promotable only when its runtime branch resolves to
+exactly one open same-repository pull request with base =main= and the run head
+SHA equals the pull-request head SHA.  It fails closed for a missing,
+ambiguous, forked, closed, wrong-base, or SHA-drifted pull request.  This keeps
+the producer available for deliberate capability refreshes without placing a
+cold source build on the regular consumer-CI path.
+
+The =Source Producer= workflow MUST first be registered from the default
+branch before GitHub can accept an explicit dispatch.  A cache created under a
+pull-request merge ref MUST NOT be treated as dispatch-accessible branch or
+default-branch state.  After the exact installation-cache lookup, the producer
+emits =gerbil-bazel.source-producer-admission.v1=.  A complete cache hit is
+admitted on the selected runner.  A cold miss is admitted only when
+=GERBIL_SOURCE_RUNNER= explicitly selects a registered runner label; an
+implicit =ubuntu-latest= cold miss is blocked immediately with the admission
+receipt.  Admission is not a capacity attestation: the existing 12-minute
+build guard and the later materialization receipt remain the execution proof.
 
 1. copies the installed prefix into an isolated staging tree;
 2. rejects absolute symlinks;

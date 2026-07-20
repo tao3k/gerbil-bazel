@@ -202,12 +202,15 @@ if [[ -z "$archive" ]]; then
     chmod +x "$payload/prefix/bin/$tool"
   done
 
+  synthetic_install_digest="$(printf '1%.0s' {1..64})"
   jq -n \
     --arg system "$system" \
     --arg architecture "$architecture" \
+    --arg install_digest "$synthetic_install_digest" \
     '{
       schema: "gerbil-bazel.prebuilt-capability-manifest.v1",
       capabilityId: "synthetic-prebuilt-test",
+      installDigest: $install_digest,
       version: "Gerbil v0.prebuilt-test",
       nativeAbiFingerprint: "0000000000000000000000000000000000000000",
       platform: {os: $system, arch: $architecture},
@@ -243,6 +246,9 @@ archive_url="file://$archive"
 repository_name="${provider}_gerbil"
 template="$repo_root/tests/$provider/MODULE.bazel.tpl"
 expected_version="$(jq -er '.version' "$manifest")"
+manifest_install_digest="$(jq -er '.installDigest' "$manifest")"
+expected_install_digest="${GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE:-$manifest_install_digest}"
+expect_install_digest_mismatch="${GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH:-0}"
 host_tool_paths='{"gxi": "/gerbil-auto-provider-must-not-use-host"}'
 selected_provider=prebuilt
 if [[ "$provider" == auto && "$system" == darwin ]]; then
@@ -259,6 +265,7 @@ sed \
   -e "s|@@ARCHITECTURE@@|$architecture|g" \
   -e "s|@@ARCHIVE_URL@@|$archive_url|g" \
   -e "s|@@ARCHIVE_SHA256@@|$archive_sha256|g" \
+  -e "s|@@INSTALL_DIGEST@@|$expected_install_digest|g" \
   -e "s|@@HOST_TOOL_PATHS@@|$host_tool_paths|g" \
   "$template" \
   >"$test_root/consumer/MODULE.bazel"
@@ -290,6 +297,36 @@ fi
 
 (
   cd "$test_root/consumer"
+  if [[ "$expect_install_digest_mismatch" == 1 ]]; then
+    mismatch_log="$test_root/install-digest-mismatch.log"
+    set +e
+    "$bazel_bin" --output_user_root="$test_root/bazel" query \
+      "@$repository_name//:registered_toolchain" \
+      >"$mismatch_log" 2>&1
+    mismatch_status=$?
+    set -e
+    if [[ "$mismatch_status" == 0 ]]; then
+      printf 'prebuilt provider accepted a mismatched install digest\n' >&2
+      exit 1
+    fi
+    grep -F 'Gerbil capability install digest mismatch' "$mismatch_log" >/dev/null
+    jq -cn \
+      --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
+      --arg provider "$provider" \
+      --arg manifest_install_digest "$manifest_install_digest" \
+      --arg expected_install_digest "$expected_install_digest" \
+      '{
+        schema: $schema,
+        outcome: "passed",
+        provider: $provider,
+        scenario: "install-digest-mismatch",
+        manifestInstallDigest: $manifest_install_digest,
+        expectedInstallDigest: $expected_install_digest,
+        failedClosed: true,
+        sourceFallback: false
+      }'
+    exit 0
+  fi
   provider_started_at="$SECONDS"
   "$bazel_bin" --output_user_root="$test_root/bazel" query \
     "@$repository_name//:registered_toolchain"
@@ -305,8 +342,11 @@ fi
   )"
   jq -e \
     --arg build_cores "$expected_build_cores" \
+    --arg install_digest "$expected_install_digest" \
+    --arg selected_provider "$selected_provider" \
     --arg source "$expected_build_cores_source" \
     '.environment.GERBIL_BUILD_CORES == $build_cores and
+     ($selected_provider != "prebuilt" or .installDigest == $install_digest) and
      .gerbilBuildCores == ($build_cores | tonumber) and
      .gerbilBuildCoresSource == $source and
      (.gambitProducerOptions.dynamic | type == "string") and

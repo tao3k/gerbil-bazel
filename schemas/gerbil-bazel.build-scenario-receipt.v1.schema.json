@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json",
+  "title": "Gerbil Bazel Build Scenario Receipt v1",
+  "description": "Structural evidence for Bazel cache reuse and invalidation scenarios.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "host",
+    "toolchain",
+    "isolation",
+    "scenarios",
+    "decision"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.build-scenario-receipt.v1"
+    },
+    "status": {
+      "enum": ["passed", "failed"]
+    },
+    "host": {
+      "type": "object",
+      "required": ["system", "architecture", "availableLogicalCpuCount"],
+      "properties": {
+        "system": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "availableLogicalCpuCount": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["bazel", "bazelVersion", "gerbilVersion"],
+      "properties": {
+        "bazel": {"type": "string", "minLength": 1},
+        "bazelVersion": {"type": "string", "minLength": 1},
+        "gerbilVersion": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "isolation": {
+      "type": "object",
+      "required": [
+        "freshOutputUserRoot",
+        "sharedActionCachesEnabled",
+        "rootPreserved"
+      ],
+      "properties": {
+        "freshOutputUserRoot": {"const": true},
+        "sharedActionCachesEnabled": {"const": false},
+        "rootPreserved": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/scenario"}
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "status",
+        "optimizationCandidate",
+        "failedScenarios",
+        "reason"
+      ],
+      "properties": {
+        "status": {"enum": ["ready", "blocked"]},
+        "optimizationCandidate": {"type": "string", "minLength": 1},
+        "failedScenarios": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "required": [
+        "id",
+        "intent",
+        "status",
+        "elapsedMs",
+        "exitCode",
+        "configuration",
+        "actions",
+        "assertions"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "project-cold",
+            "identical-rerun",
+            "dependency-delta",
+            "configuration-delta"
+          ]
+        },
+        "intent": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed"]},
+        "elapsedMs": {"type": "integer", "minimum": 0},
+        "exitCode": {"type": "integer", "minimum": 0},
+        "configuration": {
+          "type": "object",
+          "required": ["target", "buildFlags"],
+          "properties": {
+            "target": {"type": "string", "minLength": 1},
+            "buildFlags": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          },
+          "additionalProperties": false
+        },
+        "actions": {
+          "type": "object",
+          "required": [
+            "executionLogRecordCount",
+            "gerbilProjectCompileRecordCount",
+            "expectedExecutedLabels",
+            "observedExecutedLabels",
+            "observedCacheHitLabels"
+          ],
+          "properties": {
+            "executionLogRecordCount": {"type": "integer", "minimum": 0},
+            "gerbilProjectCompileRecordCount": {"type": "integer", "minimum": 0},
+            "expectedExecutedLabels": {"$ref": "#/$defs/labelSet"},
+            "observedExecutedLabels": {"$ref": "#/$defs/labelSet"},
+            "observedCacheHitLabels": {"$ref": "#/$defs/labelSet"}
+          },
+          "additionalProperties": false
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["name", "passed"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "passed": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "outputTail": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "labelSet": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  }
+}

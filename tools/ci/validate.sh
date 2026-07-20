@@ -5,6 +5,7 @@ bazel_bin="${BAZEL:-bazelisk}"
 
 receipt_path="${RECEIPT_PATH:-.ci/receipts/validation.json}"
 phases='[]'
+gerbil_version=unavailable
 
 write_receipt() {
   local outcome="$1"
@@ -17,7 +18,7 @@ write_receipt() {
     --arg outcome "$outcome" \
     --arg os "$(uname -s)" \
     --arg arch "$(uname -m)" \
-    --arg gerbil_version "$(gxi --version)" \
+    --arg gerbil_version "$gerbil_version" \
     --arg bazel_version "$("$bazel_bin" --version)" \
     --argjson exit_code "$exit_code" \
     --argjson phases "$phases" \
@@ -56,6 +57,18 @@ run_phase() {
   fi
 }
 
+verify_gerbil_toolchain() {
+  local version_path=.ci/gerbil-version.txt
+  mkdir -p "$(dirname "$version_path")"
+  "$bazel_bin" run @local_gerbil//:gxi -- --version \
+    | tee "$version_path"
+  grep -E 'Gerbil (v0\.18\.2|07c8481)' "$version_path" >/dev/null
+}
+
+run_phase gerbil-toolchain verify_gerbil_toolchain
+gerbil_version="$(
+  grep -E 'Gerbil (v0\.18\.2|07c8481)' .ci/gerbil-version.txt | head -n 1
+)"
 run_phase query "$bazel_bin" query //...
 run_phase build "$bazel_bin" build //tests/smoke:compile
 run_phase test "$bazel_bin" test \
