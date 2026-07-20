@@ -12,6 +12,7 @@
     }
   },
   "executionPolicy": {
+    "buildTimeoutMinutes": 12,
     "parallelism": {
       "source": "available-logical-cpus",
       "makeArgument": "-j"

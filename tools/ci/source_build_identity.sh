@@ -74,6 +74,13 @@ config_json="$(
       build: "make",
       install: "make install"
     }) |
+    select(
+      .executionPolicy.buildTimeoutMinutes as $timeout |
+      ($timeout | type) == "number" and
+      $timeout > 0 and
+      $timeout <= 360 and
+      ($timeout | floor) == $timeout
+    ) |
     select(.executionPolicy.parallelism == {
       source: "available-logical-cpus",
       makeArgument: "-j"
@@ -86,6 +93,7 @@ if [[ -z "$config_json" ]]; then
   exit 65
 fi
 
+build_timeout_minutes="$(jq -er '.executionPolicy.buildTimeoutMinutes' <<<"$config_json")"
 output_config_json="$(jq -cS '.outputIdentity' <<<"$config_json")"
 config_digest="$(printf '%s' "$config_json" | sha256_stream)"
 output_config_digest="$(printf '%s' "$output_config_json" | sha256_stream)"
@@ -197,4 +205,5 @@ jq -nS \
 printf 'install_digest=%s\n' "$install_digest"
 printf 'compiler_cache_namespace_digest=%s\n' "$compiler_cache_namespace_digest"
 printf 'config_digest=%s\n' "$config_digest"
+printf 'build_timeout_minutes=%s\n' "$build_timeout_minutes"
 printf 'receipt=%s\n' "$receipt_path"

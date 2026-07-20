@@ -56,9 +56,15 @@ The installation digest includes:
 - output-affecting build environment;
 - the digest of the declarative =outputIdentity= configuration.
 
-The execution policy includes available-host parallelism and ccache capacity.
+The execution policy includes available-host parallelism, ccache capacity, and the 12-minute source-build timeout.
 Changing execution policy or observability MUST change the full configuration
-digest but MUST NOT invalidate an otherwise identical native installation.
+digest but MUST NOT invalidate an otherwise identical native installation.  The
+timeout therefore does not contribute to =installDigest=.
+
+CI selects the requested source-producer runner from the
+=GERBIL_SOURCE_RUNNER= repository variable and defaults to =ubuntu-latest=.
+This scheduling label is execution policy, not output identity; the current-run
+materialization receipt observes the actual runner facts separately.
 
 * Upstream ownership
 
@@ -111,7 +117,10 @@ it must not be rewritten to claim that the current run observed a cache hit.
 The current run emits =gerbil-bazel.install-materialization-receipt.v1=.  Its
 =materialization= field is exactly =cache-hit= or =built=, and its
 =installDigest= must match the embedded source-build identity in the producer
-bootstrap receipt.  This separates production from materialization without
+bootstrap receipt.  The receipt also records the current runner name, normalized
+system and architecture, and available logical CPU count.  These facts describe
+materialization; they do not rewrite producer evidence or contribute to
+=installDigest=.  This separates production from materialization without
 duplicating upstream build semantics.
 
 Packaging copies the source-build identity receipt beside the archive.  The
@@ -123,6 +132,7 @@ release identity form one closed chain.
 
 #+begin_src mermaid
 flowchart LR
+  E["Current runner capability<br/>name / system / architecture / available CPUs"] --> M
   I["Source build identity receipt"] -->|"installDigest"| M{"Installation materialization"}
   M -->|"cache-hit"| P["Complete Gerbil prefix"]
   M -->|"built via upstream lifecycle"| P

@@ -34,9 +34,15 @@ chmod +x \
 
 base_config="$repo_root/tools/ci/gerbil_source_build_config.json"
 execution_policy_config="$test_root/execution-policy.json"
+timeout_policy_config="$test_root/timeout-policy.json"
+invalid_timeout_config="$test_root/invalid-timeout-policy.json"
 output_config="$test_root/output-config.json"
 jq '.executionPolicy.compilerCache.maxSize = "4G"' \
   "$base_config" >"$execution_policy_config"
+jq '.executionPolicy.buildTimeoutMinutes = 13' \
+  "$base_config" >"$timeout_policy_config"
+jq '.executionPolicy.buildTimeoutMinutes = 361' \
+  "$base_config" >"$invalid_timeout_config"
 jq '.outputIdentity.configureArguments += ["--disable-shared"]' \
   "$base_config" >"$output_config"
 
@@ -47,6 +53,9 @@ run_identity() {
   local compiler_version=$4
   local ccache_version=$5
   local receipt="$test_root/$name.json"
+  local outputs="$test_root/$name.outputs"
+  local expected_timeout
+  expected_timeout="$(jq -er '.executionPolicy.buildTimeoutMinutes' "$config")"
   SYNTHETIC_CC_VERSION="$compiler_version" \
     SYNTHETIC_CCACHE_VERSION="$ccache_version" \
     GERBIL_REF="$ref" \
@@ -56,7 +65,8 @@ run_identity() {
     GERBIL_SOURCE_BUILD_LINKER_EXECUTABLE="$test_root/bin/ld" \
     GERBIL_SOURCE_BUILD_PKG_CONFIG_EXECUTABLE="$test_root/bin/pkg-config" \
     GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT="$receipt" \
-    "$repo_root/tools/ci/source_build_identity.sh" >/dev/null
+    "$repo_root/tools/ci/source_build_identity.sh" >"$outputs"
+  grep -Fx "build_timeout_minutes=$expected_timeout" "$outputs" >/dev/null
   jq -e '.schema == "gerbil-bazel.source-build-identity.v1"' "$receipt" >/dev/null
 }
 
@@ -64,9 +74,24 @@ run_identity baseline-a ref-a "$base_config" 1 1
 run_identity baseline-b ref-a "$base_config" 1 1
 run_identity revision-delta ref-b "$base_config" 1 1
 run_identity execution-policy-delta ref-a "$execution_policy_config" 1 1
+run_identity timeout-policy-delta ref-a "$timeout_policy_config" 1 1
 run_identity output-delta ref-a "$output_config" 1 1
 run_identity compiler-delta ref-a "$base_config" 2 1
 run_identity ccache-delta ref-a "$base_config" 1 2
+
+if SYNTHETIC_CC_VERSION=1 \
+  SYNTHETIC_CCACHE_VERSION=1 \
+  GERBIL_REF=ref-a \
+  GERBIL_SOURCE_BUILD_CONFIG="$invalid_timeout_config" \
+  GERBIL_SOURCE_BUILD_COMPILER_EXECUTABLE="$test_root/bin/cc" \
+  GERBIL_SOURCE_BUILD_CCACHE_EXECUTABLE="$test_root/bin/ccache" \
+  GERBIL_SOURCE_BUILD_LINKER_EXECUTABLE="$test_root/bin/ld" \
+  GERBIL_SOURCE_BUILD_PKG_CONFIG_EXECUTABLE="$test_root/bin/pkg-config" \
+  GERBIL_SOURCE_BUILD_IDENTITY_RECEIPT="$test_root/invalid-timeout.json" \
+  "$repo_root/tools/ci/source_build_identity.sh" >/dev/null 2>&1; then
+  printf 'source build identity accepted a timeout above 360 minutes\n' >&2
+  exit 1
+fi
 
 field() {
   jq -er "$2" "$test_root/$1.json"
@@ -84,6 +109,12 @@ baseline_ccache="$(field baseline-a .compilerCacheNamespaceDigest)"
 [[ "$baseline_install" == "$(field execution-policy-delta .installDigest)" ]]
 [[ "$baseline_ccache" == "$(field execution-policy-delta .compilerCacheNamespaceDigest)" ]]
 [[ "$(field baseline-a .config.digest)" != "$(field execution-policy-delta .config.digest)" ]]
+
+[[ "$baseline_install" == "$(field timeout-policy-delta .installDigest)" ]]
+[[ "$baseline_ccache" == "$(field timeout-policy-delta .compilerCacheNamespaceDigest)" ]]
+[[ "$(field baseline-a .config.outputIdentityDigest)" == "$(field timeout-policy-delta .config.outputIdentityDigest)" ]]
+[[ "$(field baseline-a .config.digest)" != "$(field timeout-policy-delta .config.digest)" ]]
+[[ "$(field timeout-policy-delta .config.value.executionPolicy.buildTimeoutMinutes)" == 13 ]]
 
 [[ "$baseline_install" != "$(field output-delta .installDigest)" ]]
 [[ "$baseline_ccache" != "$(field output-delta .compilerCacheNamespaceDigest)" ]]

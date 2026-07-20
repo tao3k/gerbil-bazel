@@ -9,6 +9,7 @@
     "materialization",
     "installDigest",
     "prefix",
+    "runner",
     "producerReceipt"
   ],
   "properties": {
@@ -17,6 +18,22 @@
     "materialization": {"enum": ["cache-hit", "built"]},
     "installDigest": {"$ref": "#/$defs/sha256"},
     "prefix": {"type": "string", "minLength": 1},
+    "runner": {
+      "type": "object",
+      "required": [
+        "name",
+        "system",
+        "architecture",
+        "availableLogicalCpuCount"
+      ],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "system": {"enum": ["darwin", "linux"]},
+        "architecture": {"enum": ["x86_64", "aarch64"]},
+        "availableLogicalCpuCount": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
     "producerReceipt": {
       "type": "object",
       "required": ["path", "digestAlgorithm", "digest"],

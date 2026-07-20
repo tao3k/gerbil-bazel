@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ${{ vars.GERBIL_SOURCE_RUNNER || 'ubuntu-latest' }}
             gerbil_source: source
             timeout_minutes: 30
           - runner: macos-26
@@ -88,6 +88,7 @@ jobs:
 
       - name: Build Gerbil on Linux
         if: matrix.gerbil_source == 'source' && steps.gerbil-install-cache.outputs.cache-hit != 'true'
+        timeout-minutes: ${{ fromJSON(steps.gerbil-source-build-identity.outputs.build_timeout_minutes) }}
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ci/ccache
           CCACHE_MAXSIZE: 2G
@@ -105,6 +106,7 @@ jobs:
           GERBIL_INSTALL_DIGEST: ${{ steps.gerbil-source-build-identity.outputs.install_digest }}
           GERBIL_INSTALL_MATERIALIZATION_RECEIPT: ${{ github.workspace }}/.ci/receipts/gerbil-install-materialization-${{ runner.os }}-${{ runner.arch }}.json
           GERBIL_PREFIX: ${{ github.workspace }}/.ci/gerbil-prefix
+          GERBIL_RUNNER_NAME: ${{ runner.name }}
         run: tools/ci/record_install_materialization.sh
 
       - name: Set up Homebrew
