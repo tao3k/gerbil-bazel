@@ -235,6 +235,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         repository_ctx.symlink(path, "bin/{}_raw".format(name))
         tool_substitutions = dict(substitutions)
         tool_substitutions["{{TOOL}}"] = _shell_quote(path)
+        tool_substitutions["{{TOOL_NAME}}"] = _shell_quote(name)
         repository_ctx.template(
             "{}.sh".format(name),
             repository_ctx.attr._native_tool_template,
@@ -276,8 +277,9 @@ def _local_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-            "{{GERBIL_CC}}": repr("gerbil-cc"),
-            "{{GERBIL_LD}}": repr(host.gerbil_ld),
+        "{{GERBIL_CC}}": repr("gerbil-cc"),
+        "{{GERBIL_GCC}}": repr("gerbil-gcc"),
+        "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(fingerprint),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),
             "{{SYSTEM_MEMORY_BYTES}}": repr(host.system_memory_bytes),

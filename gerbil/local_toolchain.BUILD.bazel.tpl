@@ -33,6 +33,7 @@ gerbil_toolchain(
     environment = {{ENVIRONMENT_DICT}},
     gerbil_as = {{GERBIL_AS}},
     gerbil_cc = {{GERBIL_CC}},
+    gerbil_gcc = {{GERBIL_GCC}},
     gerbil_ld = {{GERBIL_LD}},
     gerbil_gsc = "gerbil-gsc",
     gxc = ":gxc",

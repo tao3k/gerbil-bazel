@@ -66,6 +66,7 @@ if [[ -z "$archive" ]]; then
   payload="$test_root/payload"
   mkdir -p "$payload/prefix/bin" "$payload/prefix/lib"
   printf 'fake dependency\n' >"$payload/prefix/lib/fake.ss"
+  printf 'fake static input\n' >"$payload/prefix/lib/fake.scm"
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
@@ -84,10 +85,20 @@ if [[ -z "$archive" ]]; then
     '    *) shift ;;' \
     '  esac' \
     'done' \
-    '[[ "$probe" == 1 ]]' \
+    '[[ "$probe" == 1 ]] || exit 1' \
     'printf "mode=%s\\ncompiler=%s\\nccOptions=%s\\nlinkOptions=%s\\n" "$mode" "$compiler" "$cc_options" "$link_options"' \
     >"$payload/prefix/bin/gsc"
   chmod +x "$payload/prefix/bin/gsc"
+  set +e
+  "$payload/prefix/bin/gsc" -link "$payload/prefix/lib/fake.scm" \
+    >/dev/null 2>&1
+  raw_gsc_failure_status=$?
+  set -e
+  if [[ "$raw_gsc_failure_status" != 1 ]]; then
+    printf 'synthetic raw gsc failure contract expected 1, got %s\n' \
+      "$raw_gsc_failure_status" >&2
+    exit 1
+  fi
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'C_COMPILER=/producer-only/ccache' \
@@ -109,7 +120,11 @@ if [[ -z "$archive" ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
+        'if [[ "${GERBIL_PROVIDER_GXC_FAILURE_STATUS:-0}" != 0 ]]; then' \
+        '  exit "$GERBIL_PROVIDER_GXC_FAILURE_STATUS"' \
+        'fi' \
         ': "${GAMBOPT:?GAMBOPT is required before gxc startup}"' \
+        ': "${GERBIL_GCC:?GERBIL_GCC is required before gxc startup}"' \
         ': "${GERBIL_GSC:?GERBIL_GSC is required before gxc startup}"' \
         '[[ ",$GAMBOPT," == *,"~~=$GERBIL_HOME",* ]]' \
         '[[ ",$GAMBOPT," == *,"~~lib=$GERBIL_HOME/lib",* ]]' \
@@ -123,6 +138,7 @@ if [[ -z "$archive" ]]; then
         '[[ "$("$gambit_bin/gambuild-C" FLAGS_OBJ)" == -fPIC ]]' \
         '[[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == -bundle ]]' \
         '[[ -x "$GERBIL_GSC" ]]' \
+        '[[ -x "$GERBIL_GCC" ]]' \
         'case "$(uname -s)" in' \
         '  Darwin) expected_dynamic_link_options="-bundle -Wl,-undefined,dynamic_lookup" ;;' \
         '  Linux) expected_dynamic_link_options=-bundle ;;' \
@@ -137,6 +153,30 @@ if [[ -z "$archive" ]]; then
         '  expected_pass_through_probe=$(printf "mode=%s\\ncompiler=\\nccOptions=\\nlinkOptions=" "$pass_through_mode")' \
         '  [[ "$("$GERBIL_GSC" "-$pass_through_mode" --synthetic-driver-probe)" == "$expected_pass_through_probe" ]]' \
         'done' \
+        'link_failure_log=$(mktemp)' \
+        'if "$GERBIL_GSC" -link "$GERBIL_HOME/lib/fake.scm" 2>"$link_failure_log"; then exit 65; fi' \
+        'grep -Fq '\''GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT {"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","status":1'\'' "$link_failure_log"' \
+        'grep -Fq '\''GERBIL_BAZEL_COMPILER_INPUT_RECEIPT {"kind":"gerbil-bazel.compiler-input-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","index":0'\'' "$link_failure_log"' \
+        'grep -Fq '\''"sizeBytes":18,"digestAlgorithm":"sha256","digest":"'\'' "$link_failure_log"' \
+        'rm -f "$link_failure_log"' \
+        'for observed_failure_mode in obj dynamic; do' \
+        '  mode_failure_log=$(mktemp)' \
+        '  if "$GERBIL_GSC" "-$observed_failure_mode" "$GERBIL_HOME/lib/fake.scm" 2>"$mode_failure_log"; then exit 67; fi' \
+        '  grep -Fq "\"driver\":\"GERBIL_GSC\",\"mode\":\"$observed_failure_mode\"" "$mode_failure_log"' \
+        '  rm -f "$mode_failure_log"' \
+        'done' \
+        'link_failure_dir=$(mktemp -d)' \
+        'if GERBIL_BAZEL_FAILURE_RECEIPT_DIR="$link_failure_dir" "$GERBIL_GSC" -link "$GERBIL_HOME/lib/fake.scm"; then exit 66; fi' \
+        'link_failure_receipts=("$link_failure_dir"/*.jsonl)' \
+        '[[ -f "${link_failure_receipts[0]}" ]]' \
+        'while IFS= read -r receipt_json; do jq -e . <<<"$receipt_json" >/dev/null; done <"${link_failure_receipts[0]}"' \
+        'grep -Fq '\''"kind":"gerbil-bazel.compiler-failure-receipt.v1"'\'' "${link_failure_receipts[0]}"' \
+        'grep -Fq '\''"kind":"gerbil-bazel.compiler-input-receipt.v1"'\'' "${link_failure_receipts[0]}"' \
+        'rm -rf "$link_failure_dir"' \
+        'gcc_failure_log=$(mktemp)' \
+        'if "$GERBIL_GCC" "$GERBIL_HOME/lib/does-not-exist.o" -o "$GERBIL_HOME/lib/does-not-exist" 2>"$gcc_failure_log"; then exit 68; fi' \
+        'grep -Fq '\''"driver":"GERBIL_GCC","mode":"final-link"'\'' "$gcc_failure_log"' \
+        'rm -f "$gcc_failure_log"' \
         'exit 0' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxpkg ]]; then
       printf '%s\n' \
@@ -299,6 +339,39 @@ fi
     "@$repository_name//:gxc" -- \
     -d "$compiler_probe_output" "$compiler_probe_source" >/dev/null
   compiler_driver_verified=true
+  if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+    gxc_failure_dir="$test_root/gxc-failure-receipts"
+    mkdir -p "$gxc_failure_dir"
+    set +e
+    GERBIL_PROVIDER_GXC_FAILURE_STATUS=23 \
+      GERBIL_BAZEL_FAILURE_RECEIPT_DIR="$gxc_failure_dir" \
+      "$bazel_bin" --output_user_root="$test_root/bazel" run \
+      "@$repository_name//:gxc" -- \
+      -d "$compiler_probe_output" "$compiler_probe_source" >/dev/null 2>&1
+    gxc_failure_status=$?
+    set -e
+    if [[ "$gxc_failure_status" != 23 ]]; then
+      printf 'gxc wrapper did not preserve controlled status 23: got %s\n' \
+        "$gxc_failure_status" >&2
+      exit 1
+    fi
+    gxc_failure_receipts=("$gxc_failure_dir"/*.jsonl)
+    if [[ ! -f "${gxc_failure_receipts[0]}" ]]; then
+      printf 'gxc wrapper did not emit an action-local compiler receipt\n' >&2
+      exit 1
+    fi
+    while IFS= read -r receipt_json; do
+      jq -e . <<<"$receipt_json" >/dev/null
+    done <"${gxc_failure_receipts[0]}"
+    grep -Fq '"kind":"gerbil-bazel.compiler-failure-receipt.v1"' \
+      "${gxc_failure_receipts[0]}"
+    grep -Fq '"driver":"GXC","mode":"compile-driver","status":23' \
+      "${gxc_failure_receipts[0]}"
+    grep -Fq '"kind":"gerbil-bazel.compiler-input-receipt.v1"' \
+      "${gxc_failure_receipts[0]}"
+    grep -Fq '"driver":"GXC","mode":"compile-driver","index":2' \
+      "${gxc_failure_receipts[0]}"
+  fi
   install_seconds=0
   dependency_transition=false
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then

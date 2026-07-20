@@ -117,16 +117,41 @@ the final executable link on GCC can fail against Darwin's host link model.
 Using the two upstream environment hooks preserves the runtime ABI without
 mutating an installed upstream artifact.
 
+** Compiler failure receipt v1
+
+The materialized =GXC=, =GERBIL_GSC=, and =GERBIL_GCC= wrappers emit typed
+evidence when an upstream compiler stage returns a nonzero status.  The action log
+receives one =gerbil-bazel.compiler-failure-receipt.v1= record containing the
+driver, mode, original exit status, a NUL-delimited argument manifest encoded
+as hexadecimal, and a whitelisted environment manifest encoded the same way.
+Each existing compiler or linker input also receives a
+=gerbil-bazel.compiler-input-receipt.v1= record with its byte size and SHA-256
+digest.  The native Gerbil compiler driver uses =compile-driver=, GSC modes are
+reported directly, and the executable linker uses =final-link=.
+
+These records are failure-only observability.  They do not retry the compiler,
+change upstream scheduling, mutate an installed Gerbil/Gambit artifact, or
+extend the stable project receipt v1 schema.  As required by the failure
+semantics above, an action-local handoff stores them as valid JSON Lines and
+the project runner restores their typed log prefixes before the bounded build
+tail.  Receipt collection is best effort and never replaces the original
+compiler exit status.  The records remain failure evidence rather than
+cacheable declared outputs.
+
 #+begin_src mermaid
 flowchart LR
   Package["gerbil.pkg"] --> GXPKG["gxpkg build"]
   GXPKG --> Build["build.ss and std/make"]
   Build --> GXC["gxc"]
+  GXC -->|"compile-driver failure"| CompilerFailureReceipt["Compiler failure receipt v1"]
   GAMBUILD["Immutable gambuild-C"] -->|"read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"| GSC["GERBIL_GSC path wrapper"]
   GXC --> GSC
   GSC -->|"-cc clears configured mode flags"| DYN["implicit or -dynamic: full FLAGS_DYN + platform extra"]
   GSC --> OBJ["-obj: full FLAGS_OBJ"]
   GSC --> PASS["-c / -link / -exe: no compiler override"]
+  GSC -->|"compiler-mode failure"| CompilerFailureReceipt
+  Final -->|"final-link failure"| CompilerFailureReceipt
+  CompilerFailureReceipt --> ActionLog["Failed action log"]
   Darwin["Darwin dynamic_lookup extra"] --> DYN
   GXC --> Final["GERBIL_GCC final executable link"]
   Clang["Xcode Clang on Darwin"] --> Final
