@@ -10,7 +10,6 @@ gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.prebuilt(
     install_digest = "@@INSTALL_DIGEST@@",
     name = "prebuilt_gerbil",
-    project_dependency_packages = ["clan", "gslph", "missing-package"],
     project_library_relative_path = ".gerbil/lib",
     project_root_marker = "//:project-root.marker",
     sha256 = "@@ARCHIVE_SHA256@@",

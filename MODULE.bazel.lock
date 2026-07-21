@@ -250,8 +250,8 @@
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "zuatQdpsf258c/326KhFnYtO6gKY3bLE/09KvU7TlUo=",
-        "usagesDigest": "S+H+fAa+jS7NY4RPQNIeaAWLt0r5t4odvf6V/pMM15o=",
+        "bzlTransitiveDigest": "4WPINlhyz3BNcQnUx24MhTUKVg5IWBfVGeMUu5kV3FA=",
+        "usagesDigest": "snmxqoeHXhEZ5dwyW2sglKPVtKrMJTEt7aoIzQm02ps=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -287,10 +287,7 @@
                 "Gerbil v0.18.2",
                 "Gerbil 07c8481"
               ],
-              "project_dependency_packages": [
-                "clan",
-                "gslph"
-              ],
+              "project_dependency_packages": [],
               "project_library_relative_path": "project-library",
               "project_root_marker": "@@//tests/smoke:project-root.marker",
               "tool_paths": {}
