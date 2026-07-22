@@ -429,9 +429,11 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     dependency_policy = _project_dependency_policy(repository_ctx, project_dependency_state)
     substitutions = {
         "{{ENVIRONMENT}}": _environment_exports(environment),
+        "{{GXI}}": _shell_quote(tools.absolute["gxi"]),
         "{{GXPKG}}": _shell_quote(tools.absolute["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(native_abi),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
+        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -498,9 +500,9 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINTS}}": _string_list(platform.constraints),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-        "{{GERBIL_CC}}": repr("gerbil-cc"),
-        "{{GERBIL_GCC}}": repr("gerbil-gcc"),
-        "{{GERBIL_LD}}": repr(host.gerbil_ld),
+            "{{GERBIL_CC}}": repr("gerbil-cc"),
+            "{{GERBIL_GCC}}": repr("gerbil-gcc"),
+            "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(native_abi),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),
             "{{SYSTEM_MEMORY_BYTES}}": repr(host.system_memory_bytes),
@@ -533,6 +535,10 @@ prebuilt_gerbil_repository = repository_rule(
         "_install_dependencies_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
+        ),
+        "_resource_guard": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard.ss",
         ),
         "_native_scheme_env_template": attr.label(
             allow_single_file = True,
