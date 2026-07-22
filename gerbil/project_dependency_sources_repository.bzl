@@ -24,7 +24,10 @@ def _project_dependency_sources_repository_impl(repository_ctx):
             "github.com/tao3k/gerbil-utils",
             "github.com/mighty-gerbils/gerbil-utils",
         ],
-        "gerbil-poo": ["github.com/tao3k/gerbil-poo"],
+        "gerbil-poo": [
+            "github.com/tao3k/gerbil-poo",
+            "github.com/mighty-gerbils/gerbil-poo",
+        ],
         "gslph": ["github.com/tao3k/gerbil-scheme-language-project-harness"],
     }
     candidates += known_github_packages.get(package, [])
