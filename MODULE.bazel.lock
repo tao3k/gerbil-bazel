@@ -191,8 +191,8 @@
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "Gest7GkeYOJ0K3u0Xnu6+Nf6JdnAVfcsnNwGOB3qzWE=",
-        "usagesDigest": "snmxqoeHXhEZ5dwyW2sglKPVtKrMJTEt7aoIzQm02ps=",
+        "bzlTransitiveDigest": "t00g9vybVCH1XofVvFa6AKBBpa1JgYX0fkbjYIU27QU=",
+        "usagesDigest": "vMy5s9ousY/z01vRETc2+z0OIgQTzRkp+8wBhl6TbSY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -242,13 +242,21 @@
               "urls": [
                 "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz"
               ]
+            }
+          },
+          "clan_sources": {
+            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+            "attributes": {
+              "package": "clan",
+              "project_library_relative_path": "project-library",
+              "project_root_marker": "@@//tests/smoke:project-root.marker"
             }
           }
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "Gest7GkeYOJ0K3u0Xnu6+Nf6JdnAVfcsnNwGOB3qzWE=",
-        "usagesDigest": "snmxqoeHXhEZ5dwyW2sglKPVtKrMJTEt7aoIzQm02ps=",
+        "bzlTransitiveDigest": "t00g9vybVCH1XofVvFa6AKBBpa1JgYX0fkbjYIU27QU=",
+        "usagesDigest": "vMy5s9ousY/z01vRETc2+z0OIgQTzRkp+8wBhl6TbSY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -288,6 +296,14 @@
               "project_library_relative_path": "project-library",
               "project_root_marker": "@@//tests/smoke:project-root.marker",
               "tool_paths": {}
+            }
+          },
+          "clan_sources": {
+            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+            "attributes": {
+              "package": "clan",
+              "project_library_relative_path": "project-library",
+              "project_root_marker": "@@//tests/smoke:project-root.marker"
             }
           }
         }

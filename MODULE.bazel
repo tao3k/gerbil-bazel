@@ -40,10 +40,11 @@ gerbil.auto(
     linux_prebuilt_install_digest = GERBIL_LINUX_INSTALL_DIGEST,
     linux_prebuilt_sha256 = GERBIL_LINUX_SHA256,
     linux_prebuilt_urls = GERBIL_LINUX_URLS,
+    project_dependency_source_packages = ["clan"],
     project_library_relative_path = "project-library",
     project_root_marker = "//tests/smoke:project-root.marker",
 )
-use_repo(gerbil, "local_gerbil", "project_gerbil")
+use_repo(gerbil, "clan_sources", "local_gerbil", "project_gerbil")
 
 register_toolchains(
     "@local_gerbil//:registered_toolchain",
