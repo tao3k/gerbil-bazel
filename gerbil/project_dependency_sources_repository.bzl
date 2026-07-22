@@ -9,6 +9,22 @@ def _safe_relative_path(value, field):
             fail("{} must be a safe relative path, got {}".format(field, value))
     return value
 
+def _source_files(root, relative):
+    entries = []
+    for entry in root.readdir():
+        name = entry.basename
+        if name in [".git", "BUILD", "BUILD.bazel"]:
+            continue
+        child_relative = name if not relative else relative + "/" + name
+        if entry.is_dir:
+            entries += _source_files(entry, child_relative)
+        elif entry.is_file:
+            entries.append(child_relative)
+    return entries
+
+def _quote(value):
+    return json.encode(value)
+
 def _project_dependency_sources_repository_impl(repository_ctx):
     package = _safe_relative_path(repository_ctx.attr.package, "package")
     project_library_relative_path = _safe_relative_path(
@@ -44,16 +60,26 @@ def _project_dependency_sources_repository_impl(repository_ctx):
         fail("project dependency package does not exist: {}".format(package))
 
     repository_ctx.watch_tree(package_root)
-    repository_ctx.symlink(package_root, "src")
+    source_files = _source_files(package_root, "")
+    if not source_files:
+        fail("project dependency package has no source files: {}".format(package))
+    for source_file in source_files:
+        repository_ctx.symlink(
+            repository_ctx.path(str(package_root) + "/" + source_file),
+            "src/" + source_file,
+        )
     build_script = repository_ctx.path(str(package_root) + "/build.ss")
     if build_script.exists:
         repository_ctx.symlink(build_script, "build.ss")
     else:
         repository_ctx.file("build.ss", "; generated empty build script for package without build.ss\n")
+    source_labels = ["src/" + source_file for source_file in source_files]
     repository_ctx.file("BUILD.bazel", """
 filegroup(
     name = "sources",
-    srcs = glob(["src/**"], exclude = ["src/BUILD", "src/BUILD.bazel"]),
+    srcs = [
+{source_labels}
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -62,7 +88,9 @@ filegroup(
     srcs = ["build.ss"],
     visibility = ["//visibility:public"],
 )
-""")
+""".format(
+        source_labels = "".join(["        {},\n".format(_quote(label)) for label in source_labels]),
+    ))
 
 project_dependency_sources_repository = repository_rule(
     implementation = _project_dependency_sources_repository_impl,
