@@ -9,18 +9,28 @@ def _safe_relative_path(value, field):
             fail("{} must be a safe relative path, got {}".format(field, value))
     return value
 
-def _source_files(root, relative):
-    entries = []
-    for entry in root.readdir():
-        name = entry.basename
-        if name in [".git", "BUILD", "BUILD.bazel"]:
+def _source_files(repository_ctx, root):
+    result = repository_ctx.execute([
+        "find",
+        str(root),
+        "-type",
+        "f",
+    ], quiet = True)
+    if result.return_code != 0:
+        fail("failed to enumerate project dependency sources: {}".format(result.stderr))
+
+    root_prefix = str(root) + "/"
+    files = []
+    for line in result.stdout.splitlines():
+        if not line.startswith(root_prefix):
             continue
-        child_relative = name if not relative else relative + "/" + name
-        if entry.is_dir:
-            entries += _source_files(entry, child_relative)
-        else:
-            entries.append(child_relative)
-    return entries
+        relative = line[len(root_prefix):]
+        if relative in ["BUILD", "BUILD.bazel"]:
+            continue
+        if relative.startswith(".git/") or "/.git/" in relative:
+            continue
+        files.append(relative)
+    return sorted(files)
 
 def _quote(value):
     return json.encode(value)
@@ -60,7 +70,7 @@ def _project_dependency_sources_repository_impl(repository_ctx):
         fail("project dependency package does not exist: {}".format(package))
 
     repository_ctx.watch_tree(package_root)
-    source_files = _source_files(package_root, "")
+    source_files = _source_files(repository_ctx, package_root)
     if not source_files:
         fail("project dependency package has no source files: {}".format(package))
     for source_file in source_files:
