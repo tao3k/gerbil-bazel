@@ -27,6 +27,8 @@ def _source_files(repository_ctx, root):
         relative = line[len(root_prefix):]
         if relative in ["BUILD", "BUILD.bazel"]:
             continue
+        if relative.endswith("/BUILD") or relative.endswith("/BUILD.bazel"):
+            continue
         if relative.startswith(".git/") or "/.git/" in relative:
             continue
         files.append(relative)
@@ -76,14 +78,15 @@ def _project_dependency_sources_repository_impl(repository_ctx):
     for source_file in source_files:
         repository_ctx.symlink(
             repository_ctx.path(str(package_root) + "/" + source_file),
-            "src/" + source_file,
+            source_file,
         )
     build_script = repository_ctx.path(str(package_root) + "/build.ss")
     if build_script.exists:
-        repository_ctx.symlink(build_script, "build.ss")
+        if "build.ss" not in source_files:
+            repository_ctx.symlink(build_script, "build.ss")
     else:
         repository_ctx.file("build.ss", "; generated empty build script for package without build.ss\n")
-    source_labels = ["src/" + source_file for source_file in source_files]
+    source_labels = source_files
     repository_ctx.file("BUILD.bazel", """
 filegroup(
     name = "sources",
