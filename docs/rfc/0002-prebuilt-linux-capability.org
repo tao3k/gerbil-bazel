@@ -174,8 +174,7 @@ gerbil.auto(
     linux_prebuilt_urls = [
         "https://github.com/tao3k/gerbil-bazel/releases/download/<digest-addressed-capability>/<archive>",
     ],
-    project_dependency_packages = ["clan", "gslph"],
-    project_root_marker = "//:MODULE.bazel",
+    project_root_marker = "//:gerbil.pkg",
 )
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
@@ -204,14 +203,24 @@ one of the existing repository providers; it does not add another toolchain
 contract. The prebuilt path never falls back to host discovery or a source
 build when download, digest, manifest, platform, or runtime validation fails.
 
-* Project-library view contract
+* Project-package manifest view contract
 
-All three providers accept the same optional project-library declaration:
-=project_root_marker= identifies the consumer project, the relative library
-root defaults to =.gerbil/lib=, and =project_dependency_packages= names the
-packages projected into the repository as =lib/<package>=. The repository
-receipt records =dependencyPolicy=project-library-view= and a
-=dependencyState= map containing =ready= or =missing= for each declaration.
+All three providers accept the same optional project-package manifest
+declaration: =project_root_marker= identifies the consumer =gerbil.pkg=, the
+relative library root defaults to =.gerbil/lib=, and the provider reads the
+manifest =depend:= declarations as the package set projected into the
+repository as =lib/<package>=. Revision pins remain owned by =gerbil.pkg= and
+=gxpkg=; Bazel strips the =@rev= suffix only to locate the installed package
+directory. The repository receipt records
+=dependencyPolicy=project-package-manifest= and a =dependencyState= map
+containing =ready= or =missing= for each declaration.
+
+The =project_dependency_packages= attribute remains as an explicit
+compatibility override for non-standard manifests. It is not the recommended
+consumer lock surface and SHOULD NOT be used to duplicate =gerbil.pkg=
+=depend:= declarations in downstream Bazel modules. Providers using this
+override record =dependencyPolicy=project-dependency-override= so receipts do
+not confuse compatibility input with =gerbil.pkg= ownership.
 
 The Linux prebuilt provider therefore imports immutable Gerbil runtime bytes
 while exposing consumer-owned package sources through Bazel repository inputs.
@@ -233,6 +242,10 @@ The provider environment SHALL be applied by the host =env= executable to the
 single raw =gxpkg= process.  It SHALL NOT create a nested =gxpkg env env=
 lifecycle or perform an unconditional package listing.  The selected
 =GERBIL_HOME= is already visible when =gxpkg= imports =:gerbil/core=.
+The install wrapper defaults =GERBIL_BUILD_CORES=1= for this package-manager
+lifecycle to avoid provider/runtime hangs during dependency builds.  A caller
+MAY set =GERBIL_BAZEL_INSTALL_BUILD_CORES= to opt into a different
+install-time parallelism without changing the normal compile toolchain cores.
 
 * Archive and manifest contract
 

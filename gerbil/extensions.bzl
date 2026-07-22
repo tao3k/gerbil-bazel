@@ -2,6 +2,7 @@
 
 load(":prebuilt_repository.bzl", "prebuilt_gerbil_repository")
 load(":repository.bzl", "local_gerbil_repository")
+load(":project_dependency_sources_repository.bzl", "project_dependency_sources_repository")
 
 _host = tag_class(attrs = {
     "darwin_homebrew_formulae": attr.string_list(default = [
@@ -14,6 +15,7 @@ _host = tag_class(attrs = {
     "expected_version_prefixes": attr.string_list(),
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
+        "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
@@ -31,6 +33,7 @@ _prebuilt = tag_class(attrs = {
     "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
     "name": attr.string(mandatory = True),
     "project_dependency_packages": attr.string_list(),
+        "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "sha256": attr.string(mandatory = True),
@@ -55,6 +58,7 @@ _auto = tag_class(attrs = {
     "linux_prebuilt_urls": attr.string_list(mandatory = True),
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
+        "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
@@ -89,6 +93,24 @@ def _claim_name(names, name, kind):
             names[name],
         ))
     names[name] = kind
+
+
+def _source_repo_name(package):
+    return package.replace("-", "_").replace("/", "_").replace(".", "_") + "_sources"
+
+
+def _instantiate_project_dependency_sources(names, tag, kind):
+    if not tag.project_root_marker:
+        return
+    for package in (getattr(tag, "project_dependency_source_packages", []) or tag.project_dependency_packages):
+        repo_name = _source_repo_name(package)
+        _claim_name(names, repo_name, kind + ".dependency_source")
+        project_dependency_sources_repository(
+            name = repo_name,
+            package = package,
+            project_library_relative_path = tag.project_library_relative_path,
+            project_root_marker = tag.project_root_marker,
+        )
 
 def _instantiate_auto(module_ctx, auto):
     system = _normalized_system(module_ctx.os.name)
@@ -137,6 +159,7 @@ def _gerbil_extension_impl(module_ctx):
         for auto in module.tags.auto:
             _claim_name(names, auto.name, "auto")
             _instantiate_auto(module_ctx, auto)
+            _instantiate_project_dependency_sources(names, auto, "auto")
         for host in module.tags.host:
             _claim_name(names, host.name, "host")
             local_gerbil_repository(

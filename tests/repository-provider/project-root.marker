@@ -1,1 +1,6 @@
-gerbil-bazel repository-provider fixture root
+package: gerbil-bazel-repository-provider-fixture
+namespace: gerbil-bazel-repository-provider-fixture
+depend:
+("clan@1111111111111111111111111111111111111111"
+ "gslph@2222222222222222222222222222222222222222"
+ "missing-package@3333333333333333333333333333333333333333")

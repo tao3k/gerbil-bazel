@@ -17,7 +17,7 @@ genrule(
         "@@@REPOSITORY_NAME@@//:lib/gslph/ready.txt",
         "@@@REPOSITORY_NAME@@//:toolchain.receipt.json",
     ],
-    outs = ["project-library-view.ok"],
+    outs = ["project-package-manifest-view.ok"],
     cmd = "bash $(location :project_library_view_test.sh) " +
           "$(location @@@REPOSITORY_NAME@@//:toolchain.receipt.json) " +
           "$(location @@@REPOSITORY_NAME@@//:lib/clan/ready.txt) " +

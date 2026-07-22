@@ -19,6 +19,6 @@ if ! grep -Eq '"schema"[[:space:]]*:[[:space:]]*"gerbil-bazel\.(local|prebuilt)-
   exit 1
 fi
 
-assert_receipt_field '"dependencyPolicy": "project-library-view"'
+assert_receipt_field '"dependencyPolicy": "project-package-manifest"'
 assert_receipt_field '"clan": "ready"'
 assert_receipt_field '"gslph": "ready"'

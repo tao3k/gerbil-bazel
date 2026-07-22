@@ -21,8 +21,7 @@ gerbil.auto(
     linux_prebuilt_urls = [
         "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
     ],
-    project_dependency_packages = ["clan", "gslph"],
-    project_root_marker = "//:MODULE.bazel",
+    project_root_marker = "//:gerbil.pkg",
 )
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
@@ -76,12 +75,19 @@ default-branch registration, runner selection, cold-build receipt acceptance,
 and the independent promotion boundary.
 
 Both `auto` providers and the explicit `prebuilt` provider support the same
-project-library view as `host`. Declare `project_root_marker`,
-`project_library_relative_path`, and `project_dependency_packages`; the
-repository projects ready packages into `lib/<package>` and records every
-package as `ready` or `missing` in `toolchain.receipt.json`. This keeps the
-downstream BUILD graph identical on Darwin and Linux while leaving dependency
-installation under the separate `install_dependencies` capability.
+project-package manifest view as `host`. Declare `project_root_marker` pointing
+at the consumer `gerbil.pkg`; the repository reads its `depend:` declarations,
+strips package revisions, projects ready packages into `lib/<package>`, and
+records every package as `ready` or `missing` in `toolchain.receipt.json`.
+This keeps `gerbil.pkg` as the single package lock and keeps the downstream
+BUILD graph identical on Darwin and Linux while leaving dependency
+installation under the separate `install_dependencies` capability. The
+`project_dependency_packages` attribute remains as an explicit compatibility
+override for non-standard manifests; published consumers should prefer the
+manifest-driven path. Repositories using that override record
+`dependencyPolicy: "project-dependency-override"` instead of the manifest
+policy, so receipts do not confuse the compatibility path with `gerbil.pkg`
+ownership.
 
 Every host and prebuilt repository publishes `//:install_dependencies`. The
 launcher enters the consumer workspace, uses its workspace-local `.gerbil`
@@ -120,7 +126,10 @@ bazel run @local_gerbil//:install_dependencies
 The target enters `BUILD_WORKSPACE_DIRECTORY`, defaults `GERBIL_PATH` to
 `$BUILD_WORKSPACE_DIRECTORY/.gerbil`, runs the standard
 `gxpkg deps --install` workflow through the normalized native tool
-environment. This is an explicit developer-side effect target, never build
+environment. It defaults `GERBIL_BUILD_CORES=1` for the package-manager
+install lifecycle to avoid provider/runtime hangs during dependency builds;
+set `GERBIL_BAZEL_INSTALL_BUILD_CORES` to opt into a different install-time
+parallelism. This is an explicit developer-side effect target, never build
 truth inside a hermetic compile action.
 
 ## Project rules

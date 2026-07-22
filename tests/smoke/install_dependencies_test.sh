@@ -34,6 +34,7 @@ set -euo pipefail
   printf 'gerbil-path=%s\n' "${GERBIL_PATH:-}"
   printf 'cc=%s\n' "${CC:-}"
   printf 'cpu-count=%s\n' "${GERBIL_BAZEL_CPU_COUNT:-}"
+  printf 'build-cores=%s\n' "${GERBIL_BUILD_CORES:-}"
   printf 'argv='
   printf '<%s>' "$@"
   printf '\n'
@@ -58,4 +59,5 @@ grep -F "cwd=$workspace" "$log" >/dev/null
 grep -F "gerbil-path=$workspace/.gerbil" "$log" >/dev/null
 grep -F 'cc=fake-cc' "$log" >/dev/null
 grep -F 'cpu-count=7' "$log" >/dev/null
+grep -F 'build-cores=1' "$log" >/dev/null
 grep -F '<deps><--install>' "$log" >/dev/null

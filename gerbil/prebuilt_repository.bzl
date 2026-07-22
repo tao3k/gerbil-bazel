@@ -74,6 +74,80 @@ def _safe_relative_path(value, description):
             fail("{} contains an unsafe path segment: {}".format(description, value))
     return value
 
+def _quoted_strings(value):
+    strings = []
+    parts = value.split("\"")
+    if len(parts) % 2 == 0:
+        fail("unterminated quoted string in Gerbil package manifest")
+    for index, part in enumerate(parts):
+        if index % 2 == 1:
+            strings.append(part)
+    return strings
+
+def _dependency_repository_from_manifest_entry(dependency):
+    revision_index = dependency.find("@")
+    if revision_index < 0:
+        return dependency
+    return dependency[:revision_index]
+
+def _package_name_from_manifest(manifest):
+    package_index = manifest.find("package:")
+    if package_index < 0:
+        return ""
+    tail = manifest[package_index + len("package:"):]
+    tail = tail.replace("(", " ")
+    tail = tail.replace(")", " ")
+    tail = tail.replace("\n", " ")
+    tail = tail.replace("\r", " ")
+    tail = tail.replace("\t", " ")
+    for field in tail.split(" "):
+        if field:
+            return field
+    return ""
+
+def _dependency_package_name(repository_ctx, project_root, dependency):
+    repository = _dependency_repository_from_manifest_entry(dependency)
+    package_manifest = repository_ctx.path("{}/.gerbil/pkg/{}/gerbil.pkg".format(
+        project_root,
+        repository,
+    ))
+    repository_ctx.watch(package_manifest)
+    if package_manifest.exists:
+        package = _package_name_from_manifest(repository_ctx.read(package_manifest))
+        if package:
+            return package
+    return repository
+
+def _project_dependency_packages(repository_ctx):
+    if repository_ctx.attr.project_dependency_packages:
+        return repository_ctx.attr.project_dependency_packages
+    if repository_ctx.attr.project_root_marker == None:
+        return []
+
+    project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
+    manifest = repository_ctx.read(repository_ctx.attr.project_root_marker)
+    depend_index = manifest.find("depend:")
+    if depend_index < 0:
+        return []
+    policy_index = manifest.find("\n policy:", depend_index)
+    if policy_index < 0:
+        policy_index = len(manifest)
+    packages = []
+    seen = {}
+    for dependency in _quoted_strings(manifest[depend_index:policy_index]):
+        package = _dependency_package_name(repository_ctx, project_root, dependency)
+        if package and package not in seen:
+            packages.append(package)
+            seen[package] = True
+    return packages
+
+def _project_dependency_policy(repository_ctx, dependency_state):
+    if not dependency_state:
+        return "declared-roots"
+    if repository_ctx.attr.project_dependency_packages:
+        return "project-dependency-override"
+    return "project-package-manifest"
+
 def _hex_digest(value, length, description):
     value = _require_type(value, "string", description).lower()
     if len(value) != length:
@@ -212,11 +286,11 @@ def _link_dependency_roots(repository_ctx, manifest):
     return relative_roots
 
 def _link_project_dependencies(repository_ctx):
-    packages = repository_ctx.attr.project_dependency_packages
+    packages = _project_dependency_packages(repository_ctx)
     if not packages:
         return {}
     if not repository_ctx.attr.project_root_marker:
-        fail("project_root_marker is required when project_dependency_packages are declared")
+        fail("project_root_marker is required when project dependency packages are declared")
 
     project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
     library_relative = _safe_relative_path(
@@ -225,6 +299,7 @@ def _link_project_dependencies(repository_ctx):
     )
     library_root = repository_ctx.path("{}/{}".format(project_root, library_relative))
     state = {}
+    linked = {}
     for package in packages:
         package = _safe_relative_path(package, "project dependency package")
         if package in state:
@@ -233,7 +308,11 @@ def _link_project_dependencies(repository_ctx):
         repository_ctx.watch(dependency)
         if dependency.exists:
             repository_ctx.watch_tree(dependency)
-            repository_ctx.symlink(dependency, "lib/{}".format(package))
+            link_name = package.split("/")[0]
+            if link_name not in linked:
+                link_root = repository_ctx.path("{}/{}".format(library_root, link_name))
+                repository_ctx.symlink(link_root, "lib/{}".format(link_name))
+                linked[link_name] = True
             state[package] = "ready"
         else:
             state[package] = "missing"
@@ -347,7 +426,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     version = _version(repository_ctx, manifest, tools.absolute, environment)
     dependency_roots = _link_dependency_roots(repository_ctx, manifest)
     project_dependency_state = _link_project_dependencies(repository_ctx)
-    dependency_policy = "project-library-view" if repository_ctx.attr.project_dependency_packages else "declared-roots"
+    dependency_policy = _project_dependency_policy(repository_ctx, project_dependency_state)
     substitutions = {
         "{{ENVIRONMENT}}": _environment_exports(environment),
         "{{GXPKG}}": _shell_quote(tools.absolute["gxpkg"]),
