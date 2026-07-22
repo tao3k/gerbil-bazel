@@ -73,3 +73,79 @@ set -e
 [[ "$timeout_status" -eq 71 ]]
 grep -F '"outcome":"timeout"' "$root/timeout.json" >/dev/null
 grep -F '"timeoutMs":1000' "$root/timeout.json" >/dev/null
+
+child_pid_file="$root/timeout-child.pid"
+set +e
+env "${common_environment[@]}" \
+  "$gxi" "$guard" "$root/process-tree-timeout.json" process-tree-timeout 1 \
+  /bin/sh -c 'sleep 30 & echo $! >"$1"; wait' guard-child "$child_pid_file"
+process_tree_timeout_status=$?
+set -e
+[[ "$process_tree_timeout_status" -eq 71 ]]
+child_pid=$(cat "$child_pid_file")
+for _attempt in {1..20}; do
+  child_state=$(ps -o state= -p "$child_pid" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -z "$child_state" || "$child_state" == Z* ]]; then
+    break
+  fi
+  sleep 0.1
+done
+child_state=$(ps -o state= -p "$child_pid" 2>/dev/null | tr -d '[:space:]' || true)
+if [[ -n "$child_state" && "$child_state" != Z* ]]; then
+  printf 'resource guard left child process %s running after timeout: state=%s\n' \
+    "$child_pid" "$child_state" >&2
+  exit 1
+fi
+grep -F '"outcome":"timeout"' "$root/process-tree-timeout.json" >/dev/null
+
+spawner="$root/process-tree-spawner.sh"
+spawned_pid_file="$root/process-tree-spawned.pids"
+cat >"$spawner" <<'EOF'
+#!/bin/sh
+set -eu
+pid_file=${1:?pid file is required}
+: >"$pid_file"
+while :; do
+  sleep 30 &
+  printf '%s\n' "$!" >>"$pid_file"
+  sleep 0.02
+done
+EOF
+chmod +x "$spawner"
+
+set +e
+env "${common_environment[@]}" \
+  "$gxi" "$guard" "$root/process-tree-spawner-timeout.json" \
+  process-tree-spawner-timeout 1 \
+  "$spawner" "$spawned_pid_file"
+spawner_timeout_status=$?
+set -e
+[[ "$spawner_timeout_status" -eq 71 ]]
+[[ -s "$spawned_pid_file" ]]
+
+deadline=$((SECONDS + 3))
+while :; do
+  all_gone=true
+  while IFS= read -r spawned_pid; do
+    [[ -n "$spawned_pid" ]] || continue
+    spawned_state=$(ps -o state= -p "$spawned_pid" 2>/dev/null | tr -d '[:space:]' || true)
+    if [[ -n "$spawned_state" && "$spawned_state" != Z* ]]; then
+      all_gone=false
+      break
+    fi
+  done <"$spawned_pid_file"
+  if [[ "$all_gone" == true ]]; then
+    break
+  fi
+  if (( SECONDS >= deadline )); then
+    printf 'resource guard left a recorded descendant running\n' >&2
+    while IFS= read -r spawned_pid; do
+      ps -o pid=,ppid=,state=,command= -p "$spawned_pid" >&2 || true
+      kill -KILL "$spawned_pid" 2>/dev/null || true
+    done <"$spawned_pid_file"
+    exit 1
+  fi
+  sleep 0.05
+done
+grep -F '"outcome":"timeout"' \
+  "$root/process-tree-spawner-timeout.json" >/dev/null

@@ -295,9 +295,11 @@ def _local_gerbil_repository_impl(repository_ctx):
 
     substitutions = {
         "{{ENVIRONMENT}}": _environment_exports(environment),
+        "{{GXI}}": _shell_quote(tools["gxi"]),
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
+        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -402,6 +404,10 @@ local_gerbil_repository = repository_rule(
         "_native_tool_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:native_tool.sh.tpl",
+        ),
+        "_resource_guard": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard.ss",
         ),
     },
     environ = [

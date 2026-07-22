@@ -139,6 +139,32 @@ NOT replace either native scheduler.
 Hard-coded logical CPU counts, fixed retry counts, sleeps, and unconditional
 serialization are prohibited.
 
+** Adaptive dependency-install budget
+
+The generated dependency-install launcher MUST preserve =gxpkg deps --install= as the native package-lifecycle owner. Gerbil-Bazel only projects a validated, action-local =GERBIL_BUILD_CORES=N= into that command and places the command under the Scheme resource guard; it does not introduce a dependency installer or a scheduler.
+
+#+begin_src mermaid
+flowchart LR
+    H["Normalized host CPU and memory facts"] --> P["Install budget projection"]
+    E["Explicit install-core override"] --> P
+    P --> C["Validated GERBIL_BUILD_CORES=N"]
+    C --> G["Scheme resource guard: admission, RSS, timeout, process tree"]
+    G --> X["Native gxpkg deps --install"]
+    X --> M["Native std/make and compiler schedulers"]
+    G --> R["JSON resource-guard receipt"]
+#+end_src
+
+Budget selection has the following precedence and fail-closed behavior:
+
+1. A positive decimal =GERBIL_BAZEL_INSTALL_BUILD_CORES= is an explicit override.
+2. Otherwise, the launcher uses the repository-normalized =GERBIL_BUILD_CORES=, falling back to =GERBIL_BAZEL_CPU_COUNT= only when the former is absent.
+3. When =GERBIL_BAZEL_MEMORY_BYTES= is available, the result is capped by available bytes divided by =GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES=. The per-core default is 2 GiB and the resulting core count has a floor of one.
+4. Invalid explicit values, invalid normalized facts, and invalid memory-per-core values fail before =gxpkg= starts. No machine-specific core count is embedded in the launcher or tests.
+
+The concrete core projection is intentionally small and platform-neutral. Runtime enforcement remains in =gerbil/resource_guard.ss=: it performs admission checks, samples process-tree RSS, enforces the timeout, and terminates descendants before the guarded parent. On timeout, the guard freezes the root, repeatedly discovers and freezes newly observed descendants until the live closure is stable, then terminates the frozen closure descendant-first. Diagnostic process-table fixtures MAY drive deterministic observation tests, but MUST NOT replace live process discovery in the safety termination path.
+
+The guard writes =.gerbil/pkg/install-resource-guard.receipt.json=. The launcher removes any prior receipt before each invocation. Guard status 71 means the timed operation was terminated only when the fresh receipt also proves the v1 schema, =outcome: timeout=, and the exact numeric =exitCode: 71=. The launcher accepts a proven timeout only when the declared dependency libraries are already present; otherwise it preserves the install launcher's public timeout status 124. An ordinary child exit 71 and every other nonzero guard or child status propagate unchanged.
+
 * Package lifecycle contract
 
 =gxpkg= owns package transitions:
@@ -334,4 +360,3 @@ the observed native semantics.
    Xcode Clang on Darwin.
 5. Compare the first cold build, warm dependency-preserving build, and identical
    rerun before changing action granularity.
-

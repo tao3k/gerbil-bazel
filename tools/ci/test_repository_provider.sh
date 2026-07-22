@@ -114,8 +114,34 @@ if [[ -z "$archive" ]]; then
     if [[ "$tool" == gxi ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
-        'if [[ "${1:-}" == --version ]]; then printf "Gerbil v0.prebuilt-test\\n"; fi' \
-        'exit 0' >"$payload/prefix/bin/$tool"
+        'set -euo pipefail' \
+        'if [[ "${1:-}" == --version ]]; then' \
+        '  printf "Gerbil v0.prebuilt-test\\n"' \
+        '  exit 0' \
+        'fi' \
+        'if [[ "${1##*/}" == resource_guard.ss ]]; then' \
+        '  [[ $# -eq 7 ]]' \
+        '  receipt=$2' \
+        '  label=$3' \
+        '  timeout_seconds=$4' \
+        '  shift 4' \
+        '  [[ -n "$receipt" ]]' \
+        '  [[ "$label" == install-dependencies ]]' \
+        '  [[ "$timeout_seconds" =~ ^[0-9]+$ ]]' \
+        '  [[ $# -eq 3 ]]' \
+        '  [[ "${1##*/}" == gxpkg ]]' \
+        '  [[ "$2" == deps ]]' \
+        '  [[ "$3" == --install ]]' \
+        '  set +e' \
+        '  "$@"' \
+        '  child_status=$?' \
+        '  set -e' \
+        '  printf '\''{"childExitCode":%d,"exitCode":%d,"kind":"gerbil-bazel.resource-guard-receipt.v1","label":"install-dependencies","outcome":"completed","schema":"gerbil-bazel.resource-guard-receipt.v1","timeoutMs":%d,"version":1}\n'\'' \' \
+        '    "$child_status" "$child_status" "$((timeout_seconds * 1000))" >"$receipt"' \
+        '  exit "$child_status"' \
+        'fi' \
+        'printf '\''unexpected synthetic gxi command: %s\\n'\'' "$*" >&2' \
+        'exit 64' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxc ]]; then
       printf '%s\n' \
         '#!/usr/bin/env bash' \
@@ -414,9 +440,20 @@ fi
   fi
   install_seconds=0
   dependency_transition=false
-  if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
-    "$bazel_bin" --output_user_root="$test_root/bazel" build \
-      //:project_dependency_state_missing_test
+if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+  install_launcher_relative="$(
+    "$bazel_bin" --output_user_root="$test_root/bazel" cquery \
+      "@$repository_name//:install_gerbil_dependencies.sh" \
+      --output=files --noshow_progress 2>/dev/null
+  )"
+  install_launcher="$output_base/$install_launcher_relative"
+  if grep -Eq '\{\{[A-Z_][A-Z0-9_]*\}\}' "$install_launcher"; then
+    printf 'generated dependency installer contains unresolved template placeholders: %s\n' \
+      "$install_launcher" >&2
+    exit 1
+  fi
+  "$bazel_bin" --output_user_root="$test_root/bazel" build \
+    //:project_dependency_state_missing_test
     install_started_at="$SECONDS"
     "$bazel_bin" --output_user_root="$test_root/bazel" run \
       "@$repository_name//:install_dependencies"
@@ -430,10 +467,20 @@ fi
     fi
     grep -Fx 'command=deps --install' "$install_receipt" >/dev/null
     expected_gerbil_path="$(cd "$test_root/consumer/.gerbil" && pwd -P)"
-    grep -Fx "GERBIL_PATH=$expected_gerbil_path" \
-      "$install_receipt" >/dev/null
-    dependency_transition=true
+  grep -Fx "GERBIL_PATH=$expected_gerbil_path" \
+    "$install_receipt" >/dev/null
+  guard_receipt="$test_root/consumer/.gerbil/pkg/install-resource-guard.receipt.json"
+  if [[ ! -f "$guard_receipt" ]]; then
+    printf 'synthetic dependency guard did not emit %s\n' "$guard_receipt" >&2
+    exit 1
   fi
+  jq -e '
+    .schema == "gerbil-bazel.resource-guard-receipt.v1" and
+    .label == "install-dependencies" and
+    .exitCode == 0
+  ' "$guard_receipt" >/dev/null
+  dependency_transition=true
+fi
   project_view_started_at="$SECONDS"
   "$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
   project_view_seconds="$((SECONDS - project_view_started_at))"

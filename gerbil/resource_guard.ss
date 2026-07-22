@@ -119,6 +119,9 @@
   (max +minimum-max-rss-bytes+
        (quotient total-memory +memory-share-denominator+)))
 
+(def (live-process-table-result)
+  (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))
+
 (def (process-table-result)
   (cond
    ((getenv "GERBIL_BAZEL_GUARD_FORCE_PROCESS_TABLE_UNAVAILABLE" #f)
@@ -126,7 +129,7 @@
    ((getenv "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT" #f)
     => (lambda (snapshot) (cons 0 snapshot)))
    (else
-    (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))))
+    (live-process-table-result))))
 
 (def (host-observation)
   (let* ((total-memory (system-memory-bytes))
@@ -183,6 +186,12 @@
         (filter-map process-row (string-split (cdr result) #\newline))
         '())))
 
+(def (live-process-table)
+  (let (result (live-process-table-result))
+    (if (= (car result) 0)
+      (filter-map process-row (string-split (cdr result) #\newline))
+      '())))
+
 (def (process-tree-pids root-pid rows)
   (let expand ((known (list root-pid)))
     (let lp ((rest rows) (next known) (changed? #f))
@@ -204,16 +213,41 @@
      0
      rows)))
 
+(def (signal-process! signal pid)
+  (= (car (run-captured
+           (list "kill" signal (number->string pid))))
+     0))
+
+(def (new-process-tree-pids observed known)
+  (filter-map
+   (lambda (observed-pid)
+     (and (not (member observed-pid known)) observed-pid))
+   observed))
+
+(def (freeze-process-tree-pids! pid)
+  ;; Freeze the root before discovery so it cannot create new direct children
+  ;; while the live descendant closure converges.
+  (signal-process! "-STOP" pid)
+  (let loop ((known (list pid)))
+    (let* ((tree-pids (process-tree-pids pid (live-process-table)))
+           (new-pids (new-process-tree-pids tree-pids known)))
+      ;; Descendants may have forked before STOP was delivered. Freeze every
+      ;; newly observed PID and rescan until the live closure is stable.
+      (for-each
+       (lambda (new-pid)
+         (signal-process! "-STOP" new-pid))
+       new-pids)
+      (if (null? new-pids)
+        tree-pids
+        (loop tree-pids)))))
+
 (def (terminate-process-tree! pid)
-  (let (tree-pids (process-tree-pids pid (process-table)))
+  (let (tree-pids (freeze-process-tree-pids! pid))
+    ;; process-tree-pids conses newly discovered descendants ahead of their
+    ;; ancestors, so termination is descendant-first with the root last.
     (for-each
      (lambda (tree-pid)
-       (run-captured (list "kill" "-TERM" (number->string tree-pid))))
-     tree-pids)
-    (thread-sleep! 0.05)
-    (for-each
-     (lambda (tree-pid)
-       (run-captured (list "kill" "-KILL" (number->string tree-pid))))
+       (signal-process! "-KILL" tree-pid))
      tree-pids)))
 
 (def (guard-receipt label observation outcome exit-code child-exit-code
