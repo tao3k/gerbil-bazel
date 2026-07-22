@@ -35,9 +35,12 @@ package_name_from_manifest() {
 project_dependencies_ready() {
   local manifest="$workspace/gerbil.pkg"
   local dependency repository package package_manifest
+  local dependencies=()
 
   test -f "$manifest" || return 1
-  mapfile -t dependencies < <(
+  while IFS= read -r dependency; do
+    dependencies+=("$dependency")
+  done < <(
     tr '()\n\r\t' ' ' <"$manifest" |
       awk '{
         inside = 0
