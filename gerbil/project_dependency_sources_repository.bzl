@@ -88,6 +88,13 @@ def _project_dependency_sources_repository_impl(repository_ctx):
         repository_ctx.file("build.ss", "; generated empty build script for package without build.ss\n")
     source_labels = source_files
     repository_ctx.file("BUILD.bazel", """
+exports_files(
+    [
+{exported_source_labels}
+    ],
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "sources",
     srcs = [
@@ -102,6 +109,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 """.format(
+        exported_source_labels = "".join(["        {},\n".format(_quote(label)) for label in source_labels]),
         source_labels = "".join(["        {},\n".format(_quote(label)) for label in source_labels]),
     ))
 

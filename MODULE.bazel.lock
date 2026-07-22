@@ -247,8 +247,8 @@
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "Gest7GkeYOJ0K3u0Xnu6+Nf6JdnAVfcsnNwGOB3qzWE=",
-        "usagesDigest": "snmxqoeHXhEZ5dwyW2sglKPVtKrMJTEt7aoIzQm02ps=",
+        "bzlTransitiveDigest": "t00g9vybVCH1XofVvFa6AKBBpa1JgYX0fkbjYIU27QU=",
+        "usagesDigest": "vMy5s9ousY/z01vRETc2+z0OIgQTzRkp+8wBhl6TbSY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -288,6 +288,14 @@
               "project_library_relative_path": "project-library",
               "project_root_marker": "@@//tests/smoke:project-root.marker",
               "tool_paths": {}
+            }
+          },
+          "clan_sources": {
+            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+            "attributes": {
+              "package": "clan",
+              "project_library_relative_path": "project-library",
+              "project_root_marker": "@@//tests/smoke:project-root.marker"
             }
           }
         }

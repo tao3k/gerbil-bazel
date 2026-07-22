@@ -246,3 +246,10 @@ sh_test(
         "@project_gerbil//:toolchain.receipt.json",
     ],
 )
+
+sh_test(
+    name = "source_file_visibility_test",
+    srcs = ["source_file_visibility_test.sh"],
+    args = ["$(rlocationpath @clan_sources//:ready.txt)"],
+    data = ["@clan_sources//:ready.txt"],
+)
