@@ -18,7 +18,7 @@ def _source_files(root, relative):
         child_relative = name if not relative else relative + "/" + name
         if entry.is_dir:
             entries += _source_files(entry, child_relative)
-        elif entry.is_file:
+        else:
             entries.append(child_relative)
     return entries
 
