@@ -54,9 +54,11 @@ printf '%s\n' \
   'command -v as >/dev/null' \
   'command -v ld >/dev/null' \
   '[[ -n "${GERBIL_BAZEL_NATIVE_ABI:-}" ]]' \
+  '[[ "${GERBIL_BUILD_CORES:-}" =~ ^[1-9][0-9]*$ ]]' \
   '[[ "$GERBIL_LOADPATH" == "$GERBIL_PATH/lib:"* ]]' \
   'project_root=$(cd "$(dirname "$build_script")" && pwd -P)' \
   '[[ "$PWD" == "$project_root" ]]' \
+  'printf "%s\n" "$GERBIL_BUILD_CORES" >"$project_root/build-cores.txt"' \
   'if [[ "${FAKE_RECEIPT_MODE:-generic}" == link-failure ]]; then' \
   '  : "${GERBIL_BAZEL_FAILURE_RECEIPT_DIR:?}"' \
 '  printf '\''{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","status":23}\n'\'' >"$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gsc-test.jsonl"' \
@@ -116,8 +118,21 @@ grep -F '"libraryOutputRequired":false' \
 grep -F '"packageIdentity":""' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
 [[ -f "$root/generic.project/external/package/src/generated.c" ]]
+[[ "$(<"$root/generic.project/build-cores.txt")" =~ ^[1-9][0-9]*$ ]]
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]
+
+GERBIL_BUILD_CORES=3 run_fixture explicit-build-cores ''
+[[ "$(<"$root/explicit-build-cores.project/build-cores.txt")" == 3 ]]
+
+set +e
+GERBIL_BUILD_CORES=invalid run_fixture invalid-build-cores '' \
+  2>"$root/invalid-build-cores.stderr"
+invalid_build_cores_status=$?
+set -e
+[[ "$invalid_build_cores_status" -eq 64 ]]
+grep -F 'GERBIL_BUILD_CORES must be a positive integer' \
+  "$root/invalid-build-cores.stderr" >/dev/null
 
 GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT=1 FAKE_LIBRARY_OUTPUT=1 \
   run_fixture required-library ''

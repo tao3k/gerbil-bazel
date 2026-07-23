@@ -211,13 +211,14 @@ if [[ -z "$archive" ]]; then
         ': "${GERBIL_HOME:?GERBIL_HOME is required before gxpkg startup}"' \
         'if [[ "${1:-}" == deps && "${2:-}" == --install ]]; then' \
         '  : "${GERBIL_PATH:?GERBIL_PATH is required}"' \
+        '  [[ "${GERBIL_BUILD_CORES:-}" =~ ^[1-9][0-9]*$ ]]' \
         '  resolved_gxi=$(command -v gxi)' \
         '  [[ "$(gxi --version)" == "Gerbil v0.prebuilt-test" ]]' \
         '  [[ "$resolved_gxi" == "$GERBIL_HOME/bin/gxi" ]]' \
         '  mkdir -p "$GERBIL_PATH/lib/clan" "$GERBIL_PATH/lib/gslph"' \
         '  printf "clan ready\\n" >"$GERBIL_PATH/lib/clan/ready.txt"' \
         '  printf "gslph ready\\n" >"$GERBIL_PATH/lib/gslph/ready.txt"' \
-        '  printf "command=deps --install\\nGERBIL_PATH=%s\\n" "$GERBIL_PATH" >"$GERBIL_PATH/install-dependencies.receipt"' \
+        '  printf "command=deps --install\\nGERBIL_PATH=%s\\nGERBIL_BUILD_CORES=%s\\n" "$GERBIL_PATH" "$GERBIL_BUILD_CORES" >"$GERBIL_PATH/install-dependencies.receipt"' \
         '  exit 0' \
         'fi' \
         'printf "unexpected synthetic gxpkg command: %s\\n" "$*" >&2' \
@@ -371,10 +372,14 @@ fi
     --arg install_digest "$expected_install_digest" \
     --arg selected_provider "$selected_provider" \
     --arg source "$expected_build_cores_source" \
-    '.environment.GERBIL_BUILD_CORES == $build_cores and
+    '(.environment | has("GERBIL_BUILD_CORES") | not) and
+     (.environment | has("GERBIL_BAZEL_CPU_COUNT") | not) and
+     (.environment | has("GERBIL_BAZEL_MEMORY_BYTES") | not) and
      ($selected_provider != "prebuilt" or .installDigest == $install_digest) and
      .gerbilBuildCores == ($build_cores | tonumber) and
      .gerbilBuildCoresSource == $source and
+     (.systemCpuCount | type == "number") and
+     (.systemMemoryBytes | type == "number") and
      (.gambitProducerOptions.dynamic | type == "string") and
      (.gambitProducerOptions.object | type == "string")' \
     "$output_base/$receipt_relative" >/dev/null
@@ -469,6 +474,8 @@ if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
     expected_gerbil_path="$(cd "$test_root/consumer/.gerbil" && pwd -P)"
   grep -Fx "GERBIL_PATH=$expected_gerbil_path" \
     "$install_receipt" >/dev/null
+  grep -Eq '^GERBIL_BUILD_CORES=[1-9][0-9]*$' \
+    "$install_receipt"
   guard_receipt="$test_root/consumer/.gerbil/pkg/install-resource-guard.receipt.json"
   if [[ ! -f "$guard_receipt" ]]; then
     printf 'synthetic dependency guard did not emit %s\n' "$guard_receipt" >&2

@@ -81,6 +81,29 @@
              "ps -axo state= 2>/dev/null | awk '$1 ~ /^R/ {n++} END {print n+0}'"))
       1))
 
+(def (linux-cgroup-memory-limit-bytes)
+  (or
+   (positive-integer-from-env
+    "GERBIL_BAZEL_GUARD_CGROUP_MEMORY_LIMIT_BYTES"
+    #f)
+   (command-positive-integer
+    (list
+     "sh"
+     "-c"
+     "for path in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do
+       test -r \"$path\" || continue
+       IFS= read -r value <\"$path\" || continue
+       case \"$value\" in ''|*[!0-9]*) continue ;; esac
+       awk -v value=\"$value\" 'BEGIN {
+         if (value + 0 > 0 && value + 0 < 1152921504606846976) {
+           printf \"%.0f\\n\", value
+           exit 0
+         }
+         exit 1
+       }' && exit 0
+     done
+     exit 1"))))
+
 (def (system-memory-bytes)
   (or (positive-integer-from-env
        "GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES"
@@ -88,6 +111,7 @@
       (positive-integer-from-env
        "GERBIL_BAZEL_MEMORY_BYTES"
        #f)
+      (linux-cgroup-memory-limit-bytes)
       (command-positive-integer (list "sysctl" "-n" "hw.memsize"))
       (let ((pages (command-positive-integer (list "getconf" "_PHYS_PAGES")))
             (page-size (command-positive-integer (list "getconf" "PAGE_SIZE"))))

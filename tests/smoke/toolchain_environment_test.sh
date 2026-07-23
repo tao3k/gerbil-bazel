@@ -43,25 +43,26 @@ case "$(uname -s)" in
     ;;
 esac
 
-build_cores="$(awk -F'"' '/"GERBIL_BUILD_CORES":/ {print $4; exit}' "$receipt")"
 build_cores_receipt="$(awk -F': ' '/"gerbilBuildCores":/ {gsub(/[, ]/, "", $2); print $2; exit}' "$receipt")"
 build_cores_source="$(awk -F'"' '/"gerbilBuildCoresSource":/ {print $4; exit}' "$receipt")"
 
-if [[ ! "$build_cores" =~ ^[1-9][0-9]*$ ]]; then
-  printf 'GERBIL_BUILD_CORES is not a positive integer: %s\n' "$build_cores" >&2
+if grep -F '"GERBIL_BUILD_CORES":' "$receipt" >/dev/null ||
+   grep -F '"GERBIL_BAZEL_CPU_COUNT":' "$receipt" >/dev/null ||
+   grep -F '"GERBIL_BAZEL_MEMORY_BYTES":' "$receipt" >/dev/null; then
+  printf 'host scheduling observations leaked into the toolchain environment\n' >&2
   exit 1
 fi
-if [[ "$build_cores_receipt" != "$build_cores" ]]; then
-  printf 'Gerbil build-core receipt disagrees with the toolchain environment: %s != %s\n' \
-    "$build_cores_receipt" "$build_cores" >&2
+if [[ ! "$build_cores_receipt" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'gerbilBuildCores is not a positive integer: %s\n' \
+    "$build_cores_receipt" >&2
   exit 1
 fi
 
 case "$build_cores_source" in
   host-system)
-    if [[ "$build_cores" != "$expected_cpu_count" ]]; then
+    if [[ "$build_cores_receipt" != "$expected_cpu_count" ]]; then
       printf 'adaptive Gerbil worker count disagrees with host capacity: %s != %s\n' \
-        "$build_cores" "$expected_cpu_count" >&2
+        "$build_cores_receipt" "$expected_cpu_count" >&2
       exit 1
     fi
     ;;

@@ -53,6 +53,20 @@ env "${host_environment[@]}" \
 grep -F '"systemMemoryBytes":6442450944' \
   "$root/guard-system-memory-override.json" >/dev/null
 
+env \
+  -u GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES \
+  -u GERBIL_BAZEL_MEMORY_BYTES \
+  GERBIL_BAZEL_GUARD_CGROUP_MEMORY_LIMIT_BYTES=8589934592 \
+  GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=6442450944 \
+  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=1073741824 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1 \
+  "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=1 0 0" \
+  "$gxi" "$guard" "$root/cgroup-system-memory.json" \
+  cgroup-system-memory 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"systemMemoryBytes":8589934592' \
+  "$root/cgroup-system-memory.json" >/dev/null
+
 available_unavailable_child_marker="$root/available-memory-child-started"
 set +e
 env \

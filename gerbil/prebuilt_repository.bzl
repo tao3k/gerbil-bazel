@@ -5,6 +5,7 @@ load(
     ":host_system.bzl",
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
+    "stable_action_environment",
 )
 
 _ARCH_ALIASES = {
@@ -385,14 +386,15 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "manifest nativeAbiFingerprint",
     )
     capability_id = _require_string(manifest, "capabilityId", "manifest capabilityId")
-    declared_environment = _require_type(
+    manifest_environment = _require_type(
         manifest.get("environment", {}),
         "dict",
         "manifest environment",
     )
+    repository_environment = dict(manifest_environment)
+    repository_environment.update(repository_ctx.attr.environment)
     environment = dict(host.environment)
-    environment.update(declared_environment)
-    environment.update(repository_ctx.attr.environment)
+    environment.update(repository_environment)
     runtime = normalized_gambit_runtime(
         repository_ctx,
         gerbil_home,
@@ -403,15 +405,13 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
-        repository_ctx.attr.environment,
+        repository_environment,
         host.system_cpu_count,
     )
-    environment = runtime.environment
-    environment.update({
-        "GERBIL_BUILD_CORES": build_cores.value,
-        "GERBIL_BAZEL_CPU_COUNT": host.system_cpu_count,
-        "GERBIL_BAZEL_MEMORY_BYTES": host.system_memory_bytes,
-    })
+    environment = stable_action_environment(
+        runtime.environment,
+        repository_environment,
+    )
     tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
     inherited_path = environment.get(
         "PATH",

@@ -122,6 +122,27 @@ if [[ -n ${GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS:-} ]]; then
 fi
 export GERBIL_LOADPATH="$GERBIL_PATH/lib$project_dependency_loadpath:$dependency_root"
 
+if [[ -n ${GERBIL_BUILD_CORES:-} ]]; then
+  if [[ ! $GERBIL_BUILD_CORES =~ ^[1-9][0-9]*$ ]]; then
+    printf 'GERBIL_BUILD_CORES must be a positive integer, got %s\n' \
+      "$GERBIL_BUILD_CORES" >&2
+    exit 64
+  fi
+else
+  gerbil_build_cores=
+  if command -v getconf >/dev/null 2>&1; then
+    gerbil_build_cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+  fi
+  if [[ ! $gerbil_build_cores =~ ^[1-9][0-9]*$ ]] &&
+     command -v sysctl >/dev/null 2>&1; then
+    gerbil_build_cores=$(sysctl -n hw.logicalcpu 2>/dev/null || true)
+  fi
+  if [[ ! $gerbil_build_cores =~ ^[1-9][0-9]*$ ]]; then
+    gerbil_build_cores=1
+  fi
+  export GERBIL_BUILD_CORES="$gerbil_build_cores"
+fi
+
 tool_bin="$project_root/.gerbil-tool-bin"
 mkdir -p "$tool_bin"
 ln -s "$gxi" "$tool_bin/gxi"

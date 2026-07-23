@@ -5,6 +5,7 @@ GERBIL_TOOLCHAIN_TYPE = "@gerbil_bazel//gerbil:toolchain_type"
 GerbilToolchainInfo = provider(
     doc = "Resolved Gerbil executables and host capabilities.",
     fields = {
+        "compile_runfiles": "minimal files required by Gerbil project compilation",
         "dependency_libraries": "depset of configured Gerbil dependency files",
         "dependency_library_root": "root marker for the configured libraries",
         "environment": "normalized environment inherited by Gerbil actions",
@@ -35,6 +36,7 @@ def _files_to_run(target):
 
 def _gerbil_toolchain_impl(ctx):
     tools = [ctx.attr.gxc, ctx.attr.gxi, ctx.attr.gxpkg, ctx.attr.gxtest]
+    compile_tools = [ctx.attr.gxc, ctx.attr.gxi, ctx.attr.gxpkg]
     direct_files = [
         ctx.file.dependency_library_root,
         ctx.file.gerbil_cc,
@@ -52,7 +54,23 @@ def _gerbil_toolchain_impl(ctx):
         direct_files.append(target[DefaultInfo].files_to_run.executable)
         transitive.append(target[DefaultInfo].default_runfiles.files)
 
+    compile_direct_files = [
+        ctx.file.dependency_library_root,
+        ctx.file.gerbil_cc,
+        ctx.file.gerbil_gcc,
+        ctx.file.gerbil_gsc,
+        ctx.file.native_abi_fingerprint_file,
+    ]
+    compile_transitive = [ctx.attr.dependency_libraries[DefaultInfo].files]
+    for target in compile_tools:
+        compile_direct_files.append(target[DefaultInfo].files_to_run.executable)
+        compile_transitive.append(target[DefaultInfo].default_runfiles.files)
+
     info = GerbilToolchainInfo(
+        compile_runfiles = depset(
+            direct = compile_direct_files,
+            transitive = compile_transitive,
+        ),
         dependency_libraries = ctx.attr.dependency_libraries[DefaultInfo].files,
         dependency_library_root = ctx.file.dependency_library_root,
         environment = dict(ctx.attr.environment),

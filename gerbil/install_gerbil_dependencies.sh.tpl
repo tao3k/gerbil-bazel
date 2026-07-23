@@ -84,10 +84,62 @@ is_positive_integer() {
   [[ ${#value} -le 18 && "$value" =~ ^[1-9][0-9]*$ ]]
 }
 
+live_cpu_count() {
+  local value=
+  if command -v getconf >/dev/null 2>&1; then
+    value=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+  fi
+  if ! is_positive_integer "$value" &&
+     command -v sysctl >/dev/null 2>&1; then
+    value=$(sysctl -n hw.logicalcpu 2>/dev/null || true)
+  fi
+  if ! is_positive_integer "$value"; then
+    value=1
+  fi
+  printf "%s\n" "$value"
+}
+
+live_memory_bytes() {
+  local path value pages page_size
+  for path in \
+    /sys/fs/cgroup/memory.max \
+    /sys/fs/cgroup/memory/memory.limit_in_bytes
+  do
+    [[ -r "$path" ]] || continue
+    IFS= read -r value <"$path" || continue
+    if is_positive_integer "$value"; then
+      printf "%s\n" "$value"
+      return
+    fi
+  done
+  if command -v sysctl >/dev/null 2>&1; then
+    value=$(sysctl -n hw.memsize 2>/dev/null || true)
+    if is_positive_integer "$value"; then
+      printf "%s\n" "$value"
+      return
+    fi
+  fi
+  if command -v getconf >/dev/null 2>&1; then
+    pages=$(getconf _PHYS_PAGES 2>/dev/null || true)
+    page_size=$(getconf PAGE_SIZE 2>/dev/null || true)
+    if is_positive_integer "$pages" && is_positive_integer "$page_size"; then
+      printf "%s\n" "$((pages * page_size))"
+      return
+    fi
+  fi
+  printf "0\n"
+}
+
 explicit_cores=${GERBIL_BAZEL_INSTALL_BUILD_CORES:-}
-cpu_count=${GERBIL_BAZEL_CPU_COUNT:-1}
+cpu_count=${GERBIL_BAZEL_CPU_COUNT:-}
+if ! is_positive_integer "$cpu_count"; then
+  cpu_count=$(live_cpu_count)
+fi
 configured_cores=${GERBIL_BUILD_CORES:-$cpu_count}
-memory_bytes=${GERBIL_BAZEL_MEMORY_BYTES:-0}
+memory_bytes=${GERBIL_BAZEL_MEMORY_BYTES:-}
+if [[ -z "$memory_bytes" ]]; then
+  memory_bytes=$(live_memory_bytes)
+fi
 memory_per_core_bytes=${GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES:-2147483648}
 
 if ! is_positive_integer "$cpu_count"; then

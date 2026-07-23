@@ -10,6 +10,7 @@ load(
     ":host_system.bzl",
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
+    "stable_action_environment",
 )
 
 _GERBIL_TOOLS = {
@@ -253,8 +254,9 @@ def _local_gerbil_repository_impl(repository_ctx):
     compiler_command = host.gerbil_cc
     if not repository_ctx.os.environ.get("GERBIL_CC", ""):
         compiler_command = discover_gambit_compiler_command(repository_ctx, gambit_home)
+    repository_environment = dict(repository_ctx.attr.environment)
     declared_environment = dict(host.environment)
-    declared_environment.update(repository_ctx.attr.environment)
+    declared_environment.update(repository_environment)
     runtime = normalized_gambit_runtime(
         repository_ctx,
         gambit_home,
@@ -277,10 +279,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         gerbil_cc,
         str(runtime.compiler_identity_path),
     )
-    environment = runtime.environment
-    environment["GERBIL_BUILD_CORES"] = build_cores.value
-    environment["GERBIL_BAZEL_CPU_COUNT"] = host.system_cpu_count
-    environment["GERBIL_BAZEL_MEMORY_BYTES"] = host.system_memory_bytes
+    environment = stable_action_environment(
+        runtime.environment,
+        repository_environment,
+    )
     tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
     inherited_path = environment.get(
         "PATH",

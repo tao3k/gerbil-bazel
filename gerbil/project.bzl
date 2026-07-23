@@ -105,7 +105,7 @@ def _gerbil_project_compile_impl(ctx):
                 sources,
                 dependency_roots,
                 toolchain.dependency_libraries,
-                toolchain.runfiles,
+                toolchain.compile_runfiles,
             ],
         ),
         mnemonic = "GerbilProjectCompile",

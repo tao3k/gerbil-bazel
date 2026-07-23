@@ -145,14 +145,15 @@ The generated dependency-install launcher MUST preserve =gxpkg deps --install= a
 
 #+begin_src mermaid
 flowchart LR
-    H["Normalized host CPU and memory facts"] --> P["Install-core budget projection"]
+    H["Execution-time CPU and cgroup-aware memory facts"] --> P["Install-core budget projection"]
     E["Positive install-core override"] --> P
     P --> C["Validated GERBIL_BUILD_CORES=N"]
 
     U["Positive GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES"] -->|"1"| S["Guard system-memory input"]
     N["Positive normalized GERBIL_BAZEL_MEMORY_BYTES"] -->|"2"| S
-    TMOS["System-memory OS probes"] -->|"3"| S
-    Z["Conservative 6 GiB emergency fallback"] -->|"4"| S
+    CG["Live Linux cgroup memory limit"] -->|"3"| S
+    TMOS["System-memory OS probes"] -->|"4"| S
+    Z["Conservative 6 GiB emergency fallback"] -->|"5"| S
     S -->|"Darwin percentage base"| AP["Live Linux or Darwin available-memory probe"]
     AV["Positive GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES"] --> A["Admission-time available memory"]
     AP --> A
@@ -178,18 +179,33 @@ flowchart LR
 Install-core budget selection has the following precedence and fail-closed behavior:
 
 1. A positive decimal =GERBIL_BAZEL_INSTALL_BUILD_CORES= is an explicit override.
-2. Otherwise, the launcher uses the repository-normalized =GERBIL_BUILD_CORES=, falling back to =GERBIL_BAZEL_CPU_COUNT= only when the former is absent.
-3. When =GERBIL_BAZEL_MEMORY_BYTES= is available, the result is capped by available bytes divided by =GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES=. The per-core default is 2 GiB and the resulting core count has a floor of one.
+2. Otherwise, the launcher honors an explicit inherited
+   =GERBIL_BUILD_CORES= and then resolves the live logical CPU count through
+   =getconf= or =sysctl=.  The safe final fallback is one.
+3. The memory cap consumes =GERBIL_BAZEL_MEMORY_BYTES= when explicitly
+   provided.  Otherwise it resolves the live cgroup v2 or v1 limit before
+   falling back to =sysctl= or =getconf=.  The result is capped by memory bytes
+   divided by =GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES=.  The per-core
+   default is 2 GiB and the resulting core count has a floor of one.
 4. Invalid explicit values, invalid normalized facts, and invalid memory-per-core values fail before =gxpkg= starts. No machine-specific core count is embedded in the launcher or tests.
 
 The Scheme resource guard resolves its system-memory input in the following order:
 
 1. A positive =GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES= is authoritative.
 2. Otherwise, a positive normalized action fact in =GERBIL_BAZEL_MEMORY_BYTES= is used.
-3. Otherwise, the guard uses the existing OS probes: =sysctl -n hw.memsize=, then =getconf _PHYS_PAGES= multiplied by =getconf PAGE_SIZE=.
-4. Only if all explicit, normalized, and probed sources are unavailable does the guard use the conservative 6 GiB emergency fallback.
+3. Otherwise, the guard resolves the live Linux cgroup v2 or v1 memory limit.
+4. Otherwise, the guard uses the OS probes: =sysctl -n hw.memsize=, then
+   =getconf _PHYS_PAGES= multiplied by =getconf PAGE_SIZE=.
+5. Only if all explicit, normalized, cgroup, and OS-probed sources are
+   unavailable does the guard use the conservative 6 GiB emergency fallback.
 
-The downstream =systemMemoryBytes=6442450944= receipt demonstrates the probe-failure fallback path; it is not an action-memory fact. When =GERBIL_BAZEL_MEMORY_BYTES=34359738368= is present, the guard MUST consume that normalized 32 GiB action fact before OS probes, avoiding sandbox- and =PATH=-dependent admission results while preserving the dedicated guard override.
+The downstream =systemMemoryBytes=6442450944= receipt demonstrates the
+probe-failure fallback path; it is not an action-memory fact.  When
+=GERBIL_BAZEL_MEMORY_BYTES=34359738368= is explicitly present, the guard MUST
+consume that normalized 32 GiB action fact before live probes while preserving
+the dedicated guard override.  The default compile environment omits this
+machine observation, so a Linux constrained executor instead consumes its live
+cgroup limit before host-wide OS memory.
 
 Available memory remains a distinct admission-time observation:
 
@@ -303,6 +319,53 @@ For a Gerbil package, the default projection SHOULD preserve one native
 project action around =build.ss= and =std/make=.  Bazel may avoid the action
 entirely through its cache, but when the action executes it MUST let the native
 module scheduler run.
+
+** Stable compile action identity
+
+A =GerbilProjectCompile= key MUST distinguish output-affecting build semantics
+from execution-only scheduling observations.  Semantic identity includes the
+declared source and dependency trees, Gerbil and Gambit capability, native ABI,
+compiler and SDK capability, and normalized output-affecting flags.
+
+Logical CPU count, physical or available memory, runnable host load, and a
+host-derived default =GERBIL_BUILD_CORES= are execution observations.  They
+MUST NOT enter the action environment, generated tool wrappers, or the compile
+input receipt.  The execution boundary MUST derive its adaptive worker budget
+from the live host unless a repository or target explicitly declares a worker
+configuration.  Memory admission remains owned by the Scheme resource guard.
+Diagnostic receipts MAY record the observed host values, but such receipts
+MUST NOT enter the compile input closure.
+
+The compile closure SHOULD contain only the GXi, GXC, and GXPkg execution
+closures; the declared CC, GCC, and GSC files; the native ABI fingerprint; the
+dependency libraries; and declared project inputs.  GxTest, the native
+development environment, and the diagnostic toolchain receipt are not compile
+inputs and MUST NOT invalidate a project action.
+
+#+begin_src mermaid
+flowchart LR
+  Semantic["Declared sources, dependencies, ABI, compiler and SDK identity"] --> Key["GerbilProjectCompile action identity"]
+  Closure["Minimal declared compile runfiles"] --> Key
+  Key --> Action["Native build.ss and std/make action"]
+
+  Cpu["Live logical CPU count"] --> Runtime["Execution-time worker budget"]
+  Runtime --> Scheduler["Adaptive GERBIL_BUILD_CORES=N"]
+  Scheduler --> Action
+  Pressure["Available memory and runnable host load"] --> Guard["Scheme admission, RSS and timeout guard"]
+  Guard --> Action
+
+  Paths["Absolute repository, compiler and SDK paths"] -. "unresolved relocation risk" .-> Closure
+  Diagnostics["Toolchain receipt and test or development runfiles"] -. "excluded from compile key" .-> Action
+#+end_src
+
+Path stability is not tool identity.  The current prebuilt and host providers
+still materialize absolute =GERBIL_HOME=, =GAMBOPT=, =GERBIL_GSC=,
+=GERBIL_GCC=, compiler, SDK, and repository paths.  A stable output base can
+bound that relocation risk for one CI cache namespace, but it does not prove
+cross-root portability.  Full closure requires relocatable runfiles and
+=File=/=FilesToRunProvider= ownership plus compiler and SDK content identity.
+Until that work is accepted, receipts MUST describe this as an unresolved
+relocation boundary rather than a completed remote-cache guarantee.
 
 * Optimization order
 
