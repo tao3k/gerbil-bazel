@@ -1,8 +1,9 @@
 """Bzlmod extension for native Gerbil toolchains."""
 
 load(":prebuilt_repository.bzl", "prebuilt_gerbil_repository")
-load(":repository.bzl", "local_gerbil_repository")
 load(":project_dependency_sources_repository.bzl", "project_dependency_sources_repository")
+load(":repository.bzl", "local_gerbil_repository")
+load(":source_package_repository.bzl", "source_package_repository")
 
 _host = tag_class(attrs = {
     "darwin_homebrew_formulae": attr.string_list(default = [
@@ -15,7 +16,7 @@ _host = tag_class(attrs = {
     "expected_version_prefixes": attr.string_list(),
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
-        "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
@@ -33,7 +34,7 @@ _prebuilt = tag_class(attrs = {
     "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
     "name": attr.string(mandatory = True),
     "project_dependency_packages": attr.string_list(),
-        "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "sha256": attr.string(mandatory = True),
@@ -58,10 +59,19 @@ _auto = tag_class(attrs = {
     "linux_prebuilt_urls": attr.string_list(mandatory = True),
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
-        "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_packages": attr.string_list(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
+})
+
+_source_package = tag_class(attrs = {
+    "build_script": attr.string(default = "build.ss"),
+    "name": attr.string(mandatory = True),
+    "package": attr.string(mandatory = True),
+    "sha256": attr.string(mandatory = True),
+    "strip_prefix": attr.string(),
+    "urls": attr.string_list(mandatory = True),
 })
 
 _ARCH_ALIASES = {
@@ -94,10 +104,8 @@ def _claim_name(names, name, kind):
         ))
     names[name] = kind
 
-
 def _source_repo_name(package):
     return package.replace("-", "_").replace("/", "_").replace(".", "_") + "_sources"
-
 
 def _instantiate_project_dependency_sources(names, tag, kind):
     if not tag.project_root_marker:
@@ -189,6 +197,16 @@ def _gerbil_extension_impl(module_ctx):
                 strip_prefix = prebuilt.strip_prefix,
                 urls = prebuilt.urls,
             )
+        for source_package in module.tags.source_package:
+            _claim_name(names, source_package.name, "source_package")
+            source_package_repository(
+                name = source_package.name,
+                build_script = source_package.build_script,
+                package = source_package.package,
+                sha256 = source_package.sha256,
+                strip_prefix = source_package.strip_prefix,
+                urls = source_package.urls,
+            )
 
 gerbil = module_extension(
     implementation = _gerbil_extension_impl,
@@ -198,5 +216,6 @@ gerbil = module_extension(
         "auto": _auto,
         "host": _host,
         "prebuilt": _prebuilt,
+        "source_package": _source_package,
     },
 )

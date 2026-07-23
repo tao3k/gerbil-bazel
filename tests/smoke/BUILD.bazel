@@ -6,6 +6,9 @@ load(
 )
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":build_settings.bzl", "scenario_state_flag")
+load(":source_package_validation_contract.bzl", "source_package_validation_contract")
+
+source_package_validation_contract()
 
 exports_files(["project-root.marker"])
 
@@ -252,4 +255,22 @@ sh_test(
     srcs = ["source_file_visibility_test.sh"],
     args = ["$(rlocationpath @clan_sources//:ready.txt)"],
     data = ["@clan_sources//:ready.txt"],
+)
+
+sh_test(
+    name = "source_package_visibility_test",
+    srcs = ["source_package_visibility_test.sh"],
+    args = [
+        "$(rlocationpath @downloaded_fixture_sources//:gerbil.pkg)",
+        "$(rlocationpath @downloaded_fixture_sources//:build.ss)",
+        "$(rlocationpath @downloaded_fixture_sources//:source-package.json)",
+        "$(rlocationpath @downloaded_fixture_sources//:pure/dict/assq.ss)",
+    ],
+    data = [
+        "@downloaded_fixture_sources//:build.ss",
+        "@downloaded_fixture_sources//:gerbil.pkg",
+        "@downloaded_fixture_sources//:pure/dict/assq.ss",
+        "@downloaded_fixture_sources//:source-package.json",
+        "@downloaded_fixture_sources//:sources",
+    ],
 )

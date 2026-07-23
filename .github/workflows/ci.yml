@@ -100,6 +100,9 @@ jobs:
       - name: Validate the platform-adaptive repository provider
         run: tools/ci/test_repository_provider.sh auto
 
+      - name: Validate fail-closed source package repositories
+        run: tools/ci/test_source_package_repository.sh
+
       - name: Validate source producer admission policy
         run: tools/ci/test_source_producer_admission.sh
 
@@ -153,7 +156,6 @@ jobs:
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: gerbil-bazel-lock-Linux-X64
 
       - name: Generate the Linux module-extension evaluation
         run: |
@@ -189,7 +191,6 @@ jobs:
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: gerbil-bazel-lock-macOS-ARM64
 
       - name: Merge the Darwin module-extension evaluation
         run: |
@@ -226,7 +227,6 @@ jobs:
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: gerbil-bazel-lock-Linux-X64
 
       - name: Verify the merged lock on Linux
         run: |
