@@ -20,7 +20,7 @@ def _staged_path(path):
         fail("project source path uses reserved staging namespace: {}".format(path))
     return path
 
-def _manifest_entries(files):
+def _source_entries(files):
     sources_by_destination = {}
     for file in files:
         destination = _staged_path(file.short_path)
@@ -33,7 +33,10 @@ def _manifest_entries(files):
             ))
         sources_by_destination[destination] = file.path
     return [
-        "{}\t{}".format(sources_by_destination[destination], destination)
+        {
+            "destination": destination,
+            "source": sources_by_destination[destination],
+        }
         for destination in sorted(sources_by_destination.keys())
     ]
 
@@ -48,56 +51,56 @@ def _gerbil_project_compile_impl(ctx):
     project_root = ctx.actions.declare_directory(ctx.label.name + ".project")
     receipt = ctx.actions.declare_file(ctx.label.name + ".receipt.json")
     log = ctx.actions.declare_file(ctx.label.name + ".log")
-    manifest = ctx.actions.declare_file(ctx.label.name + ".sources")
+    request = ctx.actions.declare_file(ctx.label.name + ".request.json")
     sources = depset(direct = [ctx.file.build_script] + ctx.files.srcs)
     ctx.actions.write(
-        output = manifest,
-        content = "\n".join(_manifest_entries(sources.to_list())) + "\n",
+        output = request,
+        content = json.encode({
+            "args": ctx.attr.args,
+            "buildScript": _staged_path(ctx.file.build_script.short_path),
+            "dependencyRootMarker": toolchain.dependency_library_root.path,
+            "log": log.path,
+            "packageIdentity": "",
+            "packageRevision": "",
+            "processGuard": ctx.attr.process_guard,
+            "processGuardTimeoutSeconds": ctx.attr.process_guard_timeout_seconds,
+            "projectDependencyRoots": [
+                root.path
+                for root in dependency_roots.to_list()
+            ],
+            "projectLabel": str(ctx.label),
+            "projectRoot": project_root.path,
+            "receipt": receipt.path,
+            "receiptLinePrefix": ctx.attr.receipt_line_prefix,
+            "requireLibraryOutput": ctx.attr.require_library_output,
+            "schema": "gerbil-bazel.project-request.v1",
+            "sources": _source_entries(sources.to_list()),
+            "tools": {
+                "as": toolchain.gerbil_as,
+                "cc": toolchain.gerbil_cc,
+                "gxc": toolchain.gxc.executable.path,
+                "gxi": toolchain.gxi.executable.path,
+                "gxpkg": toolchain.gxpkg.executable.path,
+                "ld": toolchain.gerbil_ld,
+            },
+        }) + "\n",
     )
     args = ctx.actions.args()
-    args.add(toolchain.gxi.executable.path)
-    args.add(toolchain.gxc.executable.path)
-    args.add(toolchain.gxpkg.executable.path)
-    args.add(toolchain.gerbil_cc)
-    args.add(toolchain.gerbil_as)
-    args.add(toolchain.gerbil_ld)
-    args.add(toolchain.dependency_library_root.path)
-    args.add(manifest.path)
-    args.add(project_root.path)
-    args.add(_staged_path(ctx.file.build_script.short_path))
-    args.add(receipt.path)
-    args.add(log.path)
-    args.add(ctx.attr.receipt_line_prefix)
-    args.add(ctx.file._json_validator.path)
-    args.add(ctx.file._resource_guard.path)
-    args.add(ctx.file._receipt_writer.path)
-    args.add("1" if ctx.attr.process_guard else "0")
-    args.add(ctx.attr.process_guard_timeout_seconds)
-    args.add(str(ctx.label))
-    args.add("")
-    args.add("")
-    args.add_all(ctx.attr.args)
+    args.add(ctx.file._runner.path)
+    args.add(request.path)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
     environment["CC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
-    environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode("")
-    environment["GERBIL_BAZEL_PACKAGE_REVISION_JSON"] = json.encode("")
-    environment["GERBIL_BAZEL_REQUIRE_LIBRARY_OUTPUT"] = "1" if ctx.attr.require_library_output else "0"
-    environment["GERBIL_BAZEL_PROJECT_DEPENDENCY_ROOTS"] = ":".join([
-        root.path
-        for root in dependency_roots.to_list()
-    ])
     ctx.actions.run(
         arguments = [args],
         env = environment,
-        executable = ctx.executable._runner,
+        executable = toolchain.gxi,
         inputs = depset(
             direct = [
-                ctx.file._json_validator,
-                ctx.file._receipt_writer,
-                ctx.file._resource_guard,
-                manifest,
+                ctx.file._resource_policy,
+                ctx.file._runner,
+                request,
                 toolchain.dependency_library_root,
                 toolchain.native_abi_fingerprint_file,
             ],
@@ -147,21 +150,12 @@ gerbil_project_compile = rule(
         "require_library_output": attr.bool(default = False),
         "srcs": attr.label_list(allow_files = True),
         "_runner": attr.label(
-            cfg = "exec",
-            default = "@gerbil_bazel//gerbil:run_project",
-            executable = True,
-        ),
-        "_json_validator": attr.label(
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:validate_json.ss",
+            default = "@gerbil_bazel//gerbil:project_runner.ss",
         ),
-        "_receipt_writer": attr.label(
+        "_resource_policy": attr.label(
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:write_project_receipt.ss",
-        ),
-        "_resource_guard": attr.label(
-            allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:resource_guard.ss",
+            default = "@gerbil_bazel//gerbil:resource_policy.ss",
         ),
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],

@@ -15,10 +15,16 @@
     "durationSeconds"
     "libraryOutputRequired"
     "packageIdentity"
-    "packageRevision"))
+    "packageRevision"
+    "resourceBudget"))
 
 (def +project-fields+
   (append +required-project-fields+ '("resourceGuard" "buildReceipt")))
+
+(def +resource-budget-fields+
+  '("schema" "decision" "selectedCores" "requestedCores"
+    "configuredCores" "logicalCpuCount" "memoryPerCoreBytes"
+    "memoryCoreLimit" "availableMemoryBytes" "maxRssBytes"))
 
 (def +resource-guard-fields+
   '("kind"
@@ -72,6 +78,28 @@
 
 (def (string-list? value)
   (and (list? value) (andmap string? value)))
+
+(def (validate-resource-budget! budget label)
+  (exact-fields! budget +resource-budget-fields+ label)
+  (required-fields! budget +resource-budget-fields+ label)
+  (contract-assert
+   (string=? (hash-ref budget "schema") "gerbil-bazel.resource-budget.v1")
+   "invalid resource budget schema" label)
+  (contract-assert
+   (member (hash-ref budget "decision")
+           '("explicit" "explicit-memory-cap"
+             "adaptive-configured" "adaptive-memory-cap"))
+   "invalid resource budget decision" label)
+  (for-each
+   (lambda (key)
+     (contract-assert (positive-integer? (hash-ref budget key))
+                      "invalid positive resource budget field" label key))
+   '("selectedCores" "requestedCores" "configuredCores"
+     "logicalCpuCount" "memoryPerCoreBytes" "memoryCoreLimit"
+     "maxRssBytes"))
+  (contract-assert
+   (non-negative-integer? (hash-ref budget "availableMemoryBytes"))
+   "invalid resource budget available memory" label))
 
 (def (validate-resource-guard! guard label)
   (exact-fields! guard +resource-guard-fields+ label)
@@ -138,6 +166,7 @@
                    "invalid project receipt package identity" path)
   (contract-assert (string? (hash-ref receipt "packageRevision"))
                    "invalid project receipt package revision" path)
+  (validate-resource-budget! (hash-ref receipt "resourceBudget") path)
   (when (hash-key? receipt "resourceGuard")
     (validate-resource-guard! (hash-ref receipt "resourceGuard") path)))
 

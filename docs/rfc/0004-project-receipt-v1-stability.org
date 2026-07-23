@@ -84,7 +84,10 @@ successful project receipt.
 - =schemas/gerbil-bazel.project-receipt.v1.schema.json=
 - =gerbil/write_project_receipt.ss=
 - =gerbil/resource_guard.ss=
-- =gerbil/run_project.sh=
+- =gerbil/project_runner.ss= (Scheme-native request validation, project execution,
+  and project receipt owner)
+- =gerbil/resource_policy.ss= (Scheme-native host observation, resource budgeting,
+  and guard owner)
 - =gerbil/project_receipt_schema_test.sh=
 - =gerbil/project_receipt_v1_instances_test.sh=
 - =gerbil/validate_project_receipt_v1.ss=

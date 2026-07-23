@@ -10,16 +10,18 @@ sh_binary(
     srcs = ["native_abi_fingerprint.sh"],
 )
 
-sh_binary(
-    name = "run_project",
-    srcs = ["run_project.sh"],
-)
-
 sh_test(
     name = "run_project_test",
     srcs = ["run_project_test.sh"],
-    args = ["$(rlocationpath :run_project)"],
-    data = [":run_project"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :project_runner.ss)",
+    ],
+    data = [
+        ":project_runner.ss",
+        ":resource_policy.ss",
+        "@local_gerbil//:gxi",
+    ],
 )
 
 sh_test(
@@ -44,6 +46,7 @@ sh_test(
     ],
     data = [
         ":resource_guard.ss",
+        ":resource_policy.ss",
         "@local_gerbil//:gxi",
     ],
 )
@@ -121,15 +124,18 @@ exports_files([
     "extensions.bzl",
     "gambit_runtime.bzl",
     "host_system.bzl",
-    "install_gerbil_dependencies.sh.tpl",
+    "install_gerbil_dependencies.ss.tpl",
     "local_toolchain.BUILD.bazel.tpl",
     "native_scheme_env.sh.tpl",
     "native_tool.sh.tpl",
     "prebuilt_repository.bzl",
     "prebuilt_toolchain.BUILD.bazel.tpl",
     "project.bzl",
+    "project_runner.ss",
     "repository.bzl",
     "resource_guard.ss",
+    "resource_policy.ss",
+    "script.bzl",
     "toolchain.bzl",
     "validate_json.ss",
     "validate_project_receipt_v1.ss",

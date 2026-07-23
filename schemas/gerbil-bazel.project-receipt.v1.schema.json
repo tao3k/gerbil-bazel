@@ -10,7 +10,8 @@
     "durationSeconds",
     "libraryOutputRequired",
     "packageIdentity",
-    "packageRevision"
+    "packageRevision",
+    "resourceBudget"
   ],
   "properties": {
     "schema": {
@@ -34,6 +35,9 @@
       "description": "Reserved v1 compatibility field. Source revisions are owned by the dependency manifest and Bazel repository pins; current project producers emit the empty string.",
       "type": "string"
     },
+    "resourceBudget": {
+      "$ref": "#/$defs/resourceBudgetV1"
+    },
     "resourceGuard": {
       "$ref": "#/$defs/resourceGuardReceiptV1"
     },
@@ -41,6 +45,67 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "resourceBudgetV1": {
+      "type": "object",
+      "required": [
+        "schema",
+        "decision",
+        "selectedCores",
+        "requestedCores",
+        "configuredCores",
+        "logicalCpuCount",
+        "memoryPerCoreBytes",
+        "memoryCoreLimit",
+        "availableMemoryBytes",
+        "maxRssBytes"
+      ],
+      "properties": {
+        "schema": {
+          "const": "gerbil-bazel.resource-budget.v1"
+        },
+        "decision": {
+          "enum": [
+            "explicit",
+            "explicit-memory-cap",
+            "adaptive-configured",
+            "adaptive-memory-cap"
+          ]
+        },
+        "selectedCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requestedCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "configuredCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "logicalCpuCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memoryPerCoreBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memoryCoreLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "availableMemoryBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxRssBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "resourceGuardReceiptV1": {
       "type": "object",
       "required": [

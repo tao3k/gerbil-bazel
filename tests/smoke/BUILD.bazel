@@ -213,11 +213,15 @@ sh_test(
     srcs = ["install_dependencies_test.sh"],
     args = [
         "$(rlocationpath @local_gerbil//:install_dependencies)",
-        "$(rlocationpath @gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl)",
+        "$(rlocationpath @gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl)",
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath @gerbil_bazel//gerbil:resource_policy.ss)",
     ],
     data = [
-        "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
+        "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
+        "@gerbil_bazel//gerbil:resource_policy.ss",
         "@local_gerbil//:install_dependencies",
+        "@local_gerbil//:gxi",
     ],
 )
 

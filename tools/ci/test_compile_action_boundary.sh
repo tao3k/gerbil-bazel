@@ -32,15 +32,41 @@ do
   fi
 done
 
+required_names=(
+  project-runner
+  resource-policy
+)
+required_patterns=(
+  '(^|.*/)project_runner\.ss$'
+  '(^|.*/)resource_policy\.ss$'
+)
+for index in "${!required_names[@]}"; do
+  name=${required_names[$index]}
+  pattern=${required_patterns[$index]}
+  required_graph="$test_root/$name.textproto"
+  query=$(printf \
+    'inputs("%s", mnemonic("GerbilProjectCompile", //tests/smoke:compile))' \
+    "$pattern")
+  "$bazel_bin" aquery "$query" --output=textproto >"$required_graph"
+  if ! grep -F 'mnemonic: "GerbilProjectCompile"' "$required_graph" >/dev/null; then
+    printf 'required Scheme compile input is absent: %s\n' "$name" >&2
+    exit 1
+  fi
+done
+
 unrelated_names=(
   gxtest-executable
   native-scheme-environment
   toolchain-receipt
+  legacy-project-runner
+  legacy-install-runner
 )
 unrelated_patterns=(
-  '(^|/)gxtest(\.sh|_raw)?$'
-  '(^|/)native_scheme_env(\.sh)?$'
-  '(^|/)toolchain\.receipt\.json$'
+  '(^|.*/)gxtest(\.sh|_raw)?$'
+  '(^|.*/)native_scheme_env(\.sh)?$'
+  '(^|.*/)toolchain\.receipt\.json$'
+  '(^|.*/)run_project(\.sh)?$'
+  '(^|.*/)install_gerbil_dependencies\.sh(\.tpl)?$'
 )
 for index in "${!unrelated_names[@]}"; do
   name=${unrelated_names[$index]}

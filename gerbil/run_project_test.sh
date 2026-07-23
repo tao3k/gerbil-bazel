@@ -10,43 +10,22 @@ resolve_runfile() {
   fi
 }
 
-runner=$(resolve_runfile "${1:?run_project path is required}")
+gxi=$(resolve_runfile "${1:?gxi path is required}")
+runner=$(resolve_runfile "${2:?project runner path is required}")
 root=${TEST_TMPDIR:?TEST_TMPDIR is required}/run-project
 source_root=$root/source
 tools_root=$root/tools
 dependency_root=$root/dependency
-manifest=$root/sources
-validator=$root/validate_json.ss
-resource_guard=$root/resource_guard.ss
-receipt_writer=$root/write_project_receipt.ss
 
 mkdir -p "$source_root/src" "$tools_root" "$dependency_root"
 printf 'build owner\n' >"$source_root/build.ss"
 printf 'source owner\n' >"$source_root/src/module.ss"
 printf 'dependency marker\n' >"$dependency_root/.marker"
-printf '%s\t%s\n' \
-  "$source_root/build.ss" external/package/build.ss \
-  "$source_root/src/module.ss" external/package/src/module.ss \
-  >"$manifest"
-printf '; fake validator identity\n' >"$validator"
-printf '; fake resource guard identity\n' >"$resource_guard"
-printf '; fake receipt writer identity\n' >"$receipt_writer"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
-  'script=${1:?}' \
-  'if [[ "$(basename "$script")" == validate_json.ss ]]; then' \
-  '  grep -Eq '\''^\{.*\}$'\'' "${2:?}"' \
-  '  exit 0' \
-  'fi' \
-  'if [[ "$(basename "$script")" == write_project_receipt.ss ]]; then' \
-  ' grep -Eq '\''^\{.*\}$'\'' "${8:?}"' \
-  ' build_receipt=$(<"${8:?}")' \
-  ' printf '\''{"buildReceipt":%s,"durationSeconds":%s,"libraryOutputRequired":false,"packageIdentity":%s,"packageRevision":%s,"resourceGuard":null,"schema":"gerbil-bazel.project-receipt.v1","status":"%s"}\n'\'' "$build_receipt" "${3:?}" "${5:?}" "${6:?}" "${9:?}" >"${2:?}"' \
-  ' exit 0' \
-  'fi' \
-  'build_script=$script' \
+  'build_script=${1:?}' \
   '[[ "${2:-}" == compile ]]' \
   'command -v gxc >/dev/null' \
   'command -v gxpkg >/dev/null' \
@@ -61,7 +40,7 @@ printf '%s\n' \
   'printf "%s\n" "$GERBIL_BUILD_CORES" >"$project_root/build-cores.txt"' \
   'if [[ "${FAKE_RECEIPT_MODE:-generic}" == link-failure ]]; then' \
   '  : "${GERBIL_BAZEL_FAILURE_RECEIPT_DIR:?}"' \
-'  printf '\''{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","status":23}\n'\'' >"$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gsc-test.jsonl"' \
+  '  printf '\''{"kind":"gerbil-bazel.compiler-failure-receipt.v1","version":1,"driver":"GERBIL_GSC","mode":"link","status":23}\n'\'' >"$GERBIL_BAZEL_FAILURE_RECEIPT_DIR/compiler-gsc-test.jsonl"' \
   '  for ((index = 0; index < 250; index++)); do printf "failure noise %03d\n" "$index"; done' \
   '  exit 23' \
   'fi' \
@@ -79,34 +58,49 @@ printf '%s\n' \
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$tools_root/tool"
 chmod +x "$tools_root/gxi" "$tools_root/tool"
 
+write_request() {
+  local request=$1
+  local output_root=$2
+  local prefix=$3
+  local build_destination=$4
+  local source_destination=$5
+  local name
+  name=$(basename "$request" .request.json)
+  printf '{"args":["compile"],"buildScript":"%s","dependencyRootMarker":"%s","log":"%s","packageIdentity":"","packageRevision":"","processGuard":false,"processGuardTimeoutSeconds":0,"projectDependencyRoots":[],"projectLabel":"//tests/smoke:fixture","projectRoot":"%s","receipt":"%s","receiptLinePrefix":"%s","requireLibraryOutput":false,"schema":"gerbil-bazel.project-request.v1","sources":[{"destination":"%s","source":"%s"},{"destination":"%s","source":"%s"}],"tools":{"as":"%s","cc":"%s","gxc":"%s","gxi":"%s","gxpkg":"%s","ld":"%s"}}\n' \
+    "$build_destination" \
+    "$dependency_root/.marker" \
+    "$root/$name.log" \
+    "$output_root" \
+    "$root/$name.receipt.json" \
+    "$prefix" \
+    "$build_destination" \
+    "$source_root/build.ss" \
+    "$source_destination" \
+    "$source_root/src/module.ss" \
+    "$tools_root/tool" \
+    "$tools_root/tool" \
+    "$tools_root/tool" \
+    "$tools_root/gxi" \
+    "$tools_root/tool" \
+    "$tools_root/tool" \
+    >"$request"
+}
+
 run_fixture() {
   local name=$1
   local prefix=$2
   local output_root=$root/$name.project
-  GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
-    "$runner" \
-      "$tools_root/gxi" \
-      "$tools_root/tool" \
-      "$tools_root/tool" \
-      "$tools_root/tool" \
-      "$tools_root/tool" \
-      "$tools_root/tool" \
-      "$dependency_root/.marker" \
-      "$manifest" \
-      "$output_root" \
-      external/package/build.ss \
-      "$root/$name.receipt.json" \
-    "$root/$name.log" \
+  local request=$root/$name.request.json
+  write_request \
+    "$request" \
+    "$output_root" \
     "$prefix" \
-    "$validator" \
-    "$resource_guard" \
-    "$receipt_writer" \
-    0 \
-    0 \
-    '//tests/smoke:fixture' \
-    '' \
-    '' \
-    compile
+    external/package/build.ss \
+    external/package/src/module.ss
+  GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
+    GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=68719476736 \
+    GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=68719476736 \
+    "$gxi" "$runner" "$request"
 }
 
 FAKE_RECEIPT_MODE=generic run_fixture generic ''
@@ -117,20 +111,21 @@ grep -F '"libraryOutputRequired":false' \
   "$root/generic.receipt.json" >/dev/null
 grep -F '"packageIdentity":""' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
+grep -F '"resourceBudget":{' "$root/generic.receipt.json" >/dev/null
 [[ -f "$root/generic.project/external/package/src/generated.c" ]]
-[[ "$(<"$root/generic.project/build-cores.txt")" =~ ^[1-9][0-9]*$ ]]
+[[ "$(<"$root/generic.project/external/package/build-cores.txt")" =~ ^[1-9][0-9]*$ ]]
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]
 
 GERBIL_BUILD_CORES=3 run_fixture explicit-build-cores ''
-[[ "$(<"$root/explicit-build-cores.project/build-cores.txt")" == 3 ]]
+[[ "$(<"$root/explicit-build-cores.project/external/package/build-cores.txt")" == 3 ]]
 
 set +e
 GERBIL_BUILD_CORES=invalid run_fixture invalid-build-cores '' \
   2>"$root/invalid-build-cores.stderr"
 invalid_build_cores_status=$?
 set -e
-[[ "$invalid_build_cores_status" -eq 64 ]]
+[[ "$invalid_build_cores_status" -eq 66 ]]
 grep -F 'GERBIL_BUILD_CORES must be a positive integer' \
   "$root/invalid-build-cores.stderr" >/dev/null
 
@@ -155,8 +150,6 @@ set -e
 [[ "$link_failure_status" -eq 23 ]]
 grep -F 'Gerbil project typed failure receipts follow' \
   "$root/link-failure.stderr" >/dev/null
-grep -F 'GERBIL_BAZEL_COMPILER_FAILURE_RECEIPT {' \
-  "$root/link-failure.stderr" >/dev/null
 grep -F '"kind":"gerbil-bazel.compiler-failure-receipt.v1"' \
   "$root/link-failure.stderr" >/dev/null
 grep -F 'failure noise 249' "$root/link-failure.stderr" >/dev/null
@@ -178,36 +171,61 @@ set +e
 FAKE_RECEIPT_MODE=missing run_fixture missing 'PROJECT_RECEIPT '
 missing_status=$?
 set -e
-[[ "$missing_status" -eq 65 ]]
+[[ "$missing_status" -eq 66 ]]
 
-printf '%s\t%s\n' "$source_root/build.ss" ../escape.ss >"$root/unsafe.sources"
+unsafe_request=$root/unsafe.request.json
+write_request \
+  "$unsafe_request" \
+  "$root/unsafe.project" \
+  '' \
+  build.ss \
+  ../escape.ss
 set +e
 GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
-  "$runner" \
-    "$tools_root/gxi" "$tools_root/tool" "$tools_root/tool" \
-    "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
-    "$dependency_root/.marker" "$root/unsafe.sources" \
-    "$root/unsafe.project" build.ss "$root/unsafe.receipt.json" \
-  "$root/unsafe.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:unsafe' '' '' compile
+  "$gxi" "$runner" "$unsafe_request"
 unsafe_status=$?
 set -e
-[[ "$unsafe_status" -eq 64 ]]
+[[ "$unsafe_status" -eq 66 ]]
 [[ ! -e "$root/escape.ss" ]]
 
-printf '%s\t%s\n' \
-  "$source_root/build.ss" build.ss \
-  "$source_root/src/module.ss" build.ss \
-  >"$root/duplicate.sources"
+duplicate_request=$root/duplicate.request.json
+write_request \
+  "$duplicate_request" \
+  "$root/duplicate.project" \
+  '' \
+  build.ss \
+  build.ss
+mkdir -p "$root/duplicate.project"
+printf 'preflight-sentinel\n' >"$root/duplicate.project/sentinel"
 set +e
 GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
-  "$runner" \
-    "$tools_root/gxi" "$tools_root/tool" "$tools_root/tool" \
-    "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
-    "$dependency_root/.marker" "$root/duplicate.sources" \
-    "$root/duplicate.project" build.ss "$root/duplicate.receipt.json" \
-  "$root/duplicate.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:duplicate' '' '' compile
+  "$gxi" "$runner" "$duplicate_request"
 duplicate_status=$?
 set -e
-[[ "$duplicate_status" -eq 64 ]]
+[[ "$duplicate_status" -eq 66 ]]
+[[ "$(cat "$root/duplicate.project/sentinel")" == preflight-sentinel ]]
+
+ancestor_target="$root/ancestor-symlink-target"
+ancestor_link="$root/ancestor-symlink-parent"
+ancestor_request="$root/ancestor-symlink.request.json"
+ancestor_stderr="$root/ancestor-symlink.stderr"
+mkdir -p "$ancestor_target"
+printf 'ancestor-sentinel\n' >"$ancestor_target/sentinel"
+ln -s "$ancestor_target" "$ancestor_link"
+write_request \
+  "$ancestor_request" \
+  "$ancestor_link/project" \
+  '' \
+  external/package/build.ss \
+  external/package/src/module.ss
+set +e
+GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
+  "$gxi" "$runner" "$ancestor_request" 2>"$ancestor_stderr"
+ancestor_status=$?
+set -e
+[[ "$ancestor_status" -eq 66 ]]
+grep -F 'Gerbil project root crosses a symlink below its authorized output envelope' \
+  "$ancestor_stderr" >/dev/null
+[[ "$(cat "$ancestor_target/sentinel")" == ancestor-sentinel ]]
+[[ ! -e "$ancestor_target/project" ]]
+[[ -L "$ancestor_link" ]]

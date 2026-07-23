@@ -9,6 +9,7 @@ exports_files([
     "gerbil-bazel.prebuilt-capability-package-receipt.v1.schema.json",
     "gerbil-bazel.prebuilt-promotion-authorization.v1.schema.json",
     "gerbil-bazel.project-receipt.v1.schema.json",
+    "gerbil-bazel.project-request.v1.schema.json",
     "gerbil-bazel.source-build-identity.v1.schema.json",
     "gerbil-bazel.source-build-checkpoint.v1.schema.json",
     "gerbil-bazel.source-producer-admission.v1.schema.json",

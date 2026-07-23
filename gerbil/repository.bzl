@@ -74,6 +74,20 @@ def _environment_args(environment):
         for key in sorted(environment.keys())
     ])
 
+def _scheme_string(value):
+    return json.encode(value)
+
+def _scheme_environment_setters(environment):
+    if not environment:
+        return "  (void)"
+    return "\n".join([
+        "  (setenv {} {})".format(
+            _scheme_string(key),
+            _scheme_string(environment[key]),
+        )
+        for key in sorted(environment.keys())
+    ])
+
 def _environment_dict(environment):
     entries = []
     for key in sorted(environment.keys()):
@@ -299,9 +313,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{ENVIRONMENT}}": _environment_exports(environment),
         "{{GXI}}": _shell_quote(tools["gxi"]),
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
+        "{{GXPKG_SCHEME}}": "#f",
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
-        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
+        "{{ENVIRONMENT_SETTERS}}": _scheme_environment_setters(environment),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -310,10 +325,14 @@ def _local_gerbil_repository_impl(repository_ctx):
         executable = True,
     )
     repository_ctx.template(
-        "install_gerbil_dependencies.sh",
+        "install_gerbil_dependencies.ss",
         repository_ctx.attr._install_dependencies_template,
         substitutions,
         executable = True,
+    )
+    repository_ctx.symlink(
+        repository_ctx.path(repository_ctx.attr._resource_policy),
+        "resource_policy.ss",
     )
 
     for name, path in tools.items():
@@ -393,7 +412,7 @@ local_gerbil_repository = repository_rule(
         ),
         "_install_dependencies_template": attr.label(
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
+            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
         ),
         "_native_abi_probe": attr.label(
             allow_single_file = True,
@@ -407,9 +426,9 @@ local_gerbil_repository = repository_rule(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:native_tool.sh.tpl",
         ),
-        "_resource_guard": attr.label(
+        "_resource_policy": attr.label(
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:resource_guard.ss",
+            default = "@gerbil_bazel//gerbil:resource_policy.ss",
         ),
     },
     environ = [

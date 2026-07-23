@@ -192,6 +192,7 @@ jobs:
       - name: Validate the packaged Linux capability as a consumer
         env:
           GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
+          GERBIL_VERIFY_GENERATED_INSTALLER_RUNTIME: "1"
         run: tools/ci/test_repository_provider.sh prebuilt
 
       - name: Upload the Linux capability

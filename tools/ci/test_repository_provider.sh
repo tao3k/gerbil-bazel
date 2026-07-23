@@ -143,11 +143,24 @@ if [[ -z "$archive" ]]; then
         'printf '\''unexpected synthetic gxi command: %s\\n'\'' "$*" >&2' \
         'exit 64' >"$payload/prefix/bin/$tool"
     elif [[ "$tool" == gxc ]]; then
+      # Compile-wiring fixture only. Runtime proof requires a real Gerbil compiler.
       printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
         'if [[ "${GERBIL_PROVIDER_GXC_FAILURE_STATUS:-0}" != 0 ]]; then' \
         '  exit "$GERBIL_PROVIDER_GXC_FAILURE_STATUS"' \
+        'fi' \
+        'if [[ "${1:-}" == -exe ]]; then' \
+        '  [[ $# -eq 6 ]]' \
+        '  [[ "$2" == -o && "$4" == -d ]]' \
+        '  output=$3' \
+        '  compile_directory=$5' \
+        '  source=$6' \
+        '  [[ -f "$source" ]]' \
+        '  mkdir -p "$compile_directory" "$(dirname "$output")"' \
+        '  printf "%s\n" "#!/usr/bin/env bash" "printf \"synthetic GXC output is compile-wiring evidence only\\n\" >&2" "exit 125" >"$output"' \
+        '  chmod +x "$output"' \
+        '  exit 0' \
         'fi' \
         ': "${GAMBOPT:?GAMBOPT is required before gxc startup}"' \
         ': "${GERBIL_GCC:?GERBIL_GCC is required before gxc startup}"' \
@@ -306,9 +319,11 @@ cp "$provider_fixture/project_library_view_test.sh" \
   "$test_root/consumer/project_library_view_test.sh"
 cp "$provider_fixture/project_dependency_state_test.sh" \
   "$test_root/consumer/project_dependency_state_test.sh"
+project_view_prepopulated=false
 if [[ "$selected_provider" != prebuilt || "$fixture" != synthetic ]]; then
   mkdir -p "$test_root/consumer/.gerbil/lib"
   cp -R "$provider_fixture/project-library/." "$test_root/consumer/.gerbil/lib/"
+  project_view_prepopulated=true
 fi
 if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
   ambient_bin="$test_root/ambient-bin"
@@ -443,12 +458,14 @@ fi
     grep -Fq '"driver":"GXC","mode":"compile-driver","index":2' \
       "${gxc_failure_receipts[0]}"
   fi
-  install_seconds=0
-  dependency_transition=false
-if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
+install_seconds=0
+dependency_transition=false
+installer_compile_wiring_verified=false
+installer_runtime_verified=false
+if [[ "$selected_provider" == prebuilt ]]; then
   install_launcher_relative="$(
     "$bazel_bin" --output_user_root="$test_root/bazel" cquery \
-      "@$repository_name//:install_gerbil_dependencies.sh" \
+      "@$repository_name//:install_gerbil_dependencies.ss" \
       --output=files --noshow_progress 2>/dev/null
   )"
   install_launcher="$output_base/$install_launcher_relative"
@@ -457,41 +474,48 @@ if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
       "$install_launcher" >&2
     exit 1
   fi
+
+  if [[ "$fixture" == synthetic ]]; then
+    "$bazel_bin" --output_user_root="$test_root/bazel" build \
+      //:project_dependency_state_missing_test
+  fi
+
+  install_started_at="$SECONDS"
   "$bazel_bin" --output_user_root="$test_root/bazel" build \
-    //:project_dependency_state_missing_test
-    install_started_at="$SECONDS"
+    "@$repository_name//:install_dependencies"
+  installer_compile_wiring_verified=true
+
+  if [[ "$fixture" == synthetic ]]; then
+    mkdir -p "$test_root/consumer/.gerbil/lib"
+    cp -R "$provider_fixture/project-library/." \
+      "$test_root/consumer/.gerbil/lib/"
+    project_view_prepopulated=true
+  elif [[ "${GERBIL_VERIFY_GENERATED_INSTALLER_RUNTIME:-0}" == 1 ]]; then
+    printf '(package: provider-runtime)\n' \
+      >"$test_root/consumer/gerbil.pkg"
     "$bazel_bin" --output_user_root="$test_root/bazel" run \
       "@$repository_name//:install_dependencies"
-    install_seconds="$((SECONDS - install_started_at))"
-    install_receipt="$test_root/consumer/.gerbil/install-dependencies.receipt"
-    if [[ ! -f "$install_receipt" ]]; then
-      printf 'synthetic dependency installer did not emit %s\n' \
-        "$install_receipt" >&2
-      find "$test_root/consumer/.gerbil" -maxdepth 3 -print >&2 || true
+    guard_receipt="$test_root/consumer/.gerbil/pkg/install-resource-guard.receipt.json"
+    if [[ ! -f "$guard_receipt" ]]; then
+      printf 'generated dependency guard did not emit %s\n' \
+        "$guard_receipt" >&2
       exit 1
     fi
-    grep -Fx 'command=deps --install' "$install_receipt" >/dev/null
-    expected_gerbil_path="$(cd "$test_root/consumer/.gerbil" && pwd -P)"
-  grep -Fx "GERBIL_PATH=$expected_gerbil_path" \
-    "$install_receipt" >/dev/null
-  grep -Eq '^GERBIL_BUILD_CORES=[1-9][0-9]*$' \
-    "$install_receipt"
-  guard_receipt="$test_root/consumer/.gerbil/pkg/install-resource-guard.receipt.json"
-  if [[ ! -f "$guard_receipt" ]]; then
-    printf 'synthetic dependency guard did not emit %s\n' "$guard_receipt" >&2
-    exit 1
+    jq -e '
+      .schema == "gerbil-bazel.resource-guard-receipt.v1" and
+      .label == "install-dependencies" and
+      .outcome == "completed" and
+      .exitCode == 0
+    ' "$guard_receipt" >/dev/null
+    installer_runtime_verified=true
   fi
-  jq -e '
-    .schema == "gerbil-bazel.resource-guard-receipt.v1" and
-    .label == "install-dependencies" and
-    .exitCode == 0
-  ' "$guard_receipt" >/dev/null
-  dependency_transition=true
+  install_seconds="$((SECONDS - install_started_at))"
 fi
-  project_view_started_at="$SECONDS"
-  "$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
-  project_view_seconds="$((SECONDS - project_view_started_at))"
-  jq -cn \
+
+project_view_started_at="$SECONDS"
+"$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
+project_view_seconds="$((SECONDS - project_view_started_at))"
+jq -cn \
     --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
     --arg provider "$provider" \
     --arg selected_provider "$selected_provider" \
@@ -499,6 +523,9 @@ fi
     --arg version "$observed_version" \
     --argjson compiler_driver_verified "$compiler_driver_verified" \
     --argjson dependency_transition "$dependency_transition" \
+    --argjson installer_compile_wiring_verified "$installer_compile_wiring_verified" \
+    --argjson installer_runtime_verified "$installer_runtime_verified" \
+    --argjson project_view_prepopulated "$project_view_prepopulated" \
     --argjson install_seconds "$install_seconds" \
     --argjson provider_seconds "$provider_seconds" \
     --argjson project_view_seconds "$project_view_seconds" \
@@ -512,6 +539,9 @@ fi
       version: $version,
       compilerDriverVerified: $compiler_driver_verified,
       dependencyTransition: $dependency_transition,
+      installerCompileWiringVerified: $installer_compile_wiring_verified,
+      installerRuntimeVerified: $installer_runtime_verified,
+      projectViewPrepopulated: $project_view_prepopulated,
       installSeconds: $install_seconds,
       providerSeconds: $provider_seconds,
       projectViewSeconds: $project_view_seconds,

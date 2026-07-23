@@ -139,9 +139,73 @@ NOT replace either native scheduler.
 Hard-coded logical CPU counts, fixed retry counts, sleeps, and unconditional
 serialization are prohibited.
 
+** Scheme-native execution boundary
+
+Gerbil Scheme is the execution owner. Bazel/Starlark MUST describe the
+toolchain, declared inputs and outputs, semantic environment, JSON request, and
+cache identity. A project compile action MUST invoke =gxi project_runner.ss=
+directly. The Bazel build action for the install target MUST compile
+=install_gerbil_dependencies.ss= with =gxc -exe=; the install target then
+executes that native Scheme binary directly with its Bazel-declared adjacent
+=gxpkg= executable. Scheme owns source staging, filesystem and path operations,
+live host observation, adaptive worker projection, process launch and
+monitoring, green-thread coordination, exception normalization, streaming logs,
+and JSON receipts.
+
+#+begin_src mermaid
+flowchart LR
+  Bazel["Bazel rule: declared inputs, outputs, toolchain"] --> Request["gerbil-bazel.project-request.v1 JSON"]
+  Request --> Gxi["gxi project_runner.ss"]
+  Gxi --> IO["Gerbil filesystem, path and JSON APIs"]
+  Gxi --> Policy["resource_policy.ss"]
+  Policy --> Observe["Live CPU, cgroup or OS memory, runnable load"]
+  Policy --> Budget["Adaptive GERBIL_BUILD_CORES=N"]
+  Policy --> Guard["Green-thread timeout and process-tree RSS guard"]
+  Budget --> Build["Official build.ss compile"]
+  Guard --> Build
+  Build --> Make["Official std/make dependency scheduler"]
+  Gxi --> Receipt["Project, budget and guard JSON receipts"]
+
+  InstallerSource["install_gerbil_dependencies.ss"] --> Gxc["Bazel build action: gxc -exe"]
+  Gxc --> InstallerBinary["Native Scheme installer: no gxi, shebang, or Shell"]
+  InstallTarget["Bazel install_dependencies target"] --> InstallerBinary
+  InstallerBinary --> Policy
+  InstallerBinary --> Gxpkg["Adjacent Bazel-declared gxpkg: deps --install"]
+#+end_src
+
+Production Shell MUST NOT own policy, JSON, staging, retries, scheduling,
+timeout interpretation, dependency readiness, or error propagation. The native
+dependency installer has no Shell shim and no =gxi= shebang. A platform/tool
+runfiles shim MAY remain elsewhere only when Bazel needs an exec-only
+compatibility launcher; it MUST contain no build semantics.
+
+=project_runner.ss= MUST validate the exact request shape, value types, staged
+destinations, tool and dependency existence, destructive-root safety, and
+input/output overlap before it empties or creates the project root. It MUST
+strict-normalize the existing physical path envelope and reject a project root
+that crosses a symlink below the authorized Bazel or test output envelope. An
+invalid request MUST leave the pre-existing project root unchanged.
+
+The Scheme policy uses Gerbil's runtime CPU count, reads Linux cgroup and
+=/proc= files through Scheme I/O, derives container availability from the
+matched cgroup limit/current pair, and caps OS availability by both cgroup
+remaining memory and effective total memory. It invokes only the remaining OS
+capability probes through =std/misc/process=. It MUST NOT use =sh -c=, =awk=,
+or a Shell pipeline for resource decisions. This paragraph supersedes older
+references below to a generic launcher selecting CPU facts through =getconf= or
+=sysctl=.
+
 ** Adaptive dependency-install budget
 
-The generated dependency-install launcher MUST preserve =gxpkg deps --install= as the native package-lifecycle owner. Gerbil-Bazel only projects a validated, action-local =GERBIL_BUILD_CORES=N= into that command and places the command under the Scheme resource guard; it does not introduce a dependency installer or a scheduler.
+The repository-generated Scheme installer, compiled by =gxc=, MUST preserve
+=gxpkg deps --install= as the native package-lifecycle owner. Its native runtime
+calls =gxpkg deps --install= under =resource_policy.ss= directly, without Shell
+or =gxi=. The binary resolves the Bazel-declared adjacent =gxpkg= executable; it
+MUST NOT embed a repository-machine absolute tool path. Gerbil-Bazel only
+projects a validated, action-local =GERBIL_BUILD_CORES=N= into that command and
+places it under the Scheme resource
+guard; it does not replace =gxpkg= package-graph/lifecycle or scheduling
+semantics.
 
 #+begin_src mermaid
 flowchart LR

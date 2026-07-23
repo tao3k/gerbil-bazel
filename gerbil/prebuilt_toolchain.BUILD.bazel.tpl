@@ -1,17 +1,21 @@
 load("@gerbil_bazel//gerbil:toolchain.bzl", "gerbil_toolchain")
+load("@gerbil_bazel//gerbil:script.bzl", "gerbil_scheme_executable")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 package(default_visibility = ["//visibility:public"])
 
 sh_binary(name = "native_scheme_env", srcs = ["native_scheme_env.sh"])
 
-sh_binary(
+gerbil_scheme_executable(
     name = "install_dependencies",
-    srcs = ["install_gerbil_dependencies.sh"],
+    compiler = ":gxc",
+    gxpkg = "bin/gxpkg_raw",
+    script = "install_gerbil_dependencies.ss",
     data = [
         "bin/gxpkg_raw",
         "native_abi.txt",
     ],
+    includes = ["resource_policy.ss"],
 )
 
 {{TOOL_RULES}}
