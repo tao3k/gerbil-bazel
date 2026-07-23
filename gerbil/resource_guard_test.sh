@@ -15,15 +15,45 @@ guard=$(resolve_runfile "${2:?resource guard path is required}")
 root=${TEST_TMPDIR:?TEST_TMPDIR is required}/resource-guard
 mkdir -p "$root"
 
-common_environment=(
-  GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=17179869184
-  GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=12884901888
-  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=1073741824
-  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=8589934592
+host_environment=(
+  GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=6442450944
+  GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=4294967296
+  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=805306368
   GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1
   GERBIL_BAZEL_GUARD_SAMPLE_SECONDS=0.05
   "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=1 0 0"
 )
+common_environment=(
+  "${host_environment[@]}"
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=3221225472
+)
+
+env -u GERBIL_BAZEL_GUARD_MAX_RSS_BYTES "${host_environment[@]}" \
+  "$gxi" "$guard" "$root/adaptive-omitted.json" adaptive-omitted 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"maxRssBytes":3489660928' \
+  "$root/adaptive-omitted.json" >/dev/null
+
+env "${host_environment[@]}" \
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=0 \
+  "$gxi" "$guard" "$root/adaptive-zero.json" adaptive-zero 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"maxRssBytes":3489660928' \
+  "$root/adaptive-zero.json" >/dev/null
+
+env "${common_environment[@]}" \
+  "$gxi" "$guard" "$root/explicit-within-budget.json" \
+  explicit-within-budget 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"maxRssBytes":3221225472' \
+  "$root/explicit-within-budget.json" >/dev/null
+
+env "${host_environment[@]}" \
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=4294967296 \
+  "$gxi" "$guard" "$root/explicit-capped.json" explicit-capped 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"maxRssBytes":3489660928' \
+  "$root/explicit-capped.json" >/dev/null
 
 env "${common_environment[@]}" \
   "$gxi" "$guard" "$root/completed.json" completed 5 \
@@ -32,6 +62,24 @@ grep -F '"admissionOutcome":"ready"' "$root/completed.json" >/dev/null
 grep -F '"outcome":"completed"' "$root/completed.json" >/dev/null
 grep -F '"schema":"gerbil-bazel.resource-guard-receipt.v1"' \
   "$root/completed.json" >/dev/null
+
+set +e
+env \
+  -u GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT \
+  -u GERBIL_BAZEL_GUARD_FORCE_PROCESS_TABLE_UNAVAILABLE \
+  GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=6442450944 \
+  GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=4294967296 \
+  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=805306368 \
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=1 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1 \
+  GERBIL_BAZEL_GUARD_SAMPLE_SECONDS=0.01 \
+  "$gxi" "$guard" "$root/rss-limit.json" rss-limit 0 \
+  /bin/sh -c 'exec /bin/sleep 5'
+rss_limit_status=$?
+set -e
+[[ "$rss_limit_status" -eq 70 ]]
+grep -F '"outcome":"rss-limit-exceeded"' "$root/rss-limit.json" >/dev/null
+grep -F '"exitCode":70' "$root/rss-limit.json" >/dev/null
 
 set +e
 env \

@@ -145,25 +145,56 @@ The generated dependency-install launcher MUST preserve =gxpkg deps --install= a
 
 #+begin_src mermaid
 flowchart LR
-    H["Normalized host CPU and memory facts"] --> P["Install budget projection"]
-    E["Explicit install-core override"] --> P
+    H["Normalized host CPU and memory facts"] --> P["Install-core budget projection"]
+    E["Positive install-core override"] --> P
     P --> C["Validated GERBIL_BUILD_CORES=N"]
+
+    H --> A["Admission-time available memory"]
+    A --> B["Retain configured or default RSS headroom"]
+    B --> F{"At least 768 MiB remains?"}
+    F -->|"no"| Q["Block host pressure: exit 72"]
+    F -->|"yes"| D["Adaptive RSS budget = available memory - headroom"]
+
+    V["GERBIL_BAZEL_GUARD_MAX_RSS_BYTES"] --> O{"Positive override present?"}
+    O -->|"yes"| L["Effective max RSS = min(override, adaptive budget)"]
+    O -->|"no: omitted or 0"| D
+    D --> L
+
     C --> G["Scheme resource guard: admission, RSS, timeout, process tree"]
+    L --> G
     G --> X["Native gxpkg deps --install"]
     X --> M["Native std/make and compiler schedulers"]
     G --> R["JSON resource-guard receipt"]
 #+end_src
 
-Budget selection has the following precedence and fail-closed behavior:
+Install-core budget selection has the following precedence and fail-closed behavior:
 
 1. A positive decimal =GERBIL_BAZEL_INSTALL_BUILD_CORES= is an explicit override.
 2. Otherwise, the launcher uses the repository-normalized =GERBIL_BUILD_CORES=, falling back to =GERBIL_BAZEL_CPU_COUNT= only when the former is absent.
 3. When =GERBIL_BAZEL_MEMORY_BYTES= is available, the result is capped by available bytes divided by =GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES=. The per-core default is 2 GiB and the resulting core count has a floor of one.
 4. Invalid explicit values, invalid normalized facts, and invalid memory-per-core values fail before =gxpkg= starts. No machine-specific core count is embedded in the launcher or tests.
 
-The concrete core projection is intentionally small and platform-neutral. Runtime enforcement remains in =gerbil/resource_guard.ss=: it performs admission checks, samples process-tree RSS, enforces the timeout, and terminates descendants before the guarded parent. On timeout, the guard freezes the root, repeatedly discovers and freezes newly observed descendants until the live closure is stable, then terminates the frozen closure descendant-first. Diagnostic process-table fixtures MAY drive deterministic observation tests, but MUST NOT replace live process discovery in the safety termination path.
+The Scheme resource guard selects its maximum process-tree RSS at admission time:
 
-The guard writes =.gerbil/pkg/install-resource-guard.receipt.json=. The launcher removes any prior receipt before each invocation. Guard status 71 means the timed operation was terminated only when the fresh receipt also proves the v1 schema, =outcome: timeout=, and the exact numeric =exitCode: 71=. The launcher accepts a proven timeout only when the declared dependency libraries are already present; otherwise it preserves the install launcher's public timeout status 124. An ordinary child exit 71 and every other nonzero guard or child status propagate unchanged.
+1. A positive decimal =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES= is an explicit requested ceiling.
+2. The effective ceiling for a positive override is the smaller of that override and the admission-time available-memory budget after retaining RSS headroom.
+3. When =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES= is omitted or is =0=, the effective ceiling is the admission-time available-memory budget after retaining RSS headroom. Zero never means unlimited.
+4. The guard MUST retain the existing absolute admission floor of 768 MiB after headroom. If less than 768 MiB remains, the child MUST NOT start and the receipt MUST preserve the blocked-host-pressure failure semantics.
+
+The headroom remains a positive =GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES= override when supplied, otherwise the existing platform-neutral default applies. This change does not alter validation behavior for other environment values.
+
+The deterministic resource-budget tests SHALL inject =GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=6442450944=, =GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=4294967296=, and =GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=805306368=. The resulting adaptive budget is exactly =3489660928= bytes, and the receipt assertions are:
+
+1. With =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES= omitted, =maxRssBytes= is =3489660928=.
+2. With =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=0=, =maxRssBytes= is =3489660928=.
+3. With =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=3221225472=, =maxRssBytes= is =3221225472=.
+4. With =GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=4294967296=, =maxRssBytes= is capped at =3489660928=.
+
+The concrete core projection and RSS projection are intentionally small and platform-neutral. Runtime enforcement remains in =gerbil/resource_guard.ss=: it performs admission checks, samples process-tree RSS, enforces the timeout, and terminates descendants before the guarded parent. On timeout, the guard freezes the root, repeatedly discovers and freezes newly observed descendants until the live closure is stable, then terminates the frozen closure descendant-first.
+
+Diagnostic process-table snapshots MAY drive deterministic host-observation and receipt tests. They MUST NOT replace live process discovery in the RSS-limit or safety-termination paths because the monitored child PID is allocated dynamically. The exit-70 regression test therefore unsets =GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=, runs a long-lived child beneath a one-byte explicit ceiling, and requires =outcome: rss-limit-exceeded= with =exitCode: 70=.
+
+The guard writes =.gerbil/pkg/install-resource-guard.receipt.json=. The launcher removes any prior receipt before each invocation. Guard status 70 remains the process-tree RSS-limit failure. Guard status 71 means the timed operation was terminated only when the fresh receipt also proves the v1 schema, =outcome: timeout=, and the exact numeric =exitCode: 71=. Guard status 72 remains the blocked or unavailable host-observation failure. The launcher accepts a proven timeout only when the declared dependency libraries are already present; otherwise it preserves the install launcher's public timeout status 124. Ordinary child exits and every other nonzero guard or child status propagate unchanged.
 
 * Package lifecycle contract
 
