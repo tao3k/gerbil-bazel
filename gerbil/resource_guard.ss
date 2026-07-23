@@ -85,6 +85,9 @@
   (or (positive-integer-from-env
        "GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES"
        #f)
+      (positive-integer-from-env
+       "GERBIL_BAZEL_MEMORY_BYTES"
+       #f)
       (command-positive-integer (list "sysctl" "-n" "hw.memsize"))
       (let ((pages (command-positive-integer (list "getconf" "_PHYS_PAGES")))
             (page-size (command-positive-integer (list "getconf" "PAGE_SIZE"))))
@@ -105,10 +108,16 @@
   (or (positive-integer-from-env
        "GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES"
        #f)
-      (linux-available-memory-bytes)
-      (let (percent (darwin-available-memory-percent))
-        (and percent (quotient (* total-memory percent) 100)))
-      total-memory))
+      (and
+       (not
+        (getenv
+         "GERBIL_BAZEL_GUARD_FORCE_AVAILABLE_MEMORY_UNAVAILABLE"
+         #f))
+       (or
+        (linux-available-memory-bytes)
+        (let (percent (darwin-available-memory-percent))
+          (and percent (quotient (* total-memory percent) 100)))))
+      0))
 
 (def (default-headroom-bytes total-memory)
   (max +minimum-max-rss-bytes+
@@ -153,9 +162,13 @@
               '()))
          (reasons
           (append
-           (if (< available-memory (+ headroom +minimum-max-rss-bytes+))
-               '(insufficient-memory-headroom)
-               '())
+           (cond
+            ((= available-memory 0)
+             '(available-memory-unavailable))
+            ((< available-memory (+ headroom +minimum-max-rss-bytes+))
+             '(insufficient-memory-headroom))
+            (else
+             '()))
            (if process-tree-rss-available?
                '()
                '(process-tree-rss-unavailable)))))

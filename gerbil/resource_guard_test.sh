@@ -28,6 +28,72 @@ common_environment=(
   GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=3221225472
 )
 
+env \
+  -u GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES \
+  -u GERBIL_BAZEL_GUARD_MAX_RSS_BYTES \
+  PATH=/bin \
+  GERBIL_BAZEL_MEMORY_BYTES=34359738368 \
+  GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=20272245637 \
+  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=2147483648 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1 \
+  "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=1 0 0" \
+  "$gxi" "$guard" "$root/normalized-system-memory.json" \
+  normalized-system-memory 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"systemMemoryBytes":34359738368' \
+  "$root/normalized-system-memory.json" >/dev/null
+grep -F '"maxRssBytes":18124761989' \
+  "$root/normalized-system-memory.json" >/dev/null
+
+env "${host_environment[@]}" \
+  GERBIL_BAZEL_MEMORY_BYTES=34359738368 \
+  "$gxi" "$guard" "$root/guard-system-memory-override.json" \
+  guard-system-memory-override 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"systemMemoryBytes":6442450944' \
+  "$root/guard-system-memory-override.json" >/dev/null
+
+available_unavailable_child_marker="$root/available-memory-child-started"
+set +e
+env \
+  -u GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES \
+  -u GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES \
+  GERBIL_BAZEL_MEMORY_BYTES=34359738368 \
+  GERBIL_BAZEL_GUARD_FORCE_AVAILABLE_MEMORY_UNAVAILABLE=1 \
+  GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=2147483648 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1 \
+  "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=1 0 0" \
+  "$gxi" "$guard" "$root/available-memory-unavailable.json" \
+  available-memory-unavailable 5 \
+  /bin/sh -c 'touch "$1"; exit 99' guard-child \
+  "$available_unavailable_child_marker"
+available_memory_unavailable_status=$?
+set -e
+[[ "$available_memory_unavailable_status" -eq 72 ]]
+[[ ! -e "$available_unavailable_child_marker" ]]
+grep -F '"systemMemoryBytes":34359738368' \
+  "$root/available-memory-unavailable.json" >/dev/null
+grep -F '"availableMemoryBytes":0' \
+  "$root/available-memory-unavailable.json" >/dev/null
+grep -F '"outcome":"blocked-host-pressure"' \
+  "$root/available-memory-unavailable.json" >/dev/null
+grep -F '"exitCode":72' \
+  "$root/available-memory-unavailable.json" >/dev/null
+grep -F '"admissionReasons":["available-memory-unavailable"]' \
+  "$root/available-memory-unavailable.json" >/dev/null
+
+env "${host_environment[@]}" \
+  GERBIL_BAZEL_GUARD_FORCE_AVAILABLE_MEMORY_UNAVAILABLE=1 \
+  "$gxi" "$guard" "$root/explicit-available-precedence.json" \
+  explicit-available-precedence 5 \
+  /bin/sh -c 'exit 0'
+grep -F '"availableMemoryBytes":4294967296' \
+  "$root/explicit-available-precedence.json" >/dev/null
+grep -F '"admissionOutcome":"ready"' \
+  "$root/explicit-available-precedence.json" >/dev/null
+grep -F '"outcome":"completed"' \
+  "$root/explicit-available-precedence.json" >/dev/null
+
 env -u GERBIL_BAZEL_GUARD_MAX_RSS_BYTES "${host_environment[@]}" \
   "$gxi" "$guard" "$root/adaptive-omitted.json" adaptive-omitted 5 \
   /bin/sh -c 'exit 0'
