@@ -4,6 +4,7 @@ load(
     "gerbil_project_dev",
     "gerbil_project_test",
 )
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":build_settings.bzl", "scenario_state_flag")
 load(":source_package_validation_contract.bzl", "source_package_validation_contract")
@@ -264,6 +265,7 @@ sh_test(
         "$(rlocationpath @downloaded_fixture_sources//:gerbil.pkg)",
         "$(rlocationpath @downloaded_fixture_sources//:build.ss)",
         "$(rlocationpath @downloaded_fixture_sources//:source-package.json)",
+        "$(rlocationpath @downloaded_fixture_sources//:source-resolution-receipt.json)",
         "$(rlocationpath @downloaded_fixture_sources//:pure/dict/assq.ss)",
     ],
     data = [
@@ -271,6 +273,33 @@ sh_test(
         "@downloaded_fixture_sources//:gerbil.pkg",
         "@downloaded_fixture_sources//:pure/dict/assq.ss",
         "@downloaded_fixture_sources//:source-package.json",
+        "@downloaded_fixture_sources//:source-resolution-receipt.json",
         "@downloaded_fixture_sources//:sources",
     ],
+)
+
+sh_test(
+    name = "source_resolution_receipt_test",
+    srcs = ["source_resolution_receipt_test.sh"],
+    args = ["$(rlocationpath @clan_sources//:source-resolution-receipt.json)"],
+    data = ["@clan_sources//:source-resolution-receipt.json"],
+)
+
+sh_test(
+    name = "source_resolution_replay_test",
+    srcs = ["source_resolution_replay_test.sh"],
+    args = [
+        "$(rlocationpath @source_resolution_replay_a//:source-resolution-receipt.json)",
+        "$(rlocationpath @source_resolution_replay_b//:source-resolution-receipt.json)",
+    ],
+    data = [
+        "@source_resolution_replay_a//:source-resolution-receipt.json",
+        "@source_resolution_replay_b//:source-resolution-receipt.json",
+    ],
+)
+
+sh_binary(
+    name = "source_resolution_negative_cases",
+    srcs = ["source_resolution_negative_cases.sh"],
+    visibility = ["//visibility:public"],
 )

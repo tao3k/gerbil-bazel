@@ -17,6 +17,9 @@ _host = tag_class(attrs = {
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_paths": attr.string_dict(),
+    "project_dependency_source_revisions": attr.string_dict(),
+    "project_dependency_source_uris": attr.string_dict(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
@@ -35,6 +38,9 @@ _prebuilt = tag_class(attrs = {
     "name": attr.string(mandatory = True),
     "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_paths": attr.string_dict(),
+    "project_dependency_source_revisions": attr.string_dict(),
+    "project_dependency_source_uris": attr.string_dict(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "sha256": attr.string(mandatory = True),
@@ -60,6 +66,9 @@ _auto = tag_class(attrs = {
     "name": attr.string(default = "local_gerbil"),
     "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
+    "project_dependency_source_paths": attr.string_dict(),
+    "project_dependency_source_revisions": attr.string_dict(),
+    "project_dependency_source_uris": attr.string_dict(),
     "project_library_relative_path": attr.string(default = ".gerbil/lib"),
     "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
@@ -67,8 +76,10 @@ _auto = tag_class(attrs = {
 
 _source_package = tag_class(attrs = {
     "build_script": attr.string(default = "build.ss"),
+    "canonical_uri": attr.string(mandatory = True),
     "name": attr.string(mandatory = True),
     "package": attr.string(mandatory = True),
+    "revision": attr.string(mandatory = True),
     "sha256": attr.string(mandatory = True),
     "strip_prefix": attr.string(),
     "urls": attr.string_list(mandatory = True),
@@ -115,6 +126,9 @@ def _instantiate_project_dependency_sources(names, tag, kind):
         _claim_name(names, repo_name, kind + ".dependency_source")
         project_dependency_sources_repository(
             name = repo_name,
+            canonical_package_path = tag.project_dependency_source_paths.get(package, ""),
+            canonical_uri = tag.project_dependency_source_uris.get(package, ""),
+            expected_revision = tag.project_dependency_source_revisions.get(package, ""),
             package = package,
             project_library_relative_path = tag.project_library_relative_path,
             project_root_marker = tag.project_root_marker,
@@ -181,6 +195,7 @@ def _gerbil_extension_impl(module_ctx):
                 project_root_marker = host.project_root_marker,
                 tool_paths = host.tool_paths,
             )
+            _instantiate_project_dependency_sources(names, host, "host")
         for prebuilt in module.tags.prebuilt:
             _claim_name(names, prebuilt.name, "prebuilt")
             prebuilt_gerbil_repository(
@@ -197,12 +212,15 @@ def _gerbil_extension_impl(module_ctx):
                 strip_prefix = prebuilt.strip_prefix,
                 urls = prebuilt.urls,
             )
+            _instantiate_project_dependency_sources(names, prebuilt, "prebuilt")
         for source_package in module.tags.source_package:
             _claim_name(names, source_package.name, "source_package")
             source_package_repository(
                 name = source_package.name,
                 build_script = source_package.build_script,
+                canonical_uri = source_package.canonical_uri,
                 package = source_package.package,
+                revision = source_package.revision,
                 sha256 = source_package.sha256,
                 strip_prefix = source_package.strip_prefix,
                 urls = source_package.urls,

@@ -54,6 +54,12 @@ def _quote(value):
 def _source_package_repository_impl(repository_ctx):
     package = _safe_relative_path(repository_ctx.attr.package, "package")
     build_script = _safe_relative_path(repository_ctx.attr.build_script, "build_script")
+    canonical_uri = repository_ctx.attr.canonical_uri.strip()
+    if not canonical_uri:
+        fail("canonical_uri must not be empty")
+    revision = repository_ctx.attr.revision.strip()
+    if not revision:
+        fail("revision must not be empty")
     if not repository_ctx.attr.urls:
         fail("urls must contain at least one source archive URL")
     sha256 = require_hex_digest(repository_ctx.attr.sha256, 64, "sha256")
@@ -82,12 +88,33 @@ def _source_package_repository_impl(repository_ctx):
         "source-package.json",
         json.encode_indent({
             "buildScript": build_script,
+            "canonicalUri": canonical_uri,
             "package": package,
+            "revision": revision,
             "sha256": sha256,
             "urls": repository_ctx.attr.urls,
         }) + "\n",
     )
-    exported_files = source_files + ["source-package.json"]
+    repository_ctx.file(
+        "source-resolution-receipt.json",
+        json.encode({
+            "canonicalPackagePath": "",
+            "canonicalUri": canonical_uri,
+            "expectedRevision": revision,
+            "logicalPackage": package,
+            "observedRevision": revision,
+            "outcome": "resolved",
+            "resolutionMode": "hermetic-archive",
+            "schema": "gerbil-bazel.dependency-source-resolution-receipt.v1",
+            "sourceFileCount": len(source_files),
+            "sourceSnapshotDigest": "sha256:" + sha256,
+            "worktreeDirty": False,
+        }) + "\n",
+    )
+    exported_files = source_files + [
+        "source-package.json",
+        "source-resolution-receipt.json",
+    ]
     repository_ctx.file("BUILD.bazel", """
 exports_files(
     [
@@ -109,6 +136,12 @@ filegroup(
     srcs = [{build_script}],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "source_resolution_receipt",
+    srcs = ["source-resolution-receipt.json"],
+    visibility = ["//visibility:public"],
+)
 """.format(
         build_script = _quote(build_script),
         exported_source_labels = "".join([
@@ -125,7 +158,9 @@ source_package_repository = repository_rule(
     implementation = _source_package_repository_impl,
     attrs = {
         "build_script": attr.string(default = "build.ss"),
+        "canonical_uri": attr.string(mandatory = True),
         "package": attr.string(mandatory = True),
+        "revision": attr.string(mandatory = True),
         "sha256": attr.string(mandatory = True),
         "strip_prefix": attr.string(),
         "urls": attr.string_list(mandatory = True),
