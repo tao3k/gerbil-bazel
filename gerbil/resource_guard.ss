@@ -11,7 +11,6 @@
 
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
 (def +minimum-max-rss-bytes+ (* 768 1024 1024))
-(def +memory-share-denominator+ 2)
 (def +headroom-share-denominator+ 16)
 (def +runnable-limit-per-cpu+ 2)
 (def +default-sample-seconds+ 0.25)
@@ -115,10 +114,6 @@
   (max +minimum-max-rss-bytes+
        (quotient total-memory +headroom-share-denominator+)))
 
-(def (default-max-rss-bytes total-memory)
-  (max +minimum-max-rss-bytes+
-       (quotient total-memory +memory-share-denominator+)))
-
 (def (live-process-table-result)
   (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))
 
@@ -138,12 +133,16 @@
           (positive-integer-from-env
            "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES"
            (default-headroom-bytes total-memory)))
-         (requested-max-rss
+         (available-max-rss
+          (max 1 (- available-memory headroom)))
+         (explicit-max-rss
           (positive-integer-from-env
            "GERBIL_BAZEL_GUARD_MAX_RSS_BYTES"
-           (default-max-rss-bytes total-memory)))
-         (max-rss (min requested-max-rss
-                       (max 1 (- available-memory headroom))))
+           #f))
+         (max-rss
+          (if explicit-max-rss
+              (min explicit-max-rss available-max-rss)
+              available-max-rss))
          (logical-cpus (logical-cpu-count))
          (runnable (runnable-process-count))
          (process-table-probe (process-table-result))
