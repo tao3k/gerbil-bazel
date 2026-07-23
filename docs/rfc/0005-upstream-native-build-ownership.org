@@ -149,15 +149,23 @@ flowchart LR
     E["Positive install-core override"] --> P
     P --> C["Validated GERBIL_BUILD_CORES=N"]
 
-    H --> A["Admission-time available memory"]
-    A --> B["Retain configured or default RSS headroom"]
+    U["Positive GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES"] -->|"1"| S["Guard system-memory input"]
+    N["Positive normalized GERBIL_BAZEL_MEMORY_BYTES"] -->|"2"| S
+    TMOS["System-memory OS probes"] -->|"3"| S
+    Z["Conservative 6 GiB emergency fallback"] -->|"4"| S
+    S -->|"Darwin percentage base"| AP["Live Linux or Darwin available-memory probe"]
+    AV["Positive GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES"] --> A["Admission-time available memory"]
+    AP --> A
+    A --> AO{"Available-memory observation present?"}
+    AO -->|"no"| Q["Block unavailable host observation: exit 72"]
+    AO -->|"yes"| B["Retain configured or default RSS headroom"]
     B --> F{"At least 768 MiB remains?"}
-    F -->|"no"| Q["Block host pressure: exit 72"]
+    F -->|"no"| Q
     F -->|"yes"| D["Adaptive RSS budget = available memory - headroom"]
 
-    V["GERBIL_BAZEL_GUARD_MAX_RSS_BYTES"] --> O{"Positive override present?"}
-    O -->|"yes"| L["Effective max RSS = min(override, adaptive budget)"]
-    O -->|"no: omitted or 0"| D
+    V["GERBIL_BAZEL_GUARD_MAX_RSS_BYTES"] --> RO{"Positive override present?"}
+    RO -->|"yes"| L["Effective max RSS = min(override, adaptive budget)"]
+    RO -->|"no: omitted or 0"| D
     D --> L
 
     C --> G["Scheme resource guard: admission, RSS, timeout, process tree"]
@@ -173,6 +181,23 @@ Install-core budget selection has the following precedence and fail-closed behav
 2. Otherwise, the launcher uses the repository-normalized =GERBIL_BUILD_CORES=, falling back to =GERBIL_BAZEL_CPU_COUNT= only when the former is absent.
 3. When =GERBIL_BAZEL_MEMORY_BYTES= is available, the result is capped by available bytes divided by =GERBIL_BAZEL_INSTALL_MEMORY_PER_CORE_BYTES=. The per-core default is 2 GiB and the resulting core count has a floor of one.
 4. Invalid explicit values, invalid normalized facts, and invalid memory-per-core values fail before =gxpkg= starts. No machine-specific core count is embedded in the launcher or tests.
+
+The Scheme resource guard resolves its system-memory input in the following order:
+
+1. A positive =GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES= is authoritative.
+2. Otherwise, a positive normalized action fact in =GERBIL_BAZEL_MEMORY_BYTES= is used.
+3. Otherwise, the guard uses the existing OS probes: =sysctl -n hw.memsize=, then =getconf _PHYS_PAGES= multiplied by =getconf PAGE_SIZE=.
+4. Only if all explicit, normalized, and probed sources are unavailable does the guard use the conservative 6 GiB emergency fallback.
+
+The downstream =systemMemoryBytes=6442450944= receipt demonstrates the probe-failure fallback path; it is not an action-memory fact. When =GERBIL_BAZEL_MEMORY_BYTES=34359738368= is present, the guard MUST consume that normalized 32 GiB action fact before OS probes, avoiding sandbox- and =PATH=-dependent admission results while preserving the dedicated guard override.
+
+Available memory remains a distinct admission-time observation:
+
+1. A positive =GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES= is authoritative.
+2. Otherwise, the guard uses the live Linux =MemAvailable= probe or the live Darwin =memory_pressure= percentage applied to the resolved system-memory input.
+3. If neither an explicit value nor a live probe is available, the guard MUST record =availableMemoryBytes=0=, add =available-memory-unavailable= to the admission reasons, return exit 72, and MUST NOT start the child. Total memory MUST NOT be treated as available memory.
+
+The deterministic unavailable-observation test uses =GERBIL_BAZEL_GUARD_FORCE_AVAILABLE_MEMORY_UNAVAILABLE= only as a test fixture. It proves the fail-closed receipt and child non-admission path without making the production decision depend on =PATH= or platform-specific probe availability.
 
 The Scheme resource guard selects its maximum process-tree RSS at admission time:
 
