@@ -191,7 +191,7 @@
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "UyFrJE/5MJRazN5I0zqIJGdI223k1CeJ2m6OMtq6j4o=",
+        "bzlTransitiveDigest": "sabfmHEQaVKkP8+SlK7d8VhhDUf6xphNZIpILykDZOo=",
         "usagesDigest": "nFwAJOsoJtlQPfzk3wIxC40qNW3UKy8Znp4RnQ/IsUQ=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
