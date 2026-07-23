@@ -32,14 +32,27 @@ do
   fi
 done
 
-for unrelated_runfile in \
-  toolchain.receipt.json \
-  native_scheme_env \
-  gxtest
-do
-  if grep -F "$unrelated_runfile" "$action_graph" >/dev/null; then
-    printf 'unrelated toolchain runfile leaked into compile action: %s\n' \
-      "$unrelated_runfile" >&2
+unrelated_names=(
+  gxtest-executable
+  native-scheme-environment
+  toolchain-receipt
+)
+unrelated_patterns=(
+  '(^|/)gxtest(\.sh|_raw)?$'
+  '(^|/)native_scheme_env(\.sh)?$'
+  '(^|/)toolchain\.receipt\.json$'
+)
+for index in "${!unrelated_names[@]}"; do
+  name=${unrelated_names[$index]}
+  pattern=${unrelated_patterns[$index]}
+  unrelated_graph="$test_root/$name.textproto"
+  query=$(printf \
+    'inputs("%s", mnemonic("GerbilProjectCompile", //tests/smoke:compile))' \
+    "$pattern")
+  "$bazel_bin" aquery "$query" --output=textproto >"$unrelated_graph"
+  if grep -F 'mnemonic: "GerbilProjectCompile"' "$unrelated_graph" >/dev/null; then
+    printf 'unrelated toolchain input leaked into compile action: %s\n' \
+      "$name" >&2
     exit 1
   fi
 done
