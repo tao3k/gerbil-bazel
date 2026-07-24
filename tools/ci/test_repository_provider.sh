@@ -13,8 +13,34 @@ case "$provider" in
 esac
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+provider_receipt_path="${GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT:-}"
+case "$provider_receipt_path" in
+  "") ;;
+  /*) ;;
+  *) provider_receipt_path="$repo_root/$provider_receipt_path" ;;
+esac
+provider_receipt_tmp=
+write_provider_receipt() {
+  local receipt_json="$1"
+
+  if [[ -n "$provider_receipt_path" ]]; then
+    local receipt_dir
+    receipt_dir="$(dirname "$provider_receipt_path")"
+    mkdir -p "$receipt_dir"
+    provider_receipt_tmp="$(
+      mktemp "$receipt_dir/.repository-provider-test-receipt.XXXXXX"
+    )"
+    printf '%s\n' "$receipt_json" >"$provider_receipt_tmp"
+    mv -f "$provider_receipt_tmp" "$provider_receipt_path"
+    provider_receipt_tmp=
+  fi
+  printf '%s\n' "$receipt_json"
+}
 test_root="$(cd "$(mktemp -d)" && pwd -P)"
 cleanup() {
+  if [[ -n "$provider_receipt_tmp" ]]; then
+    rm -f "$provider_receipt_tmp"
+  fi
   if [[ "${GERBIL_PROVIDER_TEST_KEEP_ROOT:-0}" == 1 ]]; then
     printf 'preserved repository-provider test root: %s\n' "$test_root" >&2
   else
@@ -352,21 +378,24 @@ fi
       exit 1
     fi
     grep -F 'Gerbil capability install digest mismatch' "$mismatch_log" >/dev/null
-    jq -cn \
-      --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
-      --arg provider "$provider" \
-      --arg manifest_install_digest "$manifest_install_digest" \
-      --arg expected_install_digest "$expected_install_digest" \
-      '{
-        schema: $schema,
-        outcome: "passed",
-        provider: $provider,
-        scenario: "install-digest-mismatch",
-        manifestInstallDigest: $manifest_install_digest,
-        expectedInstallDigest: $expected_install_digest,
-        failedClosed: true,
-        sourceFallback: false
-      }'
+    mismatch_receipt_json="$(
+      jq -cn \
+        --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
+        --arg provider "$provider" \
+        --arg manifest_install_digest "$manifest_install_digest" \
+        --arg expected_install_digest "$expected_install_digest" \
+        '{
+          schema: $schema,
+          outcome: "passed",
+          provider: $provider,
+          scenario: "install-digest-mismatch",
+          manifestInstallDigest: $manifest_install_digest,
+          expectedInstallDigest: $expected_install_digest,
+          failedClosed: true,
+          sourceFallback: false
+        }'
+    )"
+    write_provider_receipt "$mismatch_receipt_json"
     exit 0
   fi
   provider_started_at="$SECONDS"
@@ -515,7 +544,8 @@ fi
 project_view_started_at="$SECONDS"
 "$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
 project_view_seconds="$((SECONDS - project_view_started_at))"
-jq -cn \
+provider_receipt_json="$(
+  jq -cn \
     --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
     --arg provider "$provider" \
     --arg selected_provider "$selected_provider" \
@@ -548,4 +578,6 @@ jq -cn \
       toolSeconds: $tool_seconds,
       totalSeconds: ($provider_seconds + $install_seconds + $project_view_seconds + $tool_seconds)
     }'
+)"
+write_provider_receipt "$provider_receipt_json"
 )

@@ -581,6 +581,13 @@ installer-runtime/relocation, and compile-action-identity receipts.  Provider
 receipts that claim installed-runtime verification MUST be persisted in the CI
 artifact rather than existing only in job stdout.
 
+Repository-provider tests MUST construct each receipt once and emit identical
+bytes to stdout and to the explicitly declared receipt path.  Normal prebuilt,
+prebuilt digest-mismatch, adaptive provider, and Source Producer validation
+use distinct files under =.ci/receipts/=.  CI MUST reject stale or missing
+files before upload, and artifact upload MUST use
+=if-no-files-found: error=.
+
 The maintenance record SHOULD preserve:
 
 | Receipt | Required fields |

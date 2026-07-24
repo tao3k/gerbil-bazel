@@ -74,13 +74,19 @@ mod-tidy:
     {{ bazel }} mod tidy --config=lock_update
 
 prebuilt-test:
-    tools/ci/test_repository_provider.sh prebuilt
+    tools/ci/test_repository_provider_receipt.sh \
+      prebuilt \
+      .ci/receipts/repository-provider-prebuilt.json
     GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
       GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE=$(printf '0%.0s' {1..64}) \
-      tools/ci/test_repository_provider.sh prebuilt
+      tools/ci/test_repository_provider_receipt.sh \
+        prebuilt \
+        .ci/receipts/repository-provider-prebuilt-install-digest-mismatch.json
 
 auto-test:
-    tools/ci/test_repository_provider.sh auto
+    tools/ci/test_repository_provider_receipt.sh \
+      auto \
+      .ci/receipts/repository-provider-auto.json
 
 source-package-test:
     tools/ci/test_source_package_repository.sh

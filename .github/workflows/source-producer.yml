@@ -192,8 +192,18 @@ jobs:
       - name: Validate the packaged Linux capability as a consumer
         env:
           GERBIL_PREBUILT_ARCHIVE: ${{ github.workspace }}/.ci/capabilities/gerbil-${{ env.GERBIL_VERSION_LABEL }}-linux-x86_64-${{ steps.gerbil-source-build-identity.outputs.install_digest }}.tar.gz
+          GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT: ${{ github.workspace }}/.ci/receipts/repository-provider-source-producer.json
           GERBIL_VERIFY_GENERATED_INSTALLER_RUNTIME: "1"
-        run: tools/ci/test_repository_provider.sh prebuilt
+        run: |
+          tools/ci/test_repository_provider_receipt.sh \
+            prebuilt \
+            "$GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT"
+          test -s "$GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT"
+          jq -e '
+            .fixture == "provided" and
+            .selectedProvider == "prebuilt" and
+            .installerRuntimeVerified == true
+          ' "$GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT" >/dev/null
 
       - name: Upload the Linux capability
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -209,8 +219,9 @@ jobs:
           name: gerbil-source-producer-${{ runner.os }}-${{ runner.arch }}-receipt
           path: |
             .ci/gerbil-source-build-identity.json
+            .ci/receipts/repository-provider-source-producer.json
             .ci/receipts/*.json
             .ci/gerbil-prefix/bootstrap.receipt.json
             .ci/gerbil-source-build-checkpoint/current.json
             .ci/gerbil-source-build-checkpoint/generations/*/receipt.json
-          if-no-files-found: warn
+          if-no-files-found: error

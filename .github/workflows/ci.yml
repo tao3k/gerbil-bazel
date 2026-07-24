@@ -92,13 +92,20 @@ jobs:
 
       - name: Validate the prebuilt repository provider
         run: |
-          tools/ci/test_repository_provider.sh prebuilt
+          tools/ci/test_repository_provider_receipt.sh \
+            prebuilt \
+            .ci/receipts/repository-provider-prebuilt.json
           GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
             GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE="$(printf '0%.0s' {1..64})" \
-            tools/ci/test_repository_provider.sh prebuilt
+            tools/ci/test_repository_provider_receipt.sh \
+              prebuilt \
+              .ci/receipts/repository-provider-prebuilt-install-digest-mismatch.json
 
       - name: Validate the platform-adaptive repository provider
-        run: tools/ci/test_repository_provider.sh auto
+        run: |
+          tools/ci/test_repository_provider_receipt.sh \
+            auto \
+            .ci/receipts/repository-provider-auto.json
 
       - name: Validate fail-closed source package repositories
         run: tools/ci/test_source_package_repository.sh
@@ -142,7 +149,7 @@ jobs:
           path: |
             .ci/gerbil-version.txt
             .ci/receipts/*.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
   lock-linux-seed:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}
