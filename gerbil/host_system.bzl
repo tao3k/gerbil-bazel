@@ -11,6 +11,20 @@ _ACTION_SCHEDULING_ENVIRONMENT_KEYS = [
     "GERBIL_BUILD_CORES",
 ]
 
+_REPOSITORY_LOCAL_RUNTIME_PATH_KEYS = [
+    "CC",
+    "GERBIL_GCC",
+    "GERBIL_GSC",
+]
+
+def relocatable_action_environment(environment):
+    """Removes repository-local runtime paths resolved later as Bazel execpaths."""
+    return {
+        key: value
+        for key, value in environment.items()
+        if key not in _REPOSITORY_LOCAL_RUNTIME_PATH_KEYS
+    }
+
 def stable_action_environment(
         environment,
         repository_environment):

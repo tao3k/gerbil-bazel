@@ -1,14 +1,25 @@
-load("@gerbil_bazel//gerbil:toolchain.bzl", "gerbil_toolchain")
 load("@gerbil_bazel//gerbil:script.bzl", "gerbil_scheme_executable")
+load("@gerbil_bazel//gerbil:toolchain.bzl", "gerbil_toolchain")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-sh_binary(name = "native_scheme_env", srcs = ["native_scheme_env.sh"])
+sh_binary(
+    name = "native_scheme_env",
+    srcs = ["native_scheme_env.sh"],
+    data = [
+        "gerbil-cc",
+        "gerbil-gcc",
+        "gerbil-gsc",
+    ],
+)
 
 gerbil_scheme_executable(
     name = "install_dependencies",
     compiler = ":gxc",
+    gerbil_cc = "gerbil-cc",
+    gerbil_gcc = "gerbil-gcc",
+    gerbil_gsc = "gerbil-gsc",
     gxpkg = "bin/gxpkg_raw",
     script = "install_gerbil_dependencies.ss",
     data = [

@@ -2,6 +2,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 bazel := env_var_or_default("BAZEL", "bazelisk")
 scenario_receipt := env_var_or_default("SCENARIO_RECEIPT", ".ci/receipts/build-scenarios.json")
+cache_restoration_receipt := env_var_or_default("CACHE_RESTORATION_RECEIPT", ".ci/receipts/cache-restoration.json")
 
 default: check
 
@@ -23,9 +24,14 @@ scenario-test:
     tools/bench/run_build_scenarios.py \
       --bazel {{ bazel }} \
       --receipt {{ scenario_receipt }}
+    tools/bench/run_cache_restoration_scenarios.py \
+      --bazel {{ bazel }} \
+      --build-scenario-receipt {{ scenario_receipt }} \
+      --receipt {{ cache_restoration_receipt }}
 
 scenario-runner-test:
     python3 tools/bench/run_build_scenarios_test.py
+    python3 tools/bench/run_cache_restoration_scenarios_test.py
 
 source-identity-test:
     tools/ci/test_source_build_identity.sh

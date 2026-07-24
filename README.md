@@ -137,6 +137,13 @@ Graph evidence contains source and closure digests, dependency edges, evaluator
 and Gerbil versions, and native ABI identity. Package action logs retain
 upstream build output and execution telemetry.
 
+Structural cache evidence is split into two stable documents.
+`gerbil-bazel.build-scenario-receipt.v1` proves cold, identical, ambient
+environment, and configuration frontiers.
+`gerbil-bazel.cache-restoration-receipt.v1` links that receipt by SHA-256 and
+proves root-source invalidation, dependency reverse-closure invalidation, and
+explicit private-cache restoration in a second fresh Bazel output root.
+
 Each package action also emits one upstream-compatible plain Scheme dependency
 manifest. A parent action maps only its direct dependency manifests into its
 private `GERBIL_PATH` before `gxpkg build`; the manifests already contain the
@@ -151,6 +158,7 @@ The declarative entry points are maintained in `justfile`:
 just query
 just build
 just test
+just scenario-test
 just check
 just lock-check
 ```

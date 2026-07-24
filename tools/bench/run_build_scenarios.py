@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +14,16 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+
+from build_evidence import (
+    action_name,
+    command_output,
+    decode_json_stream,
+    mnemonic_records,
+    remove_tree,
+    resolve_executable,
+    write_json_atomic,
+)
 
 
 SCHEMA = "gerbil-bazel.build-scenario-receipt.v1"
@@ -59,47 +68,14 @@ SCENARIOS = (
 )
 
 
-def resolve_executable(value: str) -> str:
-    resolved = shutil.which(value)
-    if resolved is None:
-        raise RuntimeError(f"required executable is unavailable: {value}")
-    return resolved
-
-
-def decode_json_stream(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="utf-8")
-    decoder = json.JSONDecoder()
-    records: list[dict[str, Any]] = []
-    offset = 0
-    while offset < len(text):
-        while offset < len(text) and text[offset].isspace():
-            offset += 1
-        if offset == len(text):
-            break
-        value, offset = decoder.raw_decode(text, offset)
-        if isinstance(value, dict):
-            records.append(value)
-        elif isinstance(value, list):
-            records.extend(item for item in value if isinstance(item, dict))
-    return records
-
-
 def package_action_name(label: str) -> str:
-    if "//:" not in label:
-        return label
-    return label.rsplit("//:", 1)[1]
+    return action_name(label)
 
 
 def package_action_records(
     records: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    return [
-        record
-        for record in records
-        if record.get("mnemonic") == PACKAGE_BUILD_MNEMONIC
-    ]
+    return mnemonic_records(records, PACKAGE_BUILD_MNEMONIC)
 
 
 def action_label(record: dict[str, Any]) -> str:
@@ -221,24 +197,6 @@ def optimization_decision(
     }
 
 
-def command_output(command: Sequence[str], workspace: Path) -> str:
-    completed = subprocess.run(
-        command,
-        cwd=workspace,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
-    output = completed.stdout.strip()
-    if completed.returncode != 0:
-        diagnostic = completed.stderr.strip() or output
-        raise RuntimeError(f"command failed ({completed.returncode}): {diagnostic}")
-    if not output:
-        raise RuntimeError(f"command produced no output: {' '.join(command)}")
-    return output.splitlines()[-1]
-
-
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bazel", default=os.environ.get("BAZEL", "bazelisk"))
@@ -305,13 +263,7 @@ def main(argv: Sequence[str]) -> int:
         receipt_path = Path(args.receipt)
         if not receipt_path.is_absolute():
             receipt_path = workspace / receipt_path
-        receipt_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = receipt_path.with_suffix(receipt_path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(receipt_path)
+        write_json_atomic(receipt_path, receipt)
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
         return 0 if receipt["status"] == "passed" else 1
     finally:
@@ -325,7 +277,7 @@ def main(argv: Sequence[str]) -> int:
         if args.keep_root:
             print(f"preserved scenario root: {scenario_root}", file=sys.stderr)
         else:
-            shutil.rmtree(scenario_root, ignore_errors=True)
+            remove_tree(scenario_root)
 
 
 if __name__ == "__main__":

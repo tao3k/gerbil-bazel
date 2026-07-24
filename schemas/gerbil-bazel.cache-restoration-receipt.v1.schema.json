@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.cache-restoration-receipt.v1.schema.json",
+  "title": "Gerbil Bazel Cache Restoration Receipt v1",
+  "description": "Structural evidence for source and dependency invalidation plus private action-cache restoration.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "relatedEvidence",
+    "host",
+    "isolation",
+    "packageGraph",
+    "mutations",
+    "scenarios",
+    "decision"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.cache-restoration-receipt.v1"
+    },
+    "status": {
+      "enum": ["passed", "failed"]
+    },
+    "relatedEvidence": {
+      "type": "object",
+      "required": ["schema", "path", "sha256", "status"],
+      "properties": {
+        "schema": {
+          "const": "gerbil-bazel.build-scenario-receipt.v1"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "passed"
+        }
+      },
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "required": ["system", "architecture", "availableLogicalCpuCount"],
+      "properties": {
+        "system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availableLogicalCpuCount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "isolation": {
+      "type": "object",
+      "required": [
+        "workspaceCopy",
+        "privateActionCache",
+        "sharedActionCachesEnabled",
+        "seedOutputUserRootFresh",
+        "restoreOutputUserRootFresh",
+        "rootPreserved"
+      ],
+      "properties": {
+        "workspaceCopy": {
+          "const": true
+        },
+        "privateActionCache": {
+          "const": true
+        },
+        "sharedActionCachesEnabled": {
+          "const": false
+        },
+        "seedOutputUserRootFresh": {
+          "const": true
+        },
+        "restoreOutputUserRootFresh": {
+          "const": true
+        },
+        "rootPreserved": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "packageGraph": {
+      "type": "object",
+      "required": [
+        "target",
+        "rootIdentity",
+        "rootActionLabel",
+        "dependencyIdentity",
+        "dependencyActionLabel"
+      ],
+      "properties": {
+        "target": {
+          "const": "@cache_restoration_graph//:build"
+        },
+        "rootIdentity": {
+          "const": "example.invalid/cache-restoration-root"
+        },
+        "rootActionLabel": {
+          "type": "string",
+          "pattern": "^package_[0-9]+$"
+        },
+        "dependencyIdentity": {
+          "const": "example.invalid/cache-restoration-dependency"
+        },
+        "dependencyActionLabel": {
+          "type": "string",
+          "pattern": "^package_[0-9]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutations": {
+      "type": "object",
+      "required": ["rootSource", "dependencyArchive"],
+      "properties": {
+        "rootSource": {
+          "type": "object",
+          "required": ["path", "baselineSha256", "deltaSha256"],
+          "properties": {
+            "path": {
+              "const": "tests/smoke/cache-restoration-root/src/main.ss"
+            },
+            "baselineSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "deltaSha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "dependencyArchive": {
+          "type": "object",
+          "required": [
+            "reference",
+            "baselineRevision",
+            "baselineSha256",
+            "deltaRevision",
+            "deltaSha256"
+          ],
+          "properties": {
+            "reference": {
+              "const": "example.invalid/cache-restoration-dependency"
+            },
+            "baselineRevision": {
+              "const": "baseline"
+            },
+            "baselineSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "deltaRevision": {
+              "const": "dependency-delta"
+            },
+            "deltaSha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "status",
+        "optimizationCandidate",
+        "failedScenarios",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["ready", "blocked"]
+        },
+        "optimizationCandidate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failedScenarios": {
+          "$ref": "#/$defs/labelSet"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "labelSet": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "id",
+        "intent",
+        "status",
+        "elapsedMs",
+        "exitCode",
+        "actions",
+        "assertions"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "baseline-seed",
+            "root-source-delta",
+            "dependency-source-delta",
+            "baseline-restoration"
+          ]
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": ["passed", "failed"]
+        },
+        "elapsedMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actions": {
+          "type": "object",
+          "required": [
+            "executionLogRecordCount",
+            "gerbilPackageBuildRecordCount",
+            "expectedExecutedLabels",
+            "observedExecutedLabels",
+            "expectedCacheHitLabels",
+            "observedCacheHitLabels"
+          ],
+          "properties": {
+            "executionLogRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gerbilPackageBuildRecordCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "expectedExecutedLabels": {
+              "$ref": "#/$defs/labelSet"
+            },
+            "observedExecutedLabels": {
+              "$ref": "#/$defs/labelSet"
+            },
+            "expectedCacheHitLabels": {
+              "$ref": "#/$defs/labelSet"
+            },
+            "observedCacheHitLabels": {
+              "$ref": "#/$defs/labelSet"
+            }
+          },
+          "additionalProperties": false
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["name", "passed"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passed": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "outputTail": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

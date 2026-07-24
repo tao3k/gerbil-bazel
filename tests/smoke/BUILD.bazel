@@ -2,6 +2,12 @@ load("@gerbil_bazel//gerbil:defs.bzl", "GerbilPackageInfo", "gerbil_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 exports_files([
+    "cache-restoration-dependency/build.ss",
+    "cache-restoration-dependency/gerbil.pkg",
+    "cache-restoration-dependency/src/value.ss",
+    "cache-restoration-root/build.ss",
+    "cache-restoration-root/gerbil.pkg",
+    "cache-restoration-root/src/main.ss",
     "package-graph-dependency/build.ss",
     "package-graph-dependency/gerbil.pkg",
     "package-graph-dependency/src/main.ss",

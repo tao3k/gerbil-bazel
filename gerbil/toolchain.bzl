@@ -34,6 +34,11 @@ def resolved_gerbil_toolchain(ctx):
 def _files_to_run(target):
     return target[DefaultInfo].files_to_run
 
+def _execroot_path(file):
+    if file.short_path.startswith("../"):
+        return "external/" + file.short_path[3:]
+    return file.short_path
+
 def _gerbil_toolchain_impl(ctx):
     tools = [ctx.attr.gxc, ctx.attr.gxi, ctx.attr.gxpkg, ctx.attr.gxtest]
     compile_tools = [ctx.attr.gxc, ctx.attr.gxi, ctx.attr.gxpkg]
@@ -66,6 +71,12 @@ def _gerbil_toolchain_impl(ctx):
         compile_direct_files.append(target[DefaultInfo].files_to_run.executable)
         compile_transitive.append(target[DefaultInfo].default_runfiles.files)
 
+    action_environment = dict(ctx.attr.environment)
+    action_environment.update({
+        "CC": _execroot_path(ctx.file.gerbil_cc),
+        "GERBIL_GCC": _execroot_path(ctx.file.gerbil_gcc),
+        "GERBIL_GSC": _execroot_path(ctx.file.gerbil_gsc),
+    })
     info = GerbilToolchainInfo(
         compile_runfiles = depset(
             direct = compile_direct_files,
@@ -73,9 +84,9 @@ def _gerbil_toolchain_impl(ctx):
         ),
         dependency_libraries = ctx.attr.dependency_libraries[DefaultInfo].files,
         dependency_library_root = ctx.file.dependency_library_root,
-        environment = dict(ctx.attr.environment),
+        environment = action_environment,
         gerbil_as = ctx.attr.gerbil_as,
-        gerbil_cc = ctx.file.gerbil_cc.path,
+        gerbil_cc = _execroot_path(ctx.file.gerbil_cc),
         gerbil_ld = ctx.attr.gerbil_ld,
         gerbil_gsc = ctx.file.gerbil_gsc,
         gxc = _files_to_run(ctx.attr.gxc),
@@ -99,9 +110,9 @@ gerbil_toolchain = rule(
         "dependency_library_root": attr.label(allow_single_file = True, mandatory = True),
         "environment": attr.string_dict(),
         "gerbil_as": attr.string(mandatory = True),
-    "gerbil_cc": attr.label(allow_single_file = True, mandatory = True),
-    "gerbil_gcc": attr.label(allow_single_file = True, mandatory = True),
-    "gerbil_ld": attr.string(mandatory = True),
+        "gerbil_cc": attr.label(allow_single_file = True, mandatory = True),
+        "gerbil_gcc": attr.label(allow_single_file = True, mandatory = True),
+        "gerbil_ld": attr.string(mandatory = True),
         "gerbil_gsc": attr.label(allow_single_file = True, mandatory = True),
         "gxc": attr.label(cfg = "exec", executable = True, mandatory = True),
         "gxi": attr.label(cfg = "exec", executable = True, mandatory = True),

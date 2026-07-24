@@ -1,0 +1,2 @@
+(package: example.invalid/cache-restoration-root
+ depend: ("example.invalid/cache-restoration-dependency@baseline"))

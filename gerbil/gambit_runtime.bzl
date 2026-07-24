@@ -112,7 +112,6 @@ def _materialized_compiler(repository_ctx, compiler_command):
 def _materialized_gsc(
         repository_ctx,
         raw_gsc,
-        producer_compiler,
         producer_options,
         dynamic_link_options):
     wrapper = "gerbil-gsc"
@@ -121,7 +120,8 @@ def _materialized_gsc(
         """#!/usr/bin/env bash
 set -euo pipefail
 raw_gsc={raw_gsc}
-producer_compiler={producer_compiler}
+toolchain_root=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd)
+producer_compiler="$toolchain_root/gerbil-cc"
 producer_object_options={producer_object_options}
 producer_dynamic_options={producer_dynamic_options}
 platform_dynamic_link_options={platform_dynamic_link_options}
@@ -255,7 +255,6 @@ fi
 exit "$status"
 """.format(
             platform_dynamic_link_options = _shell_quote(dynamic_link_options),
-            producer_compiler = _shell_quote(str(producer_compiler)),
             producer_dynamic_options = _shell_quote(producer_options.dynamic),
             producer_object_options = _shell_quote(producer_options.object),
             raw_gsc = _shell_quote(str(raw_gsc)),
@@ -395,7 +394,6 @@ def normalized_gambit_runtime(
     gsc = _materialized_gsc(
         repository_ctx,
         gerbil_gsc,
-        compiler.path,
         producer_options,
         gambit_dynamic_link_options,
     )

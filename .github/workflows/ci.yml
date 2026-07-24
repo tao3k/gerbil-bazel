@@ -126,14 +126,26 @@ jobs:
       - name: Validate build scenario frontiers
         run: |
           receipt=.ci/receipts/build-scenarios-${{ runner.os }}-${{ runner.arch }}.json
+          cache_receipt=.ci/receipts/cache-restoration-${{ runner.os }}-${{ runner.arch }}.json
           tools/bench/run_build_scenarios.py --receipt "$receipt"
+          tools/bench/run_cache_restoration_scenarios.py \
+            --build-scenario-receipt "$receipt" \
+            --receipt "$cache_receipt"
           jq -e '
             .schema == "gerbil-bazel.build-scenario-receipt.v1" and
             .status == "passed" and
             .decision.status == "ready"
           ' "$receipt" >/dev/null
+          jq -e '
+            .schema == "gerbil-bazel.cache-restoration-receipt.v1" and
+            .status == "passed" and
+            .decision.status == "ready" and
+            (.scenarios | length) == 4
+          ' "$cache_receipt" >/dev/null
           jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
+          jq -e '."$id" | endswith("gerbil-bazel.cache-restoration-receipt.v1.schema.json")' \
+            schemas/gerbil-bazel.cache-restoration-receipt.v1.schema.json >/dev/null
 
       - name: Validate package action identity boundary
         run: tools/ci/test_package_action_boundary.sh

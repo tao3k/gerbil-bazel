@@ -8,6 +8,7 @@ load(
 )
 load(
     ":host_system.bzl",
+    "relocatable_action_environment",
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
     "stable_action_environment",
@@ -102,7 +103,13 @@ def _tool_rules():
         rules.append("""sh_binary(
     name = {name},
     srcs = [{wrapper}],
-    data = [{raw}, \"native_abi.txt\"],
+    data = [
+        {raw},
+        \"gerbil-cc\",
+        \"gerbil-gcc\",
+        \"gerbil-gsc\",
+        \"native_abi.txt\",
+    ],
 )""".format(
             name = repr(name),
             raw = repr("bin/{}_raw".format(name)),
@@ -178,7 +185,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         str(runtime.compiler_identity_path),
     )
     environment = stable_action_environment(
-        runtime.environment,
+        relocatable_action_environment(runtime.environment),
         repository_environment,
     )
     tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
@@ -200,6 +207,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{GXPKG_SCHEME}}": "#f",
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
+        "{{RUNFILES_REPOSITORY}}": _shell_quote(repository_ctx.name),
         "{{ENVIRONMENT_SETTERS}}": _scheme_environment_setters(environment),
     }
     repository_ctx.template(
@@ -266,9 +274,9 @@ def _local_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-        "{{GERBIL_CC}}": repr("gerbil-cc"),
-        "{{GERBIL_GCC}}": repr("gerbil-gcc"),
-        "{{GERBIL_LD}}": repr(host.gerbil_ld),
+            "{{GERBIL_CC}}": repr("gerbil-cc"),
+            "{{GERBIL_GCC}}": repr("gerbil-gcc"),
+            "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(fingerprint),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),
             "{{SYSTEM_MEMORY_BYTES}}": repr(host.system_memory_bytes),

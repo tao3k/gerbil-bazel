@@ -103,6 +103,16 @@ Failures are ordered by ownership:
 A structural failure sets =decision.status= to =blocked=. A complete structural
 pass sets it to =ready=.
 
+* Related cache restoration evidence
+
+This v1 receipt remains exactly four scenarios. Root-source delta, dependency
+reverse-closure delta, and cross-output-root cache restoration are owned by the
+sibling =gerbil-bazel.cache-restoration-receipt.v1= contract in RFC 0009.
+
+The sibling receipt requires a passed build-scenario receipt and links it by
+path and SHA-256. This preserves v1 stability while making cache restoration a
+separate fail-closed structural gate.
+
 * Boundaries
 
 The Python runner may orchestrate Bazel and decode Bazel execution logs because
@@ -143,4 +153,6 @@ runtime artifact and is not committed.
 - JSON Schema validation for the receipt;
 - a real four-scenario run on Darwin and Linux CI;
 - exact package action frontiers from Bazel execution logs;
+- a separately schema-owned RFC 0009 sibling for source/dependency deltas and
+  cross-output-root cache restoration;
 - no old package graph target or mnemonic in the runner, schema, or RFC.

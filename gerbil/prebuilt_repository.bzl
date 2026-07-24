@@ -3,6 +3,7 @@
 load(":gambit_runtime.bzl", "normalized_gambit_runtime")
 load(
     ":host_system.bzl",
+    "relocatable_action_environment",
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
     "stable_action_environment",
@@ -231,7 +232,13 @@ def _tool_rules():
         """sh_binary(
     name = {name},
     srcs = [{wrapper}],
-    data = [{raw}, "native_abi.txt"],
+    data = [
+        {raw},
+        "gerbil-cc",
+        "gerbil-gcc",
+        "gerbil-gsc",
+        "native_abi.txt",
+    ],
 )""".format(
             name = repr(name),
             raw = repr("bin/{}_raw".format(name)),
@@ -316,7 +323,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         host.system_cpu_count,
     )
     environment = stable_action_environment(
-        runtime.environment,
+        relocatable_action_environment(runtime.environment),
         repository_environment,
     )
     tool_directory = str(repository_ctx.path(tools.absolute["gxi"]).dirname)
@@ -339,6 +346,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "{{GXPKG_SCHEME}}": "#f",
         "{{NATIVE_ABI}}": _shell_quote(native_abi),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
+        "{{RUNFILES_REPOSITORY}}": _shell_quote(repository_ctx.name),
         "{{ENVIRONMENT_SETTERS}}": _scheme_environment_setters(environment),
     }
     repository_ctx.template(
