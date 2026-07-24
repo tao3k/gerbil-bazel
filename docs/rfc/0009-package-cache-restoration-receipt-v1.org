@@ -1,0 +1,213 @@
+#+title: RFC 0009: Package Cache Restoration Receipt v1
+#+author: gerbil-bazel maintainers
+#+language: en
+
+* Status
+
+Implementation status: Complete.
+
+- Decision: Accepted
+- Implementation: In progress
+- Schema: =gerbil-bazel.cache-restoration-receipt.v1=
+- Structural frontier: RFC 0008
+- Package graph: RFC 0006
+
+* Decision
+
+Source and dependency delta evidence is a sibling of
+=gerbil-bazel.build-scenario-receipt.v1=. It does not add fields or scenarios to
+that stable v1 contract.
+
+The cache-restoration runner first requires a passed RFC 0008 receipt and records
+its path and SHA-256. It then uses an isolated workspace copy, a private
+repository cache, and a private action cache. Shared disk and remote caches are
+not evidence.
+
+The runner emits =gerbil-bazel.cache-restoration-receipt.v1= only after four
+ordered structural scenarios.
+
+#+begin_src mermaid
+flowchart LR
+    B["passed build-scenario-receipt.v1"] --> S["baseline seed"]
+    S --> R["root source delta"]
+    R --> D["dependency archive delta"]
+    D --> N["new output user root"]
+    N --> C["baseline cache restoration"]
+    S -->|"dependency + root execute"| E{"all exact frontiers pass?"}
+    R -->|"root executes"| E
+    D -->|"dependency + root execute"| E
+    C -->|"dependency + root are cache hits"| E
+    E -->|"yes"| A["decision: ready"]
+    E -->|"no"| F["decision: blocked"]
+#+end_src
+
+* Why this is a separate receipt
+
+RFC 0008 answers whether one configured package graph has correct cold, repeated,
+ambient-environment, and configuration frontiers. This RFC answers a different
+question: whether content deltas invalidate the minimal reverse closure and
+whether the original closure can be restored in a new Bazel output root.
+
+Combining both questions would change the meaning and cardinality of the stable
+build-scenario v1 document. The sibling receipt preserves both contracts and
+links them by content digest.
+
+* Isolation model
+
+The runner copies the current gerbil-bazel workspace into a temporary directory.
+It excludes VCS state, Bazel output links, runtime receipts, local caches, and
+development-environment state. The real checkout is never mutated.
+
+Two fresh Bazel =output_user_root= directories are created:
+
+1. the seed root executes baseline and delta scenarios;
+2. the restoration root has no local action cache and must restore baseline
+   package actions from the private disk cache.
+
+One private repository cache and one private action cache are scoped beneath the
+temporary scenario root. Their paths never enter the receipt. The runner shuts
+down both Bazel servers, restores owner-write permission on Bazel tree-artifact
+directories, and removes the complete temporary root unless =--keep-root= is
+declared.
+
+* Text-only package fixture
+
+The cache graph contains one root package and one dependency package. Both use
+ordinary =gerbil.pkg= and =build.ss= files through the public module extension.
+
+The dependency archive is generated at runtime from tracked text sources. The
+tar entries and gzip header have normalized ownership, modes, lexical order, and
+timestamps. No binary archive or generated descriptor is committed.
+
+The isolated =MODULE.bazel= declares:
+
+- one =gerbil.package= root;
+- one =gerbil.dependency= lock;
+- one =use_repo= projection.
+
+The dependency URL is an immutable =file:= URI inside the temporary scenario
+root with an exact SHA-256. Bazel refreshes only the temporary module lock when
+the dependency revision changes.
+
+* Scenarios
+
+** =baseline-seed=
+
+The dependency and root package actions execute. Their outputs seed the private
+action cache.
+
+** =root-source-delta=
+
+Only the root Scheme source changes. The root package action executes and the
+dependency package action does not execute.
+
+** =dependency-source-delta=
+
+The dependency Scheme source changes, a new deterministic archive is generated,
+and the isolated dependency revision and digest change. The dependency action
+and its root reverse closure both execute.
+
+** =baseline-restoration=
+
+All sources, the dependency revision, and the dependency archive digest return to
+baseline. The runner switches to the second fresh output root. Neither package
+action executes; the execution log must report explicit private-cache hits for
+both package labels.
+
+#+begin_src mermaid
+sequenceDiagram
+    participant W as "isolated workspace"
+    participant A as "seed output root"
+    participant C as "private action cache"
+    participant B as "restore output root"
+    W->>A: "build baseline closure"
+    A->>C: "store dependency and root actions"
+    W->>A: "change root source"
+    A->>A: "execute root only"
+    W->>A: "change dependency archive"
+    A->>A: "execute dependency and root"
+    W->>W: "restore baseline bytes and lock"
+    W->>B: "build from a fresh output root"
+    B->>C: "request baseline action keys"
+    C-->>B: "explicit dependency and root cache hits"
+#+end_src
+
+* Receipt contract
+
+The receipt records:
+
+- related RFC 0008 path, schema, status, and SHA-256;
+- host system, architecture, and available logical CPU count;
+- isolation decisions without temporary absolute paths;
+- package identities and graph-derived action labels;
+- baseline and delta source/archive SHA-256 values;
+- exact expected and observed executed labels;
+- exact expected and observed cache-hit labels;
+- named assertions and bounded failure output;
+- a fail-closed optimization decision.
+
+Package roles are resolved from =package-graph.v1= identities. The runner never
+assumes that the root is =package_0= or that the dependency is =package_1=.
+
+Elapsed milliseconds are telemetry. No wall-clock threshold or fixed CPU count
+is part of the structural pass.
+
+* Performance boundary
+
+The accepted Darwin arm64 receipt recorded =18,827 ms= for baseline
+seeding, =5,720 ms= for a root-source delta, =17,250 ms= for a
+dependency-source delta, and =10,686 ms= for restoration into a second
+fresh output root.  The restoration executed no Gerbil package action and
+reported explicit cache hits for both package action labels.
+
+The cache fixture is intentionally minimal and independent of the full
+=gerbil-utils= archive. The feature adds exactly four tiny package builds and
+two output roots. It does not repeat the RFC 0008 real dependency benchmark or
+download another production dependency closure.
+
+The CI report must retain the step duration so a sustained platform regression
+can be audited separately from structural correctness.
+
+* Optimization decision
+
+Failure ownership is ordered:
+
+1. repair baseline closure seeding;
+2. repair root-only source invalidation;
+3. repair dependency reverse-closure invalidation;
+4. repair private action-cache restoration;
+5. only then admit source/dependency timing work.
+
+A failure sets =decision.status= to =blocked=. Four exact frontiers set it to
+=ready=.
+
+* Commands
+
+#+begin_src sh
+just scenario-runner-test
+just scenario-test
+#+end_src
+
+The default sibling receipts are:
+
+- =.ci/receipts/build-scenarios.json=
+- =.ci/receipts/cache-restoration.json=
+
+Both paths are runtime artifacts and are not committed.
+
+* Required validation
+
+The implementation gate passed all 17 Bazel tests, all 10 scenario-runner
+unit tests, the auto and prebuilt provider receipts, and the fail-closed
+prebuilt install-digest mismatch receipt.
+
+- deterministic dependency archive bytes and SHA-256;
+- package role discovery by graph identity rather than package index;
+- exact root-source and dependency reverse-closure frontiers;
+- explicit cache-hit labels in a second fresh output root;
+- strict cache-restoration v1 schema ownership;
+- content-addressed link to one passed build-scenario v1 receipt;
+- no mutation of the real checkout;
+- no committed binary fixture or generated dependency archive;
+- Linux immutable-prebuilt and macOS Homebrew-host CI;
+- recorded CI step duration below the existing job timeout.

@@ -1,0 +1,158 @@
+#+title: RFC 0008: Package Build Scenario Receipt v1
+#+author: gerbil-bazel maintainers
+#+language: en
+
+* Status
+
+- Decision: Accepted
+- Implementation: Complete
+- Schema: =gerbil-bazel.build-scenario-receipt.v1=
+- Package graph: RFC 0006
+
+* Purpose
+
+This RFC defines structural evidence required before optimizing Gerbil package
+build time. Wall-clock time alone cannot distinguish an invalid action key, an
+over-broad dependency edge, a changed toolchain, a cold Bazel output root, or
+host pressure.
+
+The suite first proves which =GerbilPackageBuild= actions execute. Timing
+optimization is admissible only after all structural frontiers pass.
+
+#+begin_src mermaid
+flowchart LR
+    C["package-cold"] --> F1["dependency + root execute"]
+    W["identical-rerun"] --> F2["no package action executes"]
+    E["ambient-environment-delta"] --> F3["package action remains unchanged"]
+    B["configuration-delta"] --> F4["new Bazel configuration executes"]
+    F1 --> D{"all frontiers pass?"}
+    F2 --> D
+    F3 --> D
+    F4 --> D
+    D -->|"yes"| T["measure duration and RSS"]
+    D -->|"no"| R["repair first structural owner"]
+#+end_src
+
+* Isolation
+
+The runner creates one fresh =output_user_root= and a private repository cache.
+Shared disk and remote action caches are disabled. The same isolated root is
+reused across the four ordered scenarios so the identical-rerun assertion is
+meaningful.
+
+The default target is =@root_package_with_dependency//:build=. Its generated
+closure contains one dependency action and one root action.
+
+* Scenarios
+
+** =package-cold=
+
+The first build in the fresh output root must execute =package_1= and
+=package_0=. Repository evaluation and dependency archive acquisition may also
+run, but they are not package actions.
+
+** =identical-rerun=
+
+The exact same target and configuration must execute zero
+=GerbilPackageBuild= actions.
+
+** =ambient-environment-delta=
+
+The runner changes one ambient Bazel =--action_env= value. No package action
+executes because generated package actions use an explicit declared
+environment.
+
+This scenario proves ambient environment isolation. Package-graph
+=environment= declarations remain explicit repository inputs.
+
+** =configuration-delta=
+
+The runner changes the Bazel compilation mode. The distinct configured package
+graph must execute both package actions.
+
+* Receipt
+
+Each scenario records:
+
+- intent and configuration;
+- elapsed milliseconds and exit code;
+- execution-log record count;
+- =GerbilPackageBuild= record count;
+- expected and observed executed package labels;
+- observed cache-hit labels;
+- named structural assertions;
+- a bounded output tail on failure.
+
+The enclosing receipt records host system, architecture, available logical CPU
+count, Bazel version, Bazel-selected Gerbil version, isolation policy, and one
+optimization decision.
+
+No machine-specific CPU count or wall-clock threshold is checked into the
+contract.
+
+* Optimization decision
+
+Failures are ordered by ownership:
+
+1. repair cold package closure execution;
+2. repair identical package action reuse;
+3. repair ambient environment isolation;
+4. repair configured graph invalidation;
+5. only then measure package action duration.
+
+A structural failure sets =decision.status= to =blocked=. A complete structural
+pass sets it to =ready=.
+
+* Related cache restoration evidence
+
+This v1 receipt remains exactly four scenarios. Root-source delta, dependency
+reverse-closure delta, and cross-output-root cache restoration are owned by the
+sibling =gerbil-bazel.cache-restoration-receipt.v1= contract in RFC 0009.
+
+The sibling receipt requires a passed build-scenario receipt and links it by
+path and SHA-256. This preserves v1 stability while making cache restoration a
+separate fail-closed structural gate.
+
+* Boundaries
+
+The Python runner may orchestrate Bazel and decode Bazel execution logs because
+scenario comparison is a host-level build concern.
+
+It does not implement:
+
+- Gerbil dependency scheduling;
+- =gerbil.pkg= evaluation;
+- =gxpkg= lifecycle;
+- compiler worker admission;
+- package installation or linking;
+- toolchain acquisition.
+
+Those remain owned by the generated graph, Scheme runner, upstream Gerbil
+interfaces, and registered capability.
+
+* Commands
+
+#+begin_src sh
+just scenario-runner-test
+just scenario-test
+#+end_src
+
+When Bazelisk is not on =PATH=:
+
+#+begin_src sh
+BAZEL=/absolute/path/to/bazelisk just scenario-test
+#+end_src
+
+The default receipt is =.ci/receipts/build-scenarios.json=. The =.ci= tree is a
+runtime artifact and is not committed.
+
+* Required validation
+
+- Python unit tests for JSON-stream decoding, canonical label normalization,
+  scenario identities, and failure ownership;
+- JSON Schema validation for the receipt;
+- a real four-scenario run on Darwin and Linux CI;
+- exact package action frontiers from Bazel execution logs;
+- a separately schema-owned RFC 0009 sibling for source/dependency deltas and
+  cross-output-root cache restoration;
+- no old package graph target or mnemonic in the runner, schema, or RFC.

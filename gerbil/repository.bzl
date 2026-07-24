@@ -4,12 +4,15 @@ load(
     ":gambit_runtime.bzl",
     "discover_gambit_compiler_command",
     "discover_gambit_home",
+    "materialize_gambit_link_runtime",
     "normalized_gambit_runtime",
 )
 load(
     ":host_system.bzl",
+    "relocatable_action_environment",
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
+    "stable_action_environment",
 )
 
 _GERBIL_TOOLS = {
@@ -73,6 +76,20 @@ def _environment_args(environment):
         for key in sorted(environment.keys())
     ])
 
+def _scheme_string(value):
+    return json.encode(value)
+
+def _scheme_environment_setters(environment):
+    if not environment:
+        return "  (void)"
+    return "\n".join([
+        "  (setenv {} {})".format(
+            _scheme_string(key),
+            _scheme_string(environment[key]),
+        )
+        for key in sorted(environment.keys())
+    ])
+
 def _environment_dict(environment):
     entries = []
     for key in sorted(environment.keys()):
@@ -87,7 +104,13 @@ def _tool_rules():
         rules.append("""sh_binary(
     name = {name},
     srcs = [{wrapper}],
-    data = [{raw}, \"native_abi.txt\"],
+    data = [
+        {raw},
+        \"gerbil-cc\",
+        \"gerbil-gcc\",
+        \"gerbil-gsc\",
+        \"native_abi.txt\",
+    ],
 )""".format(
             name = repr(name),
             raw = repr("bin/{}_raw".format(name)),
@@ -119,87 +142,6 @@ def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
         fail("Gerbil native ABI fingerprint must be 40 hexadecimal characters")
     return fingerprint
 
-def _safe_relative_path(value, field):
-    if not value or value.startswith("/") or value == ".." or value.startswith("../") or "/../" in value or value.endswith("/.."):
-        fail("{} must be a non-empty relative path without parent traversal: {}".format(field, value))
-    return value
-
-def _quoted_strings(value):
-    strings = []
-    parts = value.split("\"")
-    if len(parts) % 2 == 0:
-        fail("unterminated quoted string in Gerbil package manifest")
-    for index, part in enumerate(parts):
-        if index % 2 == 1:
-            strings.append(part)
-    return strings
-
-def _dependency_repository_from_manifest_entry(dependency):
-    revision_index = dependency.find("@")
-    if revision_index < 0:
-        return dependency
-    return dependency[:revision_index]
-
-def _package_name_from_manifest(manifest):
-    package_index = manifest.find("package:")
-    if package_index < 0:
-        return ""
-    tail = manifest[package_index + len("package:"):]
-    tail = tail.replace("(", " ")
-    tail = tail.replace(")", " ")
-    tail = tail.replace("\n", " ")
-    tail = tail.replace("\r", " ")
-    tail = tail.replace("\t", " ")
-    for field in tail.split(" "):
-        if field:
-            return field
-    return ""
-
-def _dependency_package_name(repository_ctx, project_root, dependency):
-    repository = _dependency_repository_from_manifest_entry(dependency)
-    package_manifest = repository_ctx.path("{}/.gerbil/pkg/{}/gerbil.pkg".format(
-        project_root,
-        repository,
-    ))
-    repository_ctx.watch(package_manifest)
-    if package_manifest.exists:
-        package = _package_name_from_manifest(repository_ctx.read(package_manifest))
-        if package:
-            return package
-    return repository
-
-def _project_dependency_packages(repository_ctx):
-    if repository_ctx.attr.project_dependency_packages:
-        return repository_ctx.attr.project_dependency_packages
-    if repository_ctx.attr.project_root_marker == None:
-        return []
-
-    project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
-    manifest = repository_ctx.read(repository_ctx.attr.project_root_marker)
-    depend_index = manifest.find("depend:")
-    if depend_index < 0:
-        return []
-    policy_index = manifest.find("\n policy:", depend_index)
-    if policy_index < 0:
-        policy_index = len(manifest)
-    packages = []
-    seen = {}
-    for dependency in _quoted_strings(manifest[depend_index:policy_index]):
-        package = _dependency_package_name(repository_ctx, project_root, dependency)
-        if package and package not in seen:
-            packages.append(package)
-            seen[package] = True
-    return packages
-
-def _project_dependency_policy(repository_ctx, dependency_state):
-    if dependency_state:
-        if repository_ctx.attr.project_dependency_packages:
-            return "project-dependency-override"
-        return "project-package-manifest"
-    if repository_ctx.attr.dependency_roots:
-        return "declared-roots"
-    return "host-only"
-
 def _link_dependency_roots(repository_ctx):
     repository_ctx.file("lib/.root", "gerbil-bazel dependency root\n")
     for index, root in enumerate(repository_ctx.attr.dependency_roots):
@@ -207,41 +149,6 @@ def _link_dependency_roots(repository_ctx):
         if not path.exists:
             fail("Gerbil dependency root does not exist: {}".format(root))
         repository_ctx.symlink(path, "lib/dependency-{}".format(index))
-
-def _link_project_dependencies(repository_ctx):
-    packages = _project_dependency_packages(repository_ctx)
-    if not packages:
-        return {}
-    if repository_ctx.attr.project_root_marker == None:
-        fail("project_root_marker is required when project dependency packages are set")
-
-    relative_path = _safe_relative_path(
-        repository_ctx.attr.project_library_relative_path,
-        "project_library_relative_path",
-    )
-    project_root = repository_ctx.path(repository_ctx.attr.project_root_marker).dirname
-    library_root = repository_ctx.path(str(project_root) + "/" + relative_path)
-    state = {}
-    names = {}
-    linked = {}
-    for package in packages:
-        package = _safe_relative_path(package, "project dependency package")
-        if package in names:
-            fail("duplicate project dependency package: {}".format(package))
-        names[package] = True
-        dependency = repository_ctx.path(str(library_root) + "/" + package)
-        repository_ctx.watch(dependency)
-        if dependency.exists:
-            repository_ctx.watch_tree(dependency)
-            link_name = package.split("/")[0]
-            if link_name not in linked:
-                link_root = repository_ctx.path(str(library_root) + "/" + link_name)
-                repository_ctx.symlink(link_root, "lib/" + link_name)
-                linked[link_name] = True
-            state[package] = "ready"
-        else:
-            state[package] = "missing"
-    return state
 
 def _local_gerbil_repository_impl(repository_ctx):
     host = resolve_host_environment(
@@ -253,8 +160,9 @@ def _local_gerbil_repository_impl(repository_ctx):
     compiler_command = host.gerbil_cc
     if not repository_ctx.os.environ.get("GERBIL_CC", ""):
         compiler_command = discover_gambit_compiler_command(repository_ctx, gambit_home)
+    repository_environment = dict(repository_ctx.attr.environment)
     declared_environment = dict(host.environment)
-    declared_environment.update(repository_ctx.attr.environment)
+    declared_environment.update(repository_environment)
     runtime = normalized_gambit_runtime(
         repository_ctx,
         gambit_home,
@@ -262,6 +170,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         declared_environment,
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
         gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
+    )
+    gambit_link_runtime = materialize_gambit_link_runtime(
+        repository_ctx,
+        gambit_home,
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -277,10 +189,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         gerbil_cc,
         str(runtime.compiler_identity_path),
     )
-    environment = runtime.environment
-    environment["GERBIL_BUILD_CORES"] = build_cores.value
-    environment["GERBIL_BAZEL_CPU_COUNT"] = host.system_cpu_count
-    environment["GERBIL_BAZEL_MEMORY_BYTES"] = host.system_memory_bytes
+    environment = stable_action_environment(
+        relocatable_action_environment(runtime.environment),
+        repository_environment,
+    )
     tool_directory = str(repository_ctx.path(tools["gxi"]).dirname)
     inherited_path = environment.get(
         "PATH",
@@ -297,9 +209,11 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{ENVIRONMENT}}": _environment_exports(environment),
         "{{GXI}}": _shell_quote(tools["gxi"]),
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
+        "{{GXPKG_SCHEME}}": "#f",
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
-        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
+        "{{RUNFILES_REPOSITORY}}": _shell_quote(repository_ctx.name),
+        "{{ENVIRONMENT_SETTERS}}": _scheme_environment_setters(environment),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -308,10 +222,18 @@ def _local_gerbil_repository_impl(repository_ctx):
         executable = True,
     )
     repository_ctx.template(
-        "install_gerbil_dependencies.sh",
+        "install_gerbil_dependencies.ss",
         repository_ctx.attr._install_dependencies_template,
         substitutions,
         executable = True,
+    )
+    repository_ctx.symlink(
+        repository_ctx.path(repository_ctx.attr._functional),
+        "functional.ss",
+    )
+    repository_ctx.symlink(
+        repository_ctx.path(repository_ctx.attr._resource_policy),
+        "resource_policy.ss",
     )
 
     for name, path in tools.items():
@@ -327,15 +249,13 @@ def _local_gerbil_repository_impl(repository_ctx):
         )
 
     _link_dependency_roots(repository_ctx)
-    project_dependency_state = _link_project_dependencies(repository_ctx)
     repository_ctx.file("native_abi.txt", fingerprint + "\n")
     repository_ctx.file(
         "toolchain.receipt.json",
         json.encode_indent({
             "environment": environment,
-            "dependencyPolicy": _project_dependency_policy(repository_ctx, project_dependency_state),
-            "dependencyState": project_dependency_state,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gambitStaticLinkAvailable": gambit_link_runtime.available,
             "gambitProducerOptions": {
                 "dynamic": runtime.producer_dynamic_options,
                 "object": runtime.producer_object_options,
@@ -359,10 +279,13 @@ def _local_gerbil_repository_impl(repository_ctx):
         {
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
+            "{{GAMBIT_LINK_LIBRARIES}}": repr(host.gambit_link_libraries),
+            "{{GAMBIT_LIBRARY_FILES}}": repr(gambit_link_runtime.files),
+            "{{GAMBIT_STATIC_LINK_AVAILABLE}}": repr(gambit_link_runtime.available),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
-        "{{GERBIL_CC}}": repr("gerbil-cc"),
-        "{{GERBIL_GCC}}": repr("gerbil-gcc"),
-        "{{GERBIL_LD}}": repr(host.gerbil_ld),
+            "{{GERBIL_CC}}": repr("gerbil-cc"),
+            "{{GERBIL_GCC}}": repr("gerbil-gcc"),
+            "{{GERBIL_LD}}": repr(host.gerbil_ld),
             "{{NATIVE_ABI}}": repr(fingerprint),
             "{{SYSTEM_CPU_COUNT}}": repr(host.system_cpu_count),
             "{{SYSTEM_MEMORY_BYTES}}": repr(host.system_memory_bytes),
@@ -381,9 +304,6 @@ local_gerbil_repository = repository_rule(
         "dependency_roots": attr.string_list(),
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
-        "project_dependency_packages": attr.string_list(),
-        "project_library_relative_path": attr.string(default = ".gerbil/lib"),
-        "project_root_marker": attr.label(allow_single_file = True),
         "tool_paths": attr.string_dict(),
         "_build_template": attr.label(
             allow_single_file = True,
@@ -391,7 +311,7 @@ local_gerbil_repository = repository_rule(
         ),
         "_install_dependencies_template": attr.label(
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
+            default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
         ),
         "_native_abi_probe": attr.label(
             allow_single_file = True,
@@ -405,9 +325,13 @@ local_gerbil_repository = repository_rule(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:native_tool.sh.tpl",
         ),
-        "_resource_guard": attr.label(
+        "_functional": attr.label(
+            default = "//gerbil:functional.ss",
             allow_single_file = True,
-            default = "@gerbil_bazel//gerbil:resource_guard.ss",
+        ),
+        "_resource_policy": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_policy.ss",
         ),
     },
     environ = [

@@ -5,21 +5,77 @@ package(default_visibility = ["//visibility:public"])
 
 toolchain_type(name = "toolchain_type")
 
+exports_files(["functional.ss"])
+
+exports_files(["package_manifest.ss"])
+
 sh_binary(
     name = "native_abi_fingerprint",
     srcs = ["native_abi_fingerprint.sh"],
 )
 
-sh_binary(
-    name = "run_project",
-    srcs = ["run_project.sh"],
+sh_test(
+    name = "run_package_test",
+    srcs = ["run_package_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :package_runner.ss)",
+        "$(rlocationpath :validate_package_execution_telemetry_v1.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.package-execution-telemetry.v1.schema.json)",
+    ],
+    data = [
+        ":functional.ss",
+        ":package_runner.ss",
+        ":resource_policy.ss",
+        ":validate_package_execution_telemetry_v1.ss",
+        "//schemas:gerbil-bazel.package-execution-telemetry.v1.schema.json",
+        "@local_gerbil//:gxi",
+    ],
 )
 
 sh_test(
-    name = "run_project_test",
-    srcs = ["run_project_test.sh"],
-    args = ["$(rlocationpath :run_project)"],
-    data = [":run_project"],
+    name = "package_manifest_test",
+    srcs = [":package_manifest_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :package_manifest.ss)",
+        "$(rlocationpath //tests/smoke:package-manifest/gerbil.pkg)",
+    ],
+    data = [
+        ":package_manifest.ss",
+        "//tests/smoke:package-manifest/build.ss",
+        "//tests/smoke:package-manifest/gerbil.pkg",
+        "//tests/smoke:package-manifest/src/main.ss",
+        "@local_gerbil//:gxi",
+    ],
+)
+
+sh_test(
+    name = "package_graph_repository_test",
+    srcs = [":package_graph_repository_test.sh"],
+    args = [
+        "$(rlocationpath @root_package//:package-graph.json)",
+        "$(rlocationpath @root_package//:build_receipt)",
+    ],
+    data = [
+        "@root_package//:build_receipt",
+        "@root_package//:package-graph.json",
+    ],
+)
+
+sh_test(
+    name = "package_graph_dependency_repository_test",
+    srcs = [":package_graph_dependency_repository_test.sh"],
+    args = [
+        "$(rlocationpath @root_package_with_dependency//:package-graph.json)",
+        "$(rlocationpath @root_package_with_dependency//:build_receipt)",
+        "$(rlocationpath @root_package_with_dependency//:gxpkg_manifest)",
+    ],
+    data = [
+        "@root_package_with_dependency//:build_receipt",
+        "@root_package_with_dependency//:gxpkg_manifest",
+        "@root_package_with_dependency//:package-graph.json",
+    ],
 )
 
 sh_test(
@@ -43,44 +99,57 @@ sh_test(
         "$(rlocationpath :resource_guard.ss)",
     ],
     data = [
+        ":functional.ss",
         ":resource_guard.ss",
+        ":resource_policy.ss",
         "@local_gerbil//:gxi",
     ],
 )
 
 sh_test(
-    name = "project_receipt_schema_test",
-    srcs = ["project_receipt_schema_test.sh"],
+    name = "package_receipt_schema_test",
+    srcs = ["package_receipt_schema_test.sh"],
     args = [
         "$(rlocationpath @local_gerbil//:gxi)",
         "$(rlocationpath :validate_json.ss)",
-        "$(rlocationpath //schemas:gerbil-bazel.project-receipt.v1.schema.json)",
+        "$(rlocationpath //schemas:gerbil-bazel.package-receipt.v1.schema.json)",
     ],
     data = [
         ":validate_json.ss",
-        "//schemas:gerbil-bazel.project-receipt.v1.schema.json",
+        "//schemas:gerbil-bazel.package-receipt.v1.schema.json",
         "@local_gerbil//:gxi",
     ],
 )
 
 sh_test(
-    name = "project_receipt_v1_instances_test",
-    srcs = ["project_receipt_v1_instances_test.sh"],
+    name = "package_request_schema_test",
+    srcs = ["package_request_schema_test.sh"],
     args = [
         "$(rlocationpath @local_gerbil//:gxi)",
-        "$(rlocationpath :validate_project_receipt_v1.ss)",
-        "$(rlocationpath //schemas:gerbil-bazel.project-receipt.v1.schema.json)",
-        "$(rlocationpath //tests/smoke:compile_receipt)",
-        "$(rlocationpath //tests/smoke:receipt_compile_receipt)",
-        "$(rlocationpath //tests/smoke:dependency_compile_receipt)",
+        "$(rlocationpath :validate_json.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.package-request.v1.schema.json)",
     ],
     data = [
-        ":validate_project_receipt_v1.ss",
-        "//schemas:gerbil-bazel.project-receipt.v1.schema.json",
-        "//tests/smoke:compile_receipt",
-        "//tests/smoke:dependency_compile_receipt",
-        "//tests/smoke:receipt_compile_receipt",
+        ":validate_json.ss",
+        "//schemas:gerbil-bazel.package-request.v1.schema.json",
         "@local_gerbil//:gxi",
+    ],
+)
+
+sh_test(
+    name = "package_receipt_v1_instances_test",
+    srcs = ["package_receipt_v1_instances_test.sh"],
+    args = [
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath :validate_package_receipt_v1.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.package-receipt.v1.schema.json)",
+        "$(rlocationpath @root_package//:build_receipt)",
+    ],
+    data = [
+        ":validate_package_receipt_v1.ss",
+        "//schemas:gerbil-bazel.package-receipt.v1.schema.json",
+        "@local_gerbil//:gxi",
+        "@root_package//:build_receipt",
     ],
 )
 
@@ -117,21 +186,32 @@ sh_test(
 )
 
 exports_files([
+    "aot.bzl",
+    "aot_runner.ss",
     "defs.bzl",
+    "binary.bzl",
     "extensions.bzl",
     "gambit_runtime.bzl",
     "host_system.bzl",
-    "install_gerbil_dependencies.sh.tpl",
+    "install_gerbil_dependencies.ss.tpl",
     "local_toolchain.BUILD.bazel.tpl",
     "native_scheme_env.sh.tpl",
     "native_tool.sh.tpl",
+    "package_graph_repository.bzl",
     "prebuilt_repository.bzl",
     "prebuilt_toolchain.BUILD.bazel.tpl",
-    "project.bzl",
+    "package.bzl",
+    "package_runner.ss",
+    "providers.bzl",
     "repository.bzl",
     "resource_guard.ss",
+    "resource_policy.ss",
+    "runfiles.bzl",
+    "script.bzl",
+    "test.bzl",
     "toolchain.bzl",
+    "validate_aot_v1.ss",
     "validate_json.ss",
-    "validate_project_receipt_v1.ss",
-    "write_project_receipt.ss",
+    "validate_package_execution_telemetry_v1.ss",
+    "validate_package_receipt_v1.ss",
 ])

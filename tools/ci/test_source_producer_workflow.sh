@@ -3,12 +3,16 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="$repo_root/.github/workflows/source-producer.yml"
+ci_workflow="$repo_root/.github/workflows/ci.yml"
 
-ruby -ryaml - "$workflow" <<'RUBY'
+ruby -ryaml - "$workflow" "$ci_workflow" <<'RUBY'
 workflow_path = ARGV.fetch(0)
 workflow = Psych.safe_load(File.read(workflow_path), aliases: true)
 job = workflow.fetch("jobs").fetch("linux-capability")
 steps = job.fetch("steps")
+ci_workflow_path = ARGV.fetch(1)
+ci_workflow = Psych.safe_load(File.read(ci_workflow_path), aliases: true)
+ci_steps = ci_workflow.fetch("jobs").fetch("bazel").fetch("steps")
 
 def assert(condition, message)
   raise message unless condition
@@ -30,6 +34,8 @@ build = step_named(steps, "Build Gerbil on Linux")
 save = step_named(steps, "Save Linux compiler cache")
 checkpoint_save = step_named(steps, "Save Linux source-build checkpoint")
 materialization = step_named(steps, "Record Linux Gerbil materialization")
+provider_validation = step_named(steps, "Validate the packaged Linux capability as a consumer")
+receipt_upload = step_named(steps, "Upload producer receipts")
 
 assert(restore["id"] == "gerbil-compiler-cache", "compiler-cache restore id drifted")
 assert(restore["uses"] == "actions/cache/restore@#{cache_sha}", "compiler-cache restore action drifted")
@@ -170,6 +176,70 @@ assert(
 assert(
   checkpoint_save_index < materialization_index,
   "all recovery cache evidence must precede materialization"
+)
+
+provider_receipt = "${{ github.workspace }}/.ci/receipts/repository-provider-source-producer.json"
+assert(
+  provider_validation.fetch("env").fetch("GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT") ==
+    provider_receipt,
+  "source producer repository-provider receipt path drifted"
+)
+provider_run = provider_validation.fetch("run")
+assert(
+  provider_run.include?("tools/ci/test_repository_provider_receipt.sh"),
+  "source producer must persist and compare the repository-provider receipt"
+)
+assert(
+  provider_run.include?('test -s "$GERBIL_REPOSITORY_PROVIDER_TEST_RECEIPT"'),
+  "source producer must fail closed when the repository-provider receipt is absent"
+)
+[
+  '.fixture == "provided"',
+  '.selectedProvider == "prebuilt"',
+  ".installerRuntimeVerified == true",
+].each do |assertion|
+  assert(
+    provider_run.include?(assertion),
+    "source producer receipt validation missing #{assertion}"
+  )
+end
+
+receipt_upload_paths =
+  receipt_upload.fetch("with").fetch("path").lines.map(&:strip).reject(&:empty?)
+assert(
+  receipt_upload_paths.include?(
+    ".ci/receipts/repository-provider-source-producer.json"
+  ),
+  "producer receipt artifact must include the exact repository-provider receipt"
+)
+assert(
+  steps.index(provider_validation) < steps.index(receipt_upload),
+  "repository-provider receipt validation must precede producer receipt upload"
+)
+
+ci_prebuilt = step_named(ci_steps, "Validate the prebuilt repository provider")
+ci_auto = step_named(ci_steps, "Validate the platform-adaptive repository provider")
+ci_upload = step_named(ci_steps, "Upload validation receipt")
+ci_receipt_paths = [
+  ".ci/receipts/repository-provider-prebuilt.json",
+  ".ci/receipts/repository-provider-prebuilt-install-digest-mismatch.json",
+  ".ci/receipts/repository-provider-auto.json",
+]
+ci_provider_runs = ci_prebuilt.fetch("run") + ci_auto.fetch("run")
+ci_receipt_paths.each do |receipt_path|
+  assert(
+    ci_provider_runs.scan(receipt_path).length == 1,
+    "CI repository-provider receipt path must be present exactly once: #{receipt_path}"
+  )
+end
+assert(
+  ci_provider_runs.scan("tools/ci/test_repository_provider_receipt.sh").length == 3,
+  "CI must validate three independently persisted repository-provider receipts"
+)
+ci_upload_paths = ci_upload.fetch("with").fetch("path").lines.map(&:strip).reject(&:empty?)
+assert(
+  ci_upload_paths.include?(".ci/receipts/*.json"),
+  "CI validation artifact must include repository-provider receipts"
 )
 
 puts "source producer recovery-cache workflow policy: ok"

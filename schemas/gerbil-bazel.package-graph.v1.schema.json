@@ -1,0 +1,98 @@
+{
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.package-graph.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "packages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "workspace"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "archive"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "stripPrefix": {
+                    "type": "string"
+                  },
+                  "urls": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sha256",
+                  "stripPrefix",
+                  "urls"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "manifest": {
+            "$ref": "gerbil-bazel.package-manifest.v1.schema.json"
+          },
+          "reference": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "target": {
+            "pattern": "^//:[A-Za-z0-9_]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acquisition",
+          "manifest",
+          "reference",
+          "revision",
+          "target"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "rootPackage": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema": {
+      "const": "gerbil-bazel.package-graph.v1"
+    }
+  },
+  "required": [
+    "packages",
+    "rootPackage",
+    "schema"
+  ],
+  "title": "Gerbil Bazel Package Graph v1",
+  "type": "object"
+}

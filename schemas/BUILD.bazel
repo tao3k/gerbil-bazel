@@ -1,14 +1,21 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "gerbil-bazel.aot-receipt.v1.schema.json",
+    "gerbil-bazel.cache-restoration-receipt.v1.schema.json",
     "gerbil-bazel.build-scenario-receipt.v1.schema.json",
     "gerbil-bazel.gerbil-bootstrap-attempt.v1.schema.json",
     "gerbil-bazel.gerbil-bootstrap-attempt.v2.schema.json",
     "gerbil-bazel.install-materialization-receipt.v1.schema.json",
+    "gerbil-bazel.native-link-plan.v1.schema.json",
     "gerbil-bazel.prebuilt-capability-manifest.v1.schema.json",
     "gerbil-bazel.prebuilt-capability-package-receipt.v1.schema.json",
     "gerbil-bazel.prebuilt-promotion-authorization.v1.schema.json",
-    "gerbil-bazel.project-receipt.v1.schema.json",
+    "gerbil-bazel.package-graph.v1.schema.json",
+    "gerbil-bazel.package-execution-telemetry.v1.schema.json",
+    "gerbil-bazel.package-manifest.v1.schema.json",
+    "gerbil-bazel.package-receipt.v1.schema.json",
+    "gerbil-bazel.package-request.v1.schema.json",
     "gerbil-bazel.source-build-identity.v1.schema.json",
     "gerbil-bazel.source-build-checkpoint.v1.schema.json",
     "gerbil-bazel.source-producer-admission.v1.schema.json",

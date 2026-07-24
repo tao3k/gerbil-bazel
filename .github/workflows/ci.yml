@@ -92,16 +92,20 @@ jobs:
 
       - name: Validate the prebuilt repository provider
         run: |
-          tools/ci/test_repository_provider.sh prebuilt
+          tools/ci/test_repository_provider_receipt.sh \
+            prebuilt \
+            .ci/receipts/repository-provider-prebuilt.json
           GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
             GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE="$(printf '0%.0s' {1..64})" \
-            tools/ci/test_repository_provider.sh prebuilt
+            tools/ci/test_repository_provider_receipt.sh \
+              prebuilt \
+              .ci/receipts/repository-provider-prebuilt-install-digest-mismatch.json
 
       - name: Validate the platform-adaptive repository provider
-        run: tools/ci/test_repository_provider.sh auto
-
-      - name: Validate fail-closed source package repositories
-        run: tools/ci/test_source_package_repository.sh
+        run: |
+          tools/ci/test_repository_provider_receipt.sh \
+            auto \
+            .ci/receipts/repository-provider-auto.json
 
       - name: Validate source producer admission policy
         run: tools/ci/test_source_producer_admission.sh
@@ -122,14 +126,29 @@ jobs:
       - name: Validate build scenario frontiers
         run: |
           receipt=.ci/receipts/build-scenarios-${{ runner.os }}-${{ runner.arch }}.json
+          cache_receipt=.ci/receipts/cache-restoration-${{ runner.os }}-${{ runner.arch }}.json
           tools/bench/run_build_scenarios.py --receipt "$receipt"
+          tools/bench/run_cache_restoration_scenarios.py \
+            --build-scenario-receipt "$receipt" \
+            --receipt "$cache_receipt"
           jq -e '
             .schema == "gerbil-bazel.build-scenario-receipt.v1" and
             .status == "passed" and
             .decision.status == "ready"
           ' "$receipt" >/dev/null
+          jq -e '
+            .schema == "gerbil-bazel.cache-restoration-receipt.v1" and
+            .status == "passed" and
+            .decision.status == "ready" and
+            (.scenarios | length) == 4
+          ' "$cache_receipt" >/dev/null
           jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
+          jq -e '."$id" | endswith("gerbil-bazel.cache-restoration-receipt.v1.schema.json")' \
+            schemas/gerbil-bazel.cache-restoration-receipt.v1.schema.json >/dev/null
+
+      - name: Validate package action identity boundary
+        run: tools/ci/test_package_action_boundary.sh
 
       - name: Upload validation receipt
         if: always()
@@ -139,7 +158,7 @@ jobs:
           path: |
             .ci/gerbil-version.txt
             .ci/receipts/*.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
   lock-linux-seed:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}

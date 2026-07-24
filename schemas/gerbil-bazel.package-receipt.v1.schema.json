@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.package-receipt.v1.schema.json",
+  "title": "Gerbil Bazel Package Receipt v1",
+  "description": "Deterministic action receipt for one canonical Gerbil package build.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "libraryOutputRequired",
+    "packageIdentity",
+    "packageReference",
+    "packageRevision"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.package-receipt.v1"
+    },
+    "status": {
+      "const": "ok"
+    },
+    "libraryOutputRequired": {
+      "type": "boolean"
+    },
+    "packageIdentity": {
+      "description": "Canonical package identity read from gerbil.pkg.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "packageReference": {
+      "description": "Canonical graph reference used by parent gerbil.pkg manifests.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "packageRevision": {
+      "description": "Locked source revision, or the empty string for the workspace root.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

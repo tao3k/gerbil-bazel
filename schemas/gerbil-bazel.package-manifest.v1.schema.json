@@ -1,0 +1,122 @@
+{
+  "$id": "https://tao3k.github.io/gerbil-bazel/schemas/gerbil-bazel.package-manifest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "closureSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "dependencies": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "package": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "raw": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "package",
+          "raw",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "evaluator": {
+      "additionalProperties": false,
+      "properties": {
+        "gambitVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "gerbilVersion": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "gambitVersion",
+        "gerbilVersion"
+      ],
+      "type": "object"
+    },
+    "extensions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "datum": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "datum",
+          "key"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifest": {
+      "const": "gerbil.pkg"
+    },
+    "package": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema": {
+      "const": "gerbil-bazel.package-manifest.v1"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": [
+    "closureSha256",
+    "dependencies",
+    "evaluator",
+    "extensions",
+    "manifest",
+    "package",
+    "schema",
+    "sources"
+  ],
+  "title": "gerbil-bazel package manifest v1",
+  "type": "object"
+}

@@ -1,203 +1,139 @@
 load(
     "@gerbil_bazel//gerbil:defs.bzl",
-    "gerbil_project_compile",
-    "gerbil_project_dev",
-    "gerbil_project_test",
+    "GerbilPackageInfo",
+    "gerbil_aot_objects",
+    "gerbil_package_binary",
+    "gerbil_test",
 )
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load(":build_settings.bzl", "scenario_state_flag")
-load(":source_package_validation_contract.bzl", "source_package_validation_contract")
 
-source_package_validation_contract()
+exports_files([
+    "cache-restoration-dependency/build.ss",
+    "cache-restoration-dependency/gerbil.pkg",
+    "cache-restoration-dependency/src/value.ss",
+    "cache-restoration-root/build.ss",
+    "cache-restoration-root/gerbil.pkg",
+    "cache-restoration-root/src/main.ss",
+    "package-graph-dependency/build.ss",
+    "package-graph-dependency/gerbil.pkg",
+    "package-graph-dependency/src/main.ss",
+    "package-graph-dependency/test/dependency-test.ss",
+    "package-graph/build.ss",
+    "package-graph/gerbil.pkg",
+    "package-graph/src/main.ss",
+    "package-manifest/build.ss",
+    "package-manifest/gerbil.pkg",
+    "package-manifest/src/main.ss",
+    "package-binary.ss",
+    "package-test/build.ss",
+    "package-test/gerbil.pkg",
+    "package-test/src/value.ss",
+    "package-test/test/blocking-test.ss",
+    "package-test/test/failure-test.ss",
+    "package-test/test/value-test.ss",
+])
 
-exports_files(["project-root.marker"])
+# Loading GerbilPackageInfo here is intentional: this BUILD file is the public
+# API smoke consumer, while the generated @test_package//:build alias proves
+# provider forwarding during analysis.
+_PUBLIC_PACKAGE_PROVIDER = GerbilPackageInfo
 
-scenario_state_flag(
-    name = "dependency_state",
-    build_setting_default = "baseline",
+gerbil_test(
+    name = "gerbil_test_success",
+    package = "@test_package//:build",
+    tests = ["package-test/test/value-test.ss"],
 )
 
-scenario_state_flag(
-    name = "configuration_state",
-    build_setting_default = "baseline",
+gerbil_test(
+    name = "gerbil_test_dependency",
+    package = "@root_package_with_dependency//:build",
+    tests = ["package-graph-dependency/test/dependency-test.ss"],
 )
 
-config_setting(
-    name = "changed_dependency_input",
-    flag_values = {":dependency_state": "changed"},
+gerbil_test(
+    name = "gerbil_test_failure",
+    package = "@test_package//:build",
+    tags = ["manual"],
+    tests = ["package-test/test/failure-test.ss"],
 )
 
-config_setting(
-    name = "changed_configuration_input",
-    flag_values = {":configuration_state": "changed"},
+gerbil_test(
+    name = "gerbil_test_blocking",
+    package = "@test_package//:build",
+    tags = ["manual"],
+    tests = ["package-test/test/blocking-test.ss"],
 )
 
-_PROJECT_ACTION_CONFIGURATION_ENV = select({
-    ":changed_configuration_input": {
-        "GERBIL_SCENARIO_CONFIGURATION": "changed",
-    },
-    "//conditions:default": {
-        "GERBIL_SCENARIO_CONFIGURATION": "baseline",
-    },
-})
-
-gerbil_project_compile(
-    name = "dependency_compile",
-    srcs = select({
-        ":changed_dependency_input": ["dependency-changed.ss"],
-        "//conditions:default": ["dependency.ss"],
-    }),
-    build_script = select({
-        ":changed_dependency_input": "dependency-changed-build.ss",
-        "//conditions:default": "dependency-build.ss",
-    }),
-    env = _PROJECT_ACTION_CONFIGURATION_ENV,
-    process_guard = True,
-    require_library_output = True,
-)
-
-gerbil_project_compile(
-    name = "independent_compile",
-    srcs = ["independent.ss"],
-    build_script = "independent-build.ss",
-    env = _PROJECT_ACTION_CONFIGURATION_ENV,
-    process_guard = True,
-    require_library_output = True,
-)
-
-gerbil_project_compile(
-    name = "native_math_compile",
-    srcs = [
-        "native-math.ss",
-    ],
-    build_script = "native-math-build.ss",
-    process_guard = True,
-    require_library_output = True,
-)
-
-gerbil_project_compile(
-    name = "compile",
-    args = ["compile"],
-    build_script = "build.ss",
-    env = _PROJECT_ACTION_CONFIGURATION_ENV,
-    deps = [
-        ":dependency_compile",
-        ":independent_compile",
-    ],
-)
-
-filegroup(
-    name = "dependency_compile_receipt",
-    srcs = [":dependency_compile"],
-    output_group = "receipt",
-    visibility = ["//gerbil:__pkg__"],
-)
-
-filegroup(
-    name = "native_math_compile_receipt",
-    srcs = [":native_math_compile"],
-    output_group = "receipt",
-)
-
-filegroup(
-    name = "compile_receipt",
-    srcs = [":compile"],
-    output_group = "receipt",
-    visibility = ["//gerbil:__pkg__"],
-)
-
-gerbil_project_compile(
-    name = "receipt_compile",
-    build_script = "receipt-build.ss",
-    receipt_line_prefix = "PROJECT_RECEIPT ",
-)
-
-gerbil_project_test(
-    name = "test",
-    project = ":compile",
-    tests = ["smoke-test.ss"],
-)
-
-gerbil_project_test(
-    name = "reuse_test_one",
-    project = ":compile",
-    tests = ["smoke-test.ss"],
-)
-
-gerbil_project_test(
-    name = "reuse_test_two",
-    project = ":compile",
-    tests = ["smoke-test.ss"],
-)
-
-gerbil_project_test(
-    name = "source_root_test",
-    srcs = [
-        "source-root-fixture.json",
-        "source-root-support.ss",
-    ],
-    project = ":compile",
-    tests = ["source-root-test.ss"],
-)
-
-gerbil_project_dev(
-    name = "dev",
-    args = ["compile"],
-    build_script = "build.ss",
-    deps = [
-        ":dependency_compile",
-        ":independent_compile",
-    ],
-)
-
-gerbil_project_dev(
-    name = "dev_test",
-    args = ["compile"],
-    build_script = "build.ss",
-    tests = ["smoke-test.ss"],
-    deps = [
-        ":dependency_compile",
-        ":independent_compile",
-    ],
-)
-
-filegroup(
-    name = "receipt_compile_log",
-    srcs = [":receipt_compile"],
-    output_group = "log",
-)
-
-filegroup(
-    name = "receipt_compile_receipt",
-    srcs = [":receipt_compile"],
-    output_group = "receipt",
-    visibility = ["//gerbil:__pkg__"],
+gerbil_package_binary(
+    name = "package_binary",
+    args = ["declared"],
+    package = "@root_package_with_dependency//:build",
+    script = "package-binary.ss",
 )
 
 sh_test(
-    name = "guarded_project_receipt_test",
-    srcs = ["guarded_project_receipt_test.sh"],
-    args = ["$(rlocationpath :dependency_compile_receipt)"],
-    data = [":dependency_compile_receipt"],
+    name = "package_binary_test",
+    srcs = ["package_binary_test.sh"],
+    args = ["$(rlocationpath :package_binary)"],
+    data = [":package_binary"],
+)
+
+gerbil_aot_objects(
+    name = "package_aot",
+    c_srcs = ["aot-runtime.c"],
+    linker_name = "test_package_linker",
+    main_symbol = "test_package_gambit_main",
+    module = "example.invalid/test-package/src/value",
+    package = "@test_package//:build",
+)
+
+filegroup(
+    name = "package_aot_plan",
+    srcs = [":package_aot"],
+    output_group = "link_plan",
+)
+
+filegroup(
+    name = "package_aot_receipt",
+    srcs = [":package_aot"],
+    output_group = "receipt",
 )
 
 sh_test(
-    name = "native_math_receipt_test",
-    srcs = ["guarded_project_receipt_test.sh"],
-    args = ["$(rlocationpath :native_math_compile_receipt)"],
-    data = [":native_math_compile_receipt"],
-)
-
-sh_test(
-    name = "project_receipt_test",
-    srcs = ["project_receipt_test.sh"],
+    name = "package_aot_test",
+    srcs = ["package_aot_test.sh"],
     args = [
-        "$(rlocationpath :receipt_compile_receipt)",
-        "$(rlocationpath :receipt_compile_log)",
+        "$(rlocationpath :package_aot_plan)",
+        "$(rlocationpath :package_aot_receipt)",
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath @gerbil_bazel//gerbil:validate_aot_v1.ss)",
+        "$(rlocationpath @gerbil_bazel//schemas:gerbil-bazel.native-link-plan.v1.schema.json)",
+        "$(rlocationpath @gerbil_bazel//schemas:gerbil-bazel.aot-receipt.v1.schema.json)",
     ],
     data = [
-        ":receipt_compile_log",
-        ":receipt_compile_receipt",
+        ":package_aot",
+        ":package_aot_plan",
+        ":package_aot_receipt",
+        "@gerbil_bazel//gerbil:functional.ss",
+        "@gerbil_bazel//gerbil:validate_aot_v1.ss",
+        "@gerbil_bazel//schemas:gerbil-bazel.aot-receipt.v1.schema.json",
+        "@gerbil_bazel//schemas:gerbil-bazel.native-link-plan.v1.schema.json",
+        "@local_gerbil//:gxi",
+    ],
+)
+
+sh_test(
+    name = "gerbil_test_lifecycle_test",
+    srcs = ["gerbil_test_lifecycle_test.sh"],
+    args = [
+        "$(rlocationpath :gerbil_test_success)",
+        "$(rlocationpath :gerbil_test_failure)",
+        "$(rlocationpath :gerbil_test_blocking)",
+    ],
+    data = [
+        ":gerbil_test_blocking",
+        ":gerbil_test_failure",
+        ":gerbil_test_success",
     ],
 )
 
@@ -213,10 +149,16 @@ sh_test(
     srcs = ["install_dependencies_test.sh"],
     args = [
         "$(rlocationpath @local_gerbil//:install_dependencies)",
-        "$(rlocationpath @gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl)",
+        "$(rlocationpath @gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl)",
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath @gerbil_bazel//gerbil:resource_policy.ss)",
+        "$(rlocationpath @gerbil_bazel//gerbil:functional.ss)",
     ],
     data = [
-        "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
+        "@gerbil_bazel//gerbil:functional.ss",
+        "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
+        "@gerbil_bazel//gerbil:resource_policy.ss",
+        "@local_gerbil//:gxi",
         "@local_gerbil//:install_dependencies",
     ],
 )
@@ -237,40 +179,5 @@ sh_test(
         "gxpkg-native/native-math/lib.ss",
         "gxpkg-native/native-math/main.ss",
         "@local_gerbil//:gxpkg",
-    ],
-)
-
-sh_test(
-    name = "project_library_view_test",
-    srcs = ["project_library_view_test.sh"],
-    args = ["$(rlocationpath @project_gerbil//:toolchain.receipt.json)"],
-    data = [
-        "@project_gerbil//:dependency_libraries",
-        "@project_gerbil//:toolchain.receipt.json",
-    ],
-)
-
-sh_test(
-    name = "source_file_visibility_test",
-    srcs = ["source_file_visibility_test.sh"],
-    args = ["$(rlocationpath @clan_sources//:ready.txt)"],
-    data = ["@clan_sources//:ready.txt"],
-)
-
-sh_test(
-    name = "source_package_visibility_test",
-    srcs = ["source_package_visibility_test.sh"],
-    args = [
-        "$(rlocationpath @downloaded_fixture_sources//:gerbil.pkg)",
-        "$(rlocationpath @downloaded_fixture_sources//:build.ss)",
-        "$(rlocationpath @downloaded_fixture_sources//:source-package.json)",
-        "$(rlocationpath @downloaded_fixture_sources//:pure/dict/assq.ss)",
-    ],
-    data = [
-        "@downloaded_fixture_sources//:build.ss",
-        "@downloaded_fixture_sources//:gerbil.pkg",
-        "@downloaded_fixture_sources//:pure/dict/assq.ss",
-        "@downloaded_fixture_sources//:source-package.json",
-        "@downloaded_fixture_sources//:sources",
     ],
 )

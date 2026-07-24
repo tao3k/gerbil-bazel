@@ -15,11 +15,6 @@ hash_stream() {
 {
   uname -srm
   for tool in "$@"; do
-    printf '%s\n' "$tool"
-    if command -v shasum >/dev/null 2>&1; then
-      shasum -a 1 "$tool"
-    else
-      sha1sum "$tool"
-    fi
+    hash_stream <"$tool"
   done
 } | hash_stream

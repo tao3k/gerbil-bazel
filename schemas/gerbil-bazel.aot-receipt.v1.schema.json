@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.aot-receipt.v1.schema.json",
+  "title": "Gerbil Bazel AOT Receipt v1",
+  "description": "Deterministic action receipt for one package-aware Gerbil AOT object set.",
+  "type": "object",
+  "required": [
+    "schema",
+    "module",
+    "packageIdentity",
+    "packageReference",
+    "linkerName",
+    "mainSymbol",
+    "nativeAbiFingerprint",
+    "explicitNativeSourceLabels",
+    "linkLibraries"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.aot-receipt.v1"
+    },
+    "module": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "packageIdentity": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "packageReference": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "linkerName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": "string"
+    },
+    "mainSymbol": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": "string"
+    },
+    "nativeAbiFingerprint": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "explicitNativeSourceLabels": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "linkLibraries": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "additionalProperties": false
+}

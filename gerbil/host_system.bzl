@@ -5,6 +5,45 @@ _EXEC_CONSTRAINT_BY_SYSTEM = {
     "linux": "@platforms//os:linux",
 }
 
+_ACTION_SCHEDULING_ENVIRONMENT_KEYS = [
+    "GERBIL_BAZEL_CPU_COUNT",
+    "GERBIL_BAZEL_MEMORY_BYTES",
+    "GERBIL_BUILD_CORES",
+]
+
+_REPOSITORY_LOCAL_RUNTIME_PATH_KEYS = [
+    "CC",
+    "GERBIL_GCC",
+    "GERBIL_GSC",
+]
+
+def relocatable_action_environment(environment):
+    """Removes repository-local runtime paths resolved later as Bazel execpaths."""
+    return {
+        key: value
+        for key, value in environment.items()
+        if key not in _REPOSITORY_LOCAL_RUNTIME_PATH_KEYS
+    }
+
+def stable_action_environment(
+        environment,
+        repository_environment):
+    """Separates compile identity from host scheduling observations.
+
+    Output-affecting repository values remain semantic configuration. CPU,
+    memory, and a host-derived worker count are execution observations and must
+    not make otherwise identical compile actions unique to one machine. An
+    explicitly declared worker count remains an opt-in action configuration.
+    """
+    result = {
+        key: value
+        for key, value in environment.items()
+        if key not in _ACTION_SCHEDULING_ENVIRONMENT_KEYS
+    }
+    if "GERBIL_BUILD_CORES" in repository_environment:
+        result["GERBIL_BUILD_CORES"] = repository_environment["GERBIL_BUILD_CORES"]
+    return result
+
 def _checked(repository_ctx, argv, description):
     result = repository_ctx.execute(argv, quiet = True)
     if result.return_code != 0:
@@ -151,6 +190,10 @@ def _darwin_environment(repository_ctx, homebrew_formulae):
     return struct(
         environment = environment,
         gambit_dynamic_link_options = "-Wl,-undefined,dynamic_lookup",
+        gambit_link_libraries = [
+            "static=gambit",
+            "dylib=m",
+        ],
         gerbil_as = discovered_tools["as"],
         gerbil_cc = discovered_tools["clang"],
         gerbil_ld = discovered_tools["ld"],
@@ -177,6 +220,11 @@ def _linux_environment(repository_ctx):
     return struct(
         environment = {},
         gambit_dynamic_link_options = "",
+        gambit_link_libraries = [
+            "static=gambit",
+            "dylib=m",
+            "dylib=dl",
+        ],
         gerbil_as = _which(repository_ctx, ["as"], "assembler"),
         gerbil_cc = _which(repository_ctx, ["cc", "clang", "gcc"], "C compiler"),
         gerbil_ld = _which(repository_ctx, ["ld"], "linker"),
@@ -189,11 +237,11 @@ def resolve_gerbil_build_cores(
         declared_environment,
         system_cpu_count):
     """Resolves the upstream std/make worker count and its provenance."""
-    value = repository_ctx.os.environ.get("GERBIL_BUILD_CORES", "")
-    source = "process-environment"
+    value = declared_environment.get("GERBIL_BUILD_CORES", "")
+    source = "repository-environment"
     if not value:
-        value = declared_environment.get("GERBIL_BUILD_CORES", "")
-        source = "repository-environment"
+        value = repository_ctx.os.environ.get("GERBIL_BUILD_CORES", "")
+        source = "process-environment"
     if not value:
         value = system_cpu_count
         source = "host-system"
@@ -239,6 +287,7 @@ def resolve_host_environment(repository_ctx, darwin_homebrew_formulae = []):
         environment = environment,
         exec_constraint = _EXEC_CONSTRAINT_BY_SYSTEM[system],
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
+        gambit_link_libraries = host.gambit_link_libraries,
         gerbil_as = _environment_tool(
             repository_ctx,
             "GERBIL_AS",

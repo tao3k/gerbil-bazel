@@ -98,9 +98,9 @@
       "properties": {
         "id": {
           "enum": [
-            "project-cold",
+            "package-cold",
             "identical-rerun",
-            "dependency-delta",
+            "ambient-environment-delta",
             "configuration-delta"
           ]
         },
@@ -124,14 +124,14 @@
           "type": "object",
           "required": [
             "executionLogRecordCount",
-            "gerbilProjectCompileRecordCount",
+            "gerbilPackageBuildRecordCount",
             "expectedExecutedLabels",
             "observedExecutedLabels",
             "observedCacheHitLabels"
           ],
           "properties": {
             "executionLogRecordCount": {"type": "integer", "minimum": 0},
-            "gerbilProjectCompileRecordCount": {"type": "integer", "minimum": 0},
+            "gerbilPackageBuildRecordCount": {"type": "integer", "minimum": 0},
             "expectedExecutedLabels": {"$ref": "#/$defs/labelSet"},
             "observedExecutedLabels": {"$ref": "#/$defs/labelSet"},
             "observedCacheHitLabels": {"$ref": "#/$defs/labelSet"}

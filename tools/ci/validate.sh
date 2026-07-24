@@ -70,21 +70,13 @@ gerbil_version="$(
   grep -E 'Gerbil (v0\.18\.2|07c8481)' .ci/gerbil-version.txt | head -n 1
 )"
 run_phase query "$bazel_bin" query //...
-run_phase build "$bazel_bin" build //tests/smoke:compile
+run_phase lock "$bazel_bin" mod deps --lockfile_mode=error
+run_phase build "$bazel_bin" build \
+  @root_package//:build \
+  @root_package_with_dependency//:build
 run_phase test "$bazel_bin" test \
-  //tests/smoke:guarded_project_receipt_test \
-  //tests/smoke:gxpkg_native_package_test \
-  //tests/smoke:install_dependencies_test \
-  //tests/smoke:project_library_view_test \
-  //tests/smoke:project_receipt_test \
-  //tests/smoke:source_package_visibility_test \
-  //tests/smoke:test \
-  //tests/smoke:toolchain_environment_test \
+  //gerbil/... \
+  //tests/smoke/... \
   --test_output=errors
-run_phase atomic-package-cache env \
-  BAZEL="$bazel_bin" \
-  ATOMIC_RECEIPT_PATH="$(dirname "$receipt_path")/atomic-package-cache.json" \
-  tools/ci/test_atomic_package_cache.sh
-run_phase dev "$bazel_bin" run //tests/smoke:dev
 write_receipt passed 0
 jq -c . "$receipt_path"

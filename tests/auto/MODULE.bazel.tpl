@@ -13,8 +13,6 @@ gerbil.auto(
     linux_prebuilt_install_digest = "@@INSTALL_DIGEST@@",
     linux_prebuilt_sha256 = "@@ARCHIVE_SHA256@@",
     linux_prebuilt_urls = ["@@ARCHIVE_URL@@"],
-    project_library_relative_path = ".gerbil/lib",
-    project_root_marker = "//:project-root.marker",
     tool_paths = @@HOST_TOOL_PATHS@@,
 )
 use_repo(gerbil, "auto_gerbil")

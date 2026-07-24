@@ -2,6 +2,52 @@
 set -euo pipefail
 
 {{ENVIRONMENT}}
+toolchain_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+runfiles_repository={{RUNFILES_REPOSITORY}}
+runtime_toolchain_root=$toolchain_root
+executable_runfiles_root=${0}.runfiles/$runfiles_repository
+if [[ -d $executable_runfiles_root ]]; then
+  runtime_toolchain_root=$executable_runfiles_root
+elif [[ -n ${RUNFILES_DIR:-} && -d $RUNFILES_DIR/$runfiles_repository ]]; then
+  runtime_toolchain_root=$RUNFILES_DIR/$runfiles_repository
+fi
+absolute_tool_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "$PWD" "$1" ;;
+  esac
+}
+absolute_path_list() {
+  local value=$1
+  local result=
+  local path
+  local -a paths
+  IFS=: read -r -a paths <<<"$value"
+  for path in "${paths[@]}"; do
+    if [[ -n $result ]]; then
+      result+=:
+    fi
+    if [[ -z $path ]]; then
+      path=.
+    fi
+    result+=$(absolute_tool_path "$path")
+  done
+  printf '%s\n' "$result"
+}
+if [[ -n ${GERBIL_PATH:-} ]]; then
+  export GERBIL_PATH
+  GERBIL_PATH=$(absolute_tool_path "$GERBIL_PATH")
+fi
+if [[ -n ${GERBIL_LOADPATH:-} ]]; then
+  export GERBIL_LOADPATH
+  GERBIL_LOADPATH=$(absolute_path_list "$GERBIL_LOADPATH")
+fi
+export CC
+CC=$(absolute_tool_path "$runtime_toolchain_root/gerbil-cc")
+export GERBIL_GCC
+GERBIL_GCC=$(absolute_tool_path "$runtime_toolchain_root/gerbil-gcc")
+export GERBIL_GSC
+GERBIL_GSC=$(absolute_tool_path "$runtime_toolchain_root/gerbil-gsc")
 export GERBIL_NATIVE_ABI={{NATIVE_ABI}}
 tool={{TOOL}}
 tool_name={{TOOL_NAME}}
@@ -26,7 +72,7 @@ if (( $# != 0 )); then
   argv_nul_hex=$(printf '%s\0' "$@" | hex_stream) || encoding_failed=1
 fi
 environment_nul_hex=$(
-  for name in GERBIL_HOME GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
+  for name in GERBIL_HOME GERBIL_PATH GERBIL_LOADPATH GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
     if [[ ${!name+x} == x ]]; then
       printf '%s=%s\0' "$name" "${!name}"
     fi

@@ -1,0 +1,266 @@
+#+title: RFC 0011: Gerbil AOT Object and Native Link Plan
+#+author: gerbil-bazel maintainers
+#+language: en
+#+options: toc:2
+
+* Status
+
+The object and link-plan capability is implemented on the feature branch.
+Focused and full Darwin validation pass. Cross-platform CI run 30112905470
+passed on Linux immutable-prebuilt in 6m55s and macOS Homebrew-host in 8m38s.
+Cross-platform lock workflow 30112719689 also passed its Linux seed, Darwin
+merge, and Linux verification lifecycle. Native archive materialization remains
+a distinct consumer of this capability.
+
+* Summary
+
+This RFC defines a Bazel-native AOT boundary for a module that already belongs
+to a built =GerbilPackageInfo= package.
+
+The boundary does not rebuild the package and does not modify its immutable
+TreeArtifact. It selects one explicit canonical static Scheme artifact, stages
+that artifact in a declared writable compilation view, and produces:
+
+- one or more native module objects;
+- one Gambit linker object;
+- one ordered native link plan;
+- one deterministic compilation receipt.
+
+The provider shape deliberately matches the downstream
+=NativeStaticLinkPlan= contract in =gerbil-scheme-rust=:
+
+#+begin_src rust
+pub struct NativeStaticLinkPlan {
+    pub module_objects: Vec<PathBuf>,
+    pub link_object: PathBuf,
+    pub link_search_dirs: Vec<PathBuf>,
+    pub link_libraries: Vec<NativeLinkLibrary>,
+}
+#+end_src
+
+* Motivation
+
+=gerbil_package_binary= is an interpreter-backed executable consumer. It is
+not an AOT compiler.
+
+Calling =gxc -exe= directly against a package TreeArtifact is incorrect because
+Gambit and Gerbil create intermediate files next to selected inputs. Bazel
+package outputs are immutable inputs to downstream actions. A correct AOT
+capability must therefore own a separate writable output view.
+
+The existing =gerbil_scheme_executable= rule is also not the target API. It
+requires consumers to pass raw compiler, C compiler, GSC, and package-tool
+labels. That bypasses the registered Gerbil toolchain and does not consume
+=GerbilPackageInfo=.
+
+* Upstream semantic boundary
+
+The design follows the current upstream Gerbil build system:
+
+- =std/make#gxc-compile= writes generated artifacts under
+  =settings-libdir=;
+- =std/make#gxc-outputs= declares the library interface and static Scheme
+  outputs;
+- =static-path= maps a module identifier to
+  =<libdir>/static/<encoded-module>.scm=;
+- the selected Gambit =gsc= owns C generation, object compilation, and linker
+  object generation.
+
+The package graph continues to execute =gerbil.pkg=, =build.ss=, and
+=gxpkg build= with upstream semantics. The AOT rule consumes the resulting
+package capability; it does not interpret =build.ss= or invent a second package
+graph.
+
+* Capability graph
+
+#+begin_src mermaid
+flowchart LR
+  GP["gerbil.pkg + build.ss"] --> PB["GerbilPackageInfo"]
+  PB --> PT["Immutable package TreeArtifact"]
+  PT --> SS["Explicit static module SCM"]
+  SS --> WV["Declared writable AOT view"]
+  TC["Registered Gerbil toolchain"] --> WV
+  WV --> MO["Module objects"]
+  WV --> LO["Gambit linker object"]
+  MO --> LP["GerbilNativeLinkPlanInfo"]
+  LO --> LP
+  TC --> LP
+  LP --> AR["gerbil_native_archive"]
+  LP --> RS["Rust / Cargo adapter"]
+  LP --> CC["Bazel C/C++ consumer"]
+#+end_src
+
+* Public object capability
+
+The first public rule is:
+
+#+begin_src starlark
+gerbil_aot_objects(
+    name = "native_objects",
+    package = "@root_package//:build",
+    module = "gerbil-scheme-rust/scheme/native",
+    linker_name = "gerbil_scheme_rust_linker",
+    c_srcs = ["//native:runtime.c"],
+)
+#+end_src
+
+The required attributes are:
+
+- =package=: exactly one target carrying =GerbilPackageInfo=;
+- =module=: the canonical Gerbil module identifier;
+- =linker_name=: a valid C identifier used by Gambit's linker generator.
+
+Optional =c_srcs= are explicit native lifecycle or FFI sources compiled by the
+same normalized Gambit toolchain. They are never discovered by filesystem
+scanning.
+
+The rule derives the canonical package input:
+
+#+begin_example
+<package-root>/.gerbil/lib/static/<module with "/" encoded as "__">.scm
+#+end_example
+
+The input must exist. Missing, ambiguous, or non-canonical module artifacts are
+analysis or action failures; the rule does not fall back to tracked generated
+files.
+
+* Provider contracts
+
+** =GerbilAotObjectInfo=
+
+#+begin_src starlark
+GerbilAotObjectInfo(
+    module = "...",
+    module_objects = depset([...]),
+    link_object = File,
+    generated_c = depset([...]),
+    receipt = File,
+)
+#+end_src
+
+This provider owns only produced compilation artifacts and their deterministic
+receipt.
+
+** =GerbilNativeLinkPlanInfo=
+
+#+begin_src starlark
+GerbilNativeLinkPlanInfo(
+    module_objects = depset([...]),
+    link_object = File,
+    link_search_roots = depset([...]),
+    link_libraries = [
+        "static=gambit",
+        "dylib=m",
+        "dylib=dl",
+    ],
+    plan = File,
+    receipt = File,
+)
+#+end_src
+
+Library ordering is semantic. It must remain a list, not a depset. Platform
+differences belong to the registered toolchain capability, not to downstream
+hard-coded conditionals.
+
+* Compilation lifecycle
+
+The runner performs the following bounded sequence:
+
+#+begin_src mermaid
+sequenceDiagram
+  participant B as Bazel action
+  participant R as Scheme AOT runner
+  participant P as Package TreeArtifact
+  participant G as Normalized gsc
+  participant O as Declared outputs
+
+  B->>R: request JSON + declared inputs/outputs
+  R->>P: read explicit static module SCM
+  R->>O: copy SCM into writable view
+  R->>G: gsc -link -> linker C
+  R->>G: compile-file-to-target -> module C
+  R->>G: gsc -obj -> module object
+  R->>G: gsc -obj -Dmain=... -> linker object
+  R->>G: gsc -obj for each explicit c_src
+  R->>O: write link plan and deterministic receipt
+  R-->>B: one terminal status
+#+end_src
+
+The Scheme runner uses Gerbil JSON and process APIs. No shell script owns the
+compilation lifecycle.
+
+* Determinism and cache identity
+
+The action key includes:
+
+- the complete =GerbilPackageInfo= package root and transitive dependency roots;
+- the selected module identifier and linker name;
+- all explicit C sources;
+- the normalized GSC wrapper and its runfiles;
+- the native ABI fingerprint;
+- the ordered toolchain link-library contract;
+- the runner source and request schema.
+
+The deterministic receipt records logical identities and content digests. Host
+duration, CPU, memory, and scheduling observations do not belong in the
+deterministic receipt.
+
+Absolute temporary paths and Bazel output-base paths must not appear in the
+stable receipt.
+
+* Native archive boundary
+
+=gerbil_native_archive= consumes =GerbilNativeLinkPlanInfo=. It does not
+regenerate Scheme, C, or object files.
+
+The archive rule must use a registered archiver or C/C++ toolchain capability;
+it must not resolve =ar= from ambient =PATH=. Its output contract is:
+
+- one declared static archive;
+- one ordered downstream link projection;
+- one archive receipt;
+- an optional =CcInfo= projection for Bazel-native C/C++ consumers.
+
+This separation allows Cargo, Bazel C/C++, and future language adapters to
+consume the same object/link plan without forcing archive ownership into the
+Gerbil compiler action.
+
+* Failure boundary
+
+The rule fails closed when:
+
+- the selected package does not carry =GerbilPackageInfo=;
+- the canonical static SCM does not exist;
+- the module or linker name is invalid;
+- a requested C source is absent;
+- GSC exits non-zero;
+- any declared object, link object, plan, or receipt is missing;
+- the toolchain cannot provide a relocatable Gambit link root;
+- receipt or plan validation fails.
+
+Compiler failures retain the existing
+=gerbil-bazel.compiler-failure-receipt.v1= evidence emitted by the normalized
+GSC wrapper.
+
+* Acceptance criteria
+
+- the package TreeArtifact remains byte-for-byte unchanged;
+- the object rule succeeds on Darwin Homebrew-host and Linux
+  immutable-prebuilt toolchains;
+- a real module imports a locked transitive Gerbil dependency;
+- module object, linker object, plan, and receipt are declared Bazel outputs;
+- changing the selected module or explicit C source invalidates only the AOT
+  action and its consumers;
+- an identical rerun executes zero AOT compiler actions;
+- a fresh output root restores all AOT outputs from cache;
+- link-library ordering is stable and platform-owned;
+- no generated binary fixture or receipt is committed to Git.
+
+* Non-goals
+
+- replacing =gerbil.pkg=, =build.ss=, or =gxpkg build=;
+- treating an interpreter launcher as an AOT executable;
+- mutating package outputs in place;
+- scanning a package tree to guess an entry module;
+- making Cargo the owner of Gerbil package construction;
+- retaining the removed graph ABI or =gerbil_project_*= compatibility surface.

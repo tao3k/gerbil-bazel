@@ -68,6 +68,24 @@ def discover_gambit_producer_options(repository_ctx, gerbil_home):
         object = _gambuild_value(repository_ctx, gerbil_home, "FLAGS_OBJ"),
     )
 
+def materialize_gambit_link_runtime(repository_ctx, gerbil_home):
+    """Publishes an optional static Gambit runtime as a relocatable capability."""
+    library = repository_ctx.path("{}/lib/libgambit.a".format(gerbil_home))
+    repository_ctx.file(
+        "gambit/.root",
+        "gerbil-bazel Gambit native library root\n",
+    )
+    if library.exists:
+        repository_ctx.symlink(library, "gambit/lib/libgambit.a")
+        return struct(
+            available = True,
+            files = ["gambit/lib/libgambit.a"],
+        )
+    return struct(
+        available = False,
+        files = [],
+    )
+
 def _materialized_compiler(repository_ctx, compiler_command):
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:+-=, "
     for character in compiler_command.elems():
@@ -112,7 +130,6 @@ def _materialized_compiler(repository_ctx, compiler_command):
 def _materialized_gsc(
         repository_ctx,
         raw_gsc,
-        producer_compiler,
         producer_options,
         dynamic_link_options):
     wrapper = "gerbil-gsc"
@@ -121,7 +138,8 @@ def _materialized_gsc(
         """#!/usr/bin/env bash
 set -euo pipefail
 raw_gsc={raw_gsc}
-producer_compiler={producer_compiler}
+toolchain_root=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd)
+producer_compiler="$toolchain_root/gerbil-cc"
 producer_object_options={producer_object_options}
 producer_dynamic_options={producer_dynamic_options}
 platform_dynamic_link_options={platform_dynamic_link_options}
@@ -255,7 +273,6 @@ fi
 exit "$status"
 """.format(
             platform_dynamic_link_options = _shell_quote(dynamic_link_options),
-            producer_compiler = _shell_quote(str(producer_compiler)),
             producer_dynamic_options = _shell_quote(producer_options.dynamic),
             producer_object_options = _shell_quote(producer_options.object),
             raw_gsc = _shell_quote(str(raw_gsc)),
@@ -395,7 +412,6 @@ def normalized_gambit_runtime(
     gsc = _materialized_gsc(
         repository_ctx,
         gerbil_gsc,
-        compiler.path,
         producer_options,
         gambit_dynamic_link_options,
     )

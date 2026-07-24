@@ -1,17 +1,32 @@
+load("@gerbil_bazel//gerbil:script.bzl", "gerbil_scheme_executable")
 load("@gerbil_bazel//gerbil:toolchain.bzl", "gerbil_toolchain")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-sh_binary(name = "native_scheme_env", srcs = ["native_scheme_env.sh"])
-
 sh_binary(
+    name = "native_scheme_env",
+    srcs = ["native_scheme_env.sh"],
+    data = [
+        "gerbil-cc",
+        "gerbil-gcc",
+        "gerbil-gsc",
+    ],
+)
+
+gerbil_scheme_executable(
     name = "install_dependencies",
-    srcs = ["install_gerbil_dependencies.sh"],
+    compiler = ":gxc",
+    gerbil_cc = "gerbil-cc",
+    gerbil_gcc = "gerbil-gcc",
+    gerbil_gsc = "gerbil-gsc",
+    gxpkg = "bin/gxpkg_raw",
+    script = "install_gerbil_dependencies.ss",
     data = [
         "bin/gxpkg_raw",
         "native_abi.txt",
     ],
+    includes = ["functional.ss", "resource_policy.ss"],
 )
 
 {{TOOL_RULES}}
@@ -26,11 +41,25 @@ filegroup(
     srcs = ["lib/.root"],
 )
 
+filegroup(
+    name = "gambit_libraries",
+    srcs = {{GAMBIT_LIBRARY_FILES}},
+)
+
+filegroup(
+    name = "gambit_library_root",
+    srcs = ["gambit/.root"],
+)
+
 gerbil_toolchain(
     name = "toolchain_impl",
     dependency_libraries = ":dependency_libraries",
     dependency_library_root = "lib/.root",
     environment = {{ENVIRONMENT_DICT}},
+    gambit_libraries = ":gambit_libraries",
+    gambit_library_root = "gambit/.root",
+    gambit_link_libraries = {{GAMBIT_LINK_LIBRARIES}},
+    gambit_static_link_available = {{GAMBIT_STATIC_LINK_AVAILABLE}},
     gerbil_as = {{GERBIL_AS}},
     gerbil_cc = {{GERBIL_CC}},
     gerbil_gcc = {{GERBIL_GCC}},

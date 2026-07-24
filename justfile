@@ -2,6 +2,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 bazel := env_var_or_default("BAZEL", "bazelisk")
 scenario_receipt := env_var_or_default("SCENARIO_RECEIPT", ".ci/receipts/build-scenarios.json")
+cache_restoration_receipt := env_var_or_default("CACHE_RESTORATION_RECEIPT", ".ci/receipts/cache-restoration.json")
 
 default: check
 
@@ -10,45 +11,27 @@ query:
 
 build:
     {{ bazel }} build \
-      //tests/smoke:compile \
-      //tests/smoke:receipt_compile
+      @root_package//:build \
+      @root_package_with_dependency//:build
 
 test:
     {{ bazel }} test \
-      //gerbil:run_project_test \
-        //gerbil:project_receipt_schema_test \
-        //gerbil:project_receipt_v1_instances_test \
-        //gerbil:source_producer_admission_schema_test \
-        //gerbil:source_producer_admission_v1_instances_test \
-        //gerbil:resource_guard_test \
-      //gerbil:validate_json_test \
-      //tests/smoke:guarded_project_receipt_test \
-      //tests/smoke:gxpkg_native_package_test \
-      //tests/smoke:install_dependencies_test \
-      //tests/smoke:native_math_receipt_test \
-      //tests/smoke:project_receipt_test \
-      //tests/smoke:project_library_view_test \
-      //tests/smoke:reuse_test_one \
-      //tests/smoke:reuse_test_two \
-      //tests/smoke:source_package_visibility_test \
-      //tests/smoke:source_root_test \
-      //tests/smoke:test \
-      //tests/smoke:toolchain_environment_test \
+      //gerbil/... \
+      //tests/smoke/... \
       --test_output=errors
-
-dev:
-    {{ bazel }} run //tests/smoke:dev
-
-dev-test:
-    {{ bazel }} run //tests/smoke:dev_test
 
 scenario-test:
     tools/bench/run_build_scenarios.py \
       --bazel {{ bazel }} \
       --receipt {{ scenario_receipt }}
+    tools/bench/run_cache_restoration_scenarios.py \
+      --bazel {{ bazel }} \
+      --build-scenario-receipt {{ scenario_receipt }} \
+      --receipt {{ cache_restoration_receipt }}
 
 scenario-runner-test:
     python3 tools/bench/run_build_scenarios_test.py
+    python3 tools/bench/run_cache_restoration_scenarios_test.py
 
 source-identity-test:
     tools/ci/test_source_build_identity.sh
@@ -62,7 +45,7 @@ source-identity-test:
 promotion-authorization-test:
     tools/ci/test_authorize_prebuilt_promotion.sh
 
-check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test source-package-test
+check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
 lock-check:
     {{ bazel }} mod deps --lockfile_mode=error
@@ -74,13 +57,16 @@ mod-tidy:
     {{ bazel }} mod tidy --config=lock_update
 
 prebuilt-test:
-    tools/ci/test_repository_provider.sh prebuilt
+    tools/ci/test_repository_provider_receipt.sh \
+      prebuilt \
+      .ci/receipts/repository-provider-prebuilt.json
     GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
       GERBIL_PREBUILT_INSTALL_DIGEST_OVERRIDE=$(printf '0%.0s' {1..64}) \
-      tools/ci/test_repository_provider.sh prebuilt
+      tools/ci/test_repository_provider_receipt.sh \
+        prebuilt \
+        .ci/receipts/repository-provider-prebuilt-install-digest-mismatch.json
 
 auto-test:
-    tools/ci/test_repository_provider.sh auto
-
-source-package-test:
-    tools/ci/test_source_package_repository.sh
+    tools/ci/test_repository_provider_receipt.sh \
+      auto \
+      .ci/receipts/repository-provider-auto.json

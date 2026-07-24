@@ -1,0 +1,138 @@
+#+title: RFC 0010 — Gerbil Package Binary Consumer
+#+startup: overview
+
+* Status
+
+Implemented and validated on the feature branch. Linux immutable-prebuilt and
+macOS Homebrew-host CI both pass in run 30098177578.
+
+* Motivation
+
+The generated package graph already exposes =GerbilPackageInfo= through the
+public =@root_package//:build= target. =gerbil_test= proves that tests can
+consume that capability without exposing =build.ss=, the private package rule,
+or toolchain repository labels.
+
+POO Flow also needs an ordinary Bazel executable target for development tools
+and runtime entry scripts. A package provider does not identify an entrypoint,
+so the rule must require an explicit Scheme script. Inferring an executable
+from =GerbilPackageInfo= would mix package ownership with application ownership
+and would be nondeterministic for packages that publish zero or several tools.
+
+* Decision
+
+The public API adds =gerbil_package_binary=:
+
+#+begin_src starlark
+load(
+    "@gerbil_bazel//gerbil:defs.bzl",
+    "gerbil_package_binary",
+)
+
+gerbil_package_binary(
+    name = "agent_runtime",
+    package = "@root_package//:build",
+    script = "runtime-main.ss",
+    args = ["serve"],
+    environment = {
+        "POO_FLOW_MODE": "production",
+    },
+)
+#+end_src
+
+The rule:
+
+- requires one explicit =script= entrypoint;
+- requires one target carrying =GerbilPackageInfo=;
+- resolves =gxi= and its runtime files from the registered Gerbil toolchain;
+- derives =GERBIL_PATH= and =GERBIL_LOADPATH= from the built package root,
+  every transitive dependency root, and the toolchain library root;
+- merges explicit data targets into runfiles;
+- validates and deterministically orders declared environment variables;
+- terminally =exec=s =gxi= so the launcher does not retain a waiting parent
+  process.
+
+The built-in Bazel =args= attribute provides declared arguments. Arguments
+supplied by =bazel run ... -- ...= follow them.
+
+* Ownership
+
+=gerbil.pkg= remains the only public package input. =build.ss= remains opaque
+executable Gerbil source owned by upstream package semantics.
+
+=GerbilPackageInfo= owns built package identity and dependency roots.
+=gerbil_package_binary= owns only consumer-side entry selection and lifecycle.
+The registered toolchain owns =gxi=, native runtime files, and host capability
+selection.
+
+#+begin_src mermaid
+flowchart LR
+  Manifest["gerbil.pkg"] --> Graph["Generated package graph"]
+  Graph --> Build["Public :build target"]
+  Build --> Provider["GerbilPackageInfo"]
+  Script["Explicit Scheme script"] --> Binary["gerbil_package_binary"]
+  Provider --> Binary
+  Toolchain["Registered Gerbil toolchain"] --> Binary
+  Binary --> Loadpath["Package and dependency runfiles"]
+  Binary --> Gxi["Terminal gxi process"]
+  Loadpath --> Gxi
+#+end_src
+
+* Why This Is Not an AOT Rule
+
+=gerbil_package_binary= follows the Bazel language-rule convention used by
+interpreter-backed executable targets: it is an executable Bazel target, but it
+does not claim to be a native AOT artifact.
+
+Gerbil =gxc -exe= resolves imported package modules and then links their static
+Scheme sources. That link path needs a separate writable, declared compilation
+view because package TreeArtifacts are immutable inputs. Hiding that behavior
+inside this launcher would collapse the package-binary and AOT boundaries.
+
+AOT object, native archive, and link-plan capabilities therefore remain a
+separate RFC and rule family.
+
+* Relocatability
+
+Analysis records runfile keys, not machine-specific absolute paths. The
+launcher resolves those keys at execution time. Tool wrappers normalize any
+relative =GERBIL_PATH= and =GERBIL_LOADPATH= entries against the active Bazel
+execroot before invoking Gerbil.
+
+This keeps the rule valid across local output roots, remote cache restoration,
+and different downstream workspaces.
+
+#+begin_src mermaid
+sequenceDiagram
+  participant Bazel
+  participant Launcher
+  participant Runfiles
+  participant Gxi
+
+  Bazel->>Launcher: execute with declared args
+  Launcher->>Runfiles: resolve gxi, script, package roots
+  Runfiles-->>Launcher: execution-local absolute paths
+  Launcher->>Launcher: compose GERBIL_PATH and GERBIL_LOADPATH
+  Launcher->>Gxi: terminal exec script + declared args + runtime args
+  Gxi-->>Bazel: exact process exit status
+#+end_src
+
+* Failure Boundaries
+
+Analysis fails when =package= does not provide =GerbilPackageInfo= or =script=
+does not resolve to one file.
+
+Launcher analysis fails for invalid environment names. Runtime fails closed when
+any required runfile cannot be resolved. The child exit status is returned
+directly to Bazel because no resident launcher process remains.
+
+* Required Validation
+
+The implementation is complete only when:
+
+1. a public smoke consumer loads the rule from =gerbil:defs.bzl=;
+2. the entry script imports a module from a locked transitive package;
+3. declared and runtime arguments arrive in deterministic order;
+4. the existing =gerbil_test= dependency consumer still passes;
+5. formatting, the full Bazel suite, scenario-runner tests, lock verification,
+   and both platform CI jobs pass.

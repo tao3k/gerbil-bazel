@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.native-link-plan.v1.schema.json",
+  "title": "Gerbil Bazel Native Link Plan v1",
+  "description": "Ordered native object and library inputs for one Gerbil AOT consumer.",
+  "type": "object",
+  "required": [
+    "schema",
+    "moduleObjects",
+    "linkObject",
+    "linkSearchDirectories",
+    "linkLibraries"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.native-link-plan.v1"
+    },
+    "moduleObjects": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "linkObject": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "linkSearchDirectories": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "linkLibraries": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "additionalProperties": false
+}
