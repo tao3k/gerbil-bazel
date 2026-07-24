@@ -20,11 +20,15 @@ sh_test(
     args = [
         "$(rlocationpath @local_gerbil//:gxi)",
         "$(rlocationpath :package_runner.ss)",
+        "$(rlocationpath :validate_package_execution_telemetry_v1.ss)",
+        "$(rlocationpath //schemas:gerbil-bazel.package-execution-telemetry.v1.schema.json)",
     ],
     data = [
         ":functional.ss",
         ":package_runner.ss",
         ":resource_policy.ss",
+        ":validate_package_execution_telemetry_v1.ss",
+        "//schemas:gerbil-bazel.package-execution-telemetry.v1.schema.json",
         "@local_gerbil//:gxi",
     ],
 )
@@ -203,5 +207,6 @@ exports_files([
     "test.bzl",
     "toolchain.bzl",
     "validate_json.ss",
+    "validate_package_execution_telemetry_v1.ss",
     "validate_package_receipt_v1.ss",
 ])

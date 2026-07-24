@@ -200,6 +200,33 @@ mutating the checkout, executes =gxpkg build=, and emits
 =gerbil-bazel.package-receipt.v1=. Upstream stdout is evidence, not a control
 protocol.
 
+The package receipt is a deterministic action artifact. It contains only the
+successful outcome, package identity, graph reference, locked revision, and the
+declared library-output requirement. Wall-clock duration, detected CPU and
+memory capacity, selected resource budget, and process-guard observations are
+host execution facts. They are emitted as one structured stderr line using
+=gerbil-bazel.package-execution-telemetry.v1= and never enter the canonical
+receipt.
+
+#+begin_src mermaid
+flowchart TD
+    A["Gerbil package action"] --> R["package-receipt.v1<br/>canonical action artifact"]
+    A --> T["package-execution-telemetry.v1<br/>structured stderr evidence"]
+    R --> I["status and package identity"]
+    R --> D["declared library-output requirement"]
+    T --> W["wall-clock duration"]
+    T --> B["adaptive CPU and memory budget"]
+    T --> G["optional process-guard observation"]
+    I --> C["byte-stable cache output"]
+    D --> C
+    W -. "never enters" .-> C
+    B -. "never enters" .-> C
+    G -. "never enters" .-> C
+#+end_src
+
+The telemetry line is present only when the action executes. A cache hit reuses
+the deterministic receipt and does not fabricate current-host telemetry.
+
 Upstream =gxpkg build= reads direct dependency version manifests from
 =<GERBIL_PATH>/pkg/<reference>.manifest=. Therefore every generated package
 action also emits one plain Scheme datum in the exact upstream manifest format.
@@ -343,17 +370,19 @@ package artifact.
 
 * Evidence contracts
 
-The architecture emits three stable v1 documents:
+The architecture emits four stable v1 documents:
 
 - =gerbil-bazel.package-manifest.v1=: native manifest projection and source
   closure;
 - =gerbil-bazel.package-graph.v1=: resolved packages, dependency edges, locks,
   evaluator identity, and closure roots;
-- =gerbil-bazel.package-receipt.v1=: execution identity, environment, resource
-  policy, output, log, status, and duration.
+- =gerbil-bazel.package-receipt.v1=: deterministic package identity, declared
+  output requirement, and successful action status;
+- =gerbil-bazel.package-execution-telemetry.v1=: non-canonical duration,
+  adaptive resource budget, and optional process-guard observation.
 
-Schemas are strict. Unknown receipt fields, empty package identities, invalid
-digests, and schema drift fail validation.
+Schemas are strict. Unknown fields, empty package identities, invalid digests,
+execution telemetry in a package receipt, and schema drift fail validation.
 
 * Performance and caching
 
@@ -372,6 +401,13 @@ reuse:
 
 Parallelism is selected from the registered host capability and guard policy;
 it is not fixed to one machine.
+
+The direct Scheme-runner regression executes the same package identity with
+different configured build-core values and requires byte-identical receipts.
+The stronger fresh-output-root regression executes the same package action
+twice with local and remote action-cache reuse disabled. The two
+=package-receipt.v1= files must also be byte-identical. Execution telemetry
+remains observable in each cold action log without becoming a cache output.
 
 * Security and reproducibility
 
@@ -406,6 +442,10 @@ The implementation is accepted only when all of these gates pass:
 - host, prebuilt, and auto capability gates on supported platforms;
 - checked-in Bzlmod lock verification;
 - graph and package receipt schema validation;
+- byte-identical package receipts across direct executions with different
+  resource observations and across two uncached fresh-output-root executions;
+- strict package execution telemetry validation without telemetry fields in the
+  canonical receipt;
 - public =GerbilPackageInfo= loading through =:build=;
 - direct and transitive dependency imports through =gerbil_test=;
 - success, failure, cancellation, and timeout lifecycle receipts with no

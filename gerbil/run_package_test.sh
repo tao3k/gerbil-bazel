@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'printf "run_package_test failed at line %s\n" "$LINENO" >&2' ERR
+
 resolve_runfile() {
   local path=$1
   if [[ "$path" = /* ]]; then
@@ -12,6 +14,8 @@ resolve_runfile() {
 
 gxi=$(resolve_runfile "${1:?gxi path is required}")
 runner=$(resolve_runfile "${2:?package runner path is required}")
+telemetry_validator=$(resolve_runfile "${3:?telemetry validator path is required}")
+telemetry_schema=$(resolve_runfile "${4:?telemetry schema path is required}")
 root=${TEST_TMPDIR:?TEST_TMPDIR is required}/run-package
 source_root=$root/source
 tools_root=$root/tools
@@ -104,7 +108,19 @@ run_fixture() {
     "$gxi" "$runner" "$request"
 }
 
-FAKE_RECEIPT_MODE=generic run_fixture generic
+extract_execution_telemetry() {
+  local stderr_path=$1
+  local telemetry_path=$2
+  local prefix='GERBIL_BAZEL_PACKAGE_EXECUTION_TELEMETRY '
+  sed -n "s/^$prefix//p" "$stderr_path" >"$telemetry_path"
+  if [[ $(wc -l <"$telemetry_path") -ne 1 ]]; then
+    printf 'expected exactly one package execution telemetry line: %s\n' \
+      "$stderr_path" >&2
+    exit 1
+  fi
+}
+
+FAKE_RECEIPT_MODE=generic run_fixture generic 2>"$root/generic.stderr"
 [[ ! -e "$root/generic.log.failure-receipts" ]]
 grep -F '"schema":"gerbil-bazel.package-receipt.v1"' \
   "$root/generic.receipt.json" >/dev/null
@@ -113,7 +129,22 @@ grep -F '"libraryOutputRequired":false' \
 grep -F '"packageIdentity":"example.invalid/runner"' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageReference":"example.invalid/runner"' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
-grep -F '"resourceBudget":{' "$root/generic.receipt.json" >/dev/null
+if grep -E '"(durationSeconds|resourceBudget|resourceGuard)"' \
+  "$root/generic.receipt.json" >/dev/null; then
+  printf 'execution telemetry leaked into the deterministic package receipt\n' >&2
+  exit 1
+fi
+extract_execution_telemetry \
+  "$root/generic.stderr" \
+  "$root/generic.telemetry.json"
+"$gxi" \
+  "$telemetry_validator" \
+  "$telemetry_schema" \
+  "$root/generic.telemetry.json"
+grep -F '"schema":"gerbil-bazel.package-execution-telemetry.v1"' \
+  "$root/generic.telemetry.json" >/dev/null
+grep -F '"durationSeconds":' "$root/generic.telemetry.json" >/dev/null
+grep -F '"resourceBudget":{' "$root/generic.telemetry.json" >/dev/null
 grep -F '("example.invalid/runner" . "unknown")' "$root/generic.gxpkg-manifest" >/dev/null
 [[ ! -e "$root/generic.package/.gerbil/pkg" ]]
 [[ -f "$root/generic.package/external/package/src/generated.c" ]]
@@ -121,8 +152,19 @@ grep -F '("example.invalid/runner" . "unknown")' "$root/generic.gxpkg-manifest" 
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]
 
-GERBIL_BUILD_CORES=3 run_fixture explicit-build-cores
+GERBIL_BUILD_CORES=3 run_fixture explicit-build-cores \
+  2>"$root/explicit-build-cores.stderr"
 [[ "$(<"$root/explicit-build-cores.package/external/package/build-cores.txt")" == 3 ]]
+extract_execution_telemetry \
+  "$root/explicit-build-cores.stderr" \
+  "$root/explicit-build-cores.telemetry.json"
+"$gxi" \
+  "$telemetry_validator" \
+  "$telemetry_schema" \
+  "$root/explicit-build-cores.telemetry.json"
+grep -F '"configuredCores":3' \
+  "$root/explicit-build-cores.telemetry.json" >/dev/null
+cmp "$root/generic.receipt.json" "$root/explicit-build-cores.receipt.json"
 
 set +e
 GERBIL_BUILD_CORES=invalid run_fixture invalid-build-cores \

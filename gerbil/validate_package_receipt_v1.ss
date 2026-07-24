@@ -1,53 +1,20 @@
 #!/usr/bin/env gxi
 ;;; -*- Gerbil -*-
-;;; Contract validator for stable Gerbil-Bazel project receipt v1 instances.
+;;; Contract validator for deterministic Gerbil-Bazel package receipt v1 instances.
 
 (export main)
 
 (import :gerbil/gambit :std/text/json)
 
 (def +package-receipt-schema+ "gerbil-bazel.package-receipt.v1")
-(def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
 
-(def +required-package-fields+
+(def +package-fields+
   '("schema"
     "status"
-    "durationSeconds"
     "libraryOutputRequired"
     "packageIdentity"
     "packageReference"
-    "packageRevision"
-    "resourceBudget"))
-
-(def +package-fields+
-  (append +required-package-fields+ '("resourceGuard")))
-
-(def +resource-budget-fields+
-  '("schema" "decision" "selectedCores" "requestedCores"
-    "configuredCores" "logicalCpuCount" "memoryPerCoreBytes"
-    "memoryCoreLimit" "availableMemoryBytes" "maxRssBytes"))
-
-(def +resource-guard-fields+
-  '("kind"
-    "schema"
-    "version"
-    "label"
-    "outcome"
-    "exitCode"
-    "childExitCode"
-    "logicalCpuCount"
-    "runnableProcessCount"
-    "systemMemoryBytes"
-    "availableMemoryBytes"
-    "rssHeadroomBytes"
-    "maxRssBytes"
-    "peakRssBytes"
-    "processTreeRssAvailable"
-    "elapsedMs"
-    "timeoutMs"
-    "admissionOutcome"
-    "admissionAdvisories"
-    "admissionReasons"))
+    "packageRevision"))
 
 (def (contract-assert condition message . irritants)
   (unless condition (apply error message irritants)))
@@ -56,151 +23,90 @@
   (call-with-input-file path read-json))
 
 (def (exact-fields! value allowed label)
-  (contract-assert (hash-table? value) "receipt value must be a JSON object" label)
+  (contract-assert
+   (hash-table? value)
+   "receipt value must be a JSON object"
+   label)
   (hash-for-each
    (lambda (key _value)
-     (contract-assert (member key allowed) "unexpected receipt field" label key))
+     (contract-assert
+      (member key allowed)
+      "unexpected receipt field"
+      label
+      key))
    value))
 
 (def (required-fields! value required label)
   (for-each
    (lambda (key)
-     (contract-assert (hash-key? value key) "missing required receipt field" label key))
+     (contract-assert
+      (hash-key? value key)
+      "missing required receipt field"
+      label
+      key))
    required))
 
-(def (positive-integer? value)
-  (and (exact-integer? value) (> value 0)))
-
-(def (non-negative-integer? value)
-  (and (exact-integer? value) (>= value 0)))
-
-(def (false-or-non-negative-integer? value)
-  (or (eq? value #f) (non-negative-integer? value)))
-
-(def (string-list? value)
-  (and (list? value) (andmap string? value)))
-
-(def (validate-resource-budget! budget label)
-  (exact-fields! budget +resource-budget-fields+ label)
-  (required-fields! budget +resource-budget-fields+ label)
-  (contract-assert
-   (string=? (hash-ref budget "schema") "gerbil-bazel.resource-budget.v1")
-   "invalid resource budget schema" label)
-  (contract-assert
-   (member (hash-ref budget "decision")
-           '("explicit" "explicit-memory-cap"
-             "adaptive-configured" "adaptive-memory-cap"))
-   "invalid resource budget decision" label)
-  (for-each
-   (lambda (key)
-     (contract-assert (positive-integer? (hash-ref budget key))
-                      "invalid positive resource budget field" label key))
-   '("selectedCores" "requestedCores" "configuredCores"
-     "logicalCpuCount" "memoryPerCoreBytes" "memoryCoreLimit"
-     "maxRssBytes"))
-  (contract-assert
-   (non-negative-integer? (hash-ref budget "availableMemoryBytes"))
-   "invalid resource budget available memory" label))
-
-(def (validate-resource-guard! guard label)
-  (exact-fields! guard +resource-guard-fields+ label)
-  (required-fields! guard +resource-guard-fields+ label)
-  (contract-assert (string=? (hash-ref guard "kind") +resource-guard-schema+)
-                   "invalid resource guard kind" label)
-  (contract-assert (string=? (hash-ref guard "schema") +resource-guard-schema+)
-                   "invalid resource guard schema" label)
-  (contract-assert (= (hash-ref guard "version") 1)
-                   "invalid resource guard version" label)
-  (contract-assert (string? (hash-ref guard "label"))
-                   "invalid resource guard label" label)
-  (contract-assert
-   (member (hash-ref guard "outcome")
-           '("completed" "blocked-host-pressure" "rss-limit-exceeded" "timeout"))
-   "invalid resource guard outcome" label)
-  (contract-assert (non-negative-integer? (hash-ref guard "exitCode"))
-                   "invalid resource guard exit code" label)
-  (contract-assert
-   (false-or-non-negative-integer? (hash-ref guard "childExitCode"))
-   "invalid resource guard child exit code" label)
-  (for-each
-   (lambda (key)
-     (contract-assert (positive-integer? (hash-ref guard key))
-                      "invalid positive resource guard field" label key))
-   '("logicalCpuCount"
-     "runnableProcessCount"
-     "systemMemoryBytes"
-     "availableMemoryBytes"
-     "rssHeadroomBytes"
-     "maxRssBytes"))
-  (for-each
-   (lambda (key)
-     (contract-assert (non-negative-integer? (hash-ref guard key))
-                      "invalid non-negative resource guard field" label key))
-   '("peakRssBytes" "elapsedMs"))
-  (contract-assert (boolean? (hash-ref guard "processTreeRssAvailable"))
-                   "invalid process tree observability field" label)
-  (contract-assert
-   (false-or-non-negative-integer? (hash-ref guard "timeoutMs"))
-   "invalid resource guard timeout" label)
-  (contract-assert
-   (member (hash-ref guard "admissionOutcome")
-           '("ready" "blocked-host-pressure"))
-   "invalid resource guard admission outcome" label)
-  (for-each
-   (lambda (key)
-     (contract-assert (string-list? (hash-ref guard key))
-                      "invalid resource guard reason list" label key))
-   '("admissionAdvisories" "admissionReasons")))
+(def (non-empty-string? value)
+  (and
+   (string? value)
+   (> (string-length value) 0)))
 
 (def (validate-package-receipt! receipt path)
   (exact-fields! receipt +package-fields+ path)
-  (required-fields! receipt +required-package-fields+ path)
-  (contract-assert (string=? (hash-ref receipt "schema") +package-receipt-schema+)
-                   "invalid package receipt schema" path)
-  (contract-assert (string=? (hash-ref receipt "status") "ok")
-                   "invalid package receipt status" path)
-  (contract-assert (non-negative-integer? (hash-ref receipt "durationSeconds"))
-                   "invalid package receipt duration" path)
-  (contract-assert (boolean? (hash-ref receipt "libraryOutputRequired"))
-                   "invalid package receipt library flag" path)
+  (required-fields! receipt +package-fields+ path)
   (contract-assert
-                   (let (identity (hash-ref receipt "packageIdentity"))
-                     (and
-                      (string? identity)
-                      (> (string-length identity) 0)))
-                   "invalid package receipt package identity" path)
+   (string=?
+    (hash-ref receipt "schema")
+    +package-receipt-schema+)
+   "invalid package receipt schema"
+   path)
   (contract-assert
-                   (let (reference (hash-ref receipt "packageReference"))
-                     (and
-                      (string? reference)
-                      (> (string-length reference) 0)))
-                   "invalid package receipt package reference" path)
-  (contract-assert (string? (hash-ref receipt "packageRevision"))
-                   "invalid package receipt package revision" path)
-  (validate-resource-budget! (hash-ref receipt "resourceBudget") path)
-  (when (hash-key? receipt "resourceGuard")
-    (validate-resource-guard! (hash-ref receipt "resourceGuard") path)))
+   (string=? (hash-ref receipt "status") "ok")
+   "invalid package receipt status"
+   path)
+  (contract-assert
+   (boolean? (hash-ref receipt "libraryOutputRequired"))
+   "invalid package receipt library flag"
+   path)
+  (contract-assert
+   (non-empty-string? (hash-ref receipt "packageIdentity"))
+   "invalid package receipt package identity"
+   path)
+  (contract-assert
+   (non-empty-string? (hash-ref receipt "packageReference"))
+   "invalid package receipt package reference"
+   path)
+  (contract-assert
+   (string? (hash-ref receipt "packageRevision"))
+   "invalid package receipt package revision"
+   path))
 
 (def (validate-schema-owner! schema)
   (let* ((properties (hash-ref schema "properties"))
          (schema-property (hash-ref properties "schema")))
     (contract-assert
-     (equal? (hash-ref schema "required") +required-package-fields+)
+     (equal? (hash-ref schema "required") +package-fields+)
      "JSON Schema required fields drifted")
-    (contract-assert (eq? (hash-ref schema "additionalProperties") #f)
-                     "JSON Schema must reject unknown top-level fields")
-    (contract-assert (string=? (hash-ref schema-property "const")
-                              +package-receipt-schema+)
-                     "JSON Schema package receipt constant drifted")
+    (contract-assert
+     (eq? (hash-ref schema "additionalProperties") #f)
+     "JSON Schema must reject unknown top-level fields")
+    (contract-assert
+     (string=?
+      (hash-ref schema-property "const")
+      +package-receipt-schema+)
+     "JSON Schema package receipt constant drifted")
     (for-each
      (lambda (key)
-       (contract-assert (hash-key? properties key)
-                        "JSON Schema extension field is missing" key))
-     '("resourceGuard"))))
+       (contract-assert
+        (not (hash-key? properties key))
+        "execution telemetry leaked into deterministic receipt schema"
+        key))
+     '("durationSeconds" "resourceBudget" "resourceGuard"))))
 
 (def (main schema-path . receipt-paths)
-  (contract-assert (pair? receipt-paths)
-                   "usage: validate_package_receipt_v1.ss SCHEMA RECEIPT [RECEIPT ...]")
+  (contract-assert
+   (pair? receipt-paths)
+   "usage: validate_package_receipt_v1.ss SCHEMA RECEIPT [RECEIPT ...]")
   (validate-schema-owner! (read-json-file schema-path))
   (for-each
    (lambda (path)

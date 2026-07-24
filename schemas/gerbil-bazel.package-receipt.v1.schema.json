@@ -2,17 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.package-receipt.v1.schema.json",
   "title": "Gerbil Bazel Package Receipt v1",
-  "description": "Stable action receipt for one canonical Gerbil package build.",
+  "description": "Deterministic action receipt for one canonical Gerbil package build.",
   "type": "object",
   "required": [
     "schema",
     "status",
-    "durationSeconds",
     "libraryOutputRequired",
     "packageIdentity",
     "packageReference",
-    "packageRevision",
-    "resourceBudget"
+    "packageRevision"
   ],
   "properties": {
     "schema": {
@@ -20,10 +18,6 @@
     },
     "status": {
       "const": "ok"
-    },
-    "durationSeconds": {
-      "type": "integer",
-      "minimum": 0
     },
     "libraryOutputRequired": {
       "type": "boolean"
@@ -41,206 +35,7 @@
     "packageRevision": {
       "description": "Locked source revision, or the empty string for the workspace root.",
       "type": "string"
-    },
-    "resourceBudget": {
-      "$ref": "#/$defs/resourceBudgetV1"
-    },
-    "resourceGuard": {
-      "$ref": "#/$defs/resourceGuardReceiptV1"
     }
   },
-  "additionalProperties": false,
-  "$defs": {
-    "resourceBudgetV1": {
-      "type": "object",
-      "required": [
-        "schema",
-        "decision",
-        "selectedCores",
-        "requestedCores",
-        "configuredCores",
-        "logicalCpuCount",
-        "memoryPerCoreBytes",
-        "memoryCoreLimit",
-        "availableMemoryBytes",
-        "maxRssBytes"
-      ],
-      "properties": {
-        "schema": {
-          "const": "gerbil-bazel.resource-budget.v1"
-        },
-        "decision": {
-          "enum": [
-            "explicit",
-            "explicit-memory-cap",
-            "adaptive-configured",
-            "adaptive-memory-cap"
-          ]
-        },
-        "selectedCores": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "requestedCores": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "configuredCores": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "logicalCpuCount": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "memoryPerCoreBytes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "memoryCoreLimit": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "availableMemoryBytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "maxRssBytes": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "additionalProperties": false
-    },
-    "resourceGuardReceiptV1": {
-      "type": "object",
-      "required": [
-        "kind",
-        "schema",
-        "version",
-        "label",
-        "outcome",
-        "exitCode",
-        "childExitCode",
-        "logicalCpuCount",
-        "runnableProcessCount",
-        "systemMemoryBytes",
-        "availableMemoryBytes",
-        "rssHeadroomBytes",
-        "maxRssBytes",
-        "peakRssBytes",
-        "processTreeRssAvailable",
-        "elapsedMs",
-        "timeoutMs",
-        "admissionOutcome",
-        "admissionAdvisories",
-        "admissionReasons"
-      ],
-      "properties": {
-        "kind": {
-          "const": "gerbil-bazel.resource-guard-receipt.v1"
-        },
-        "schema": {
-          "const": "gerbil-bazel.resource-guard-receipt.v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "label": {
-          "type": "string"
-        },
-        "outcome": {
-          "enum": [
-            "completed",
-            "blocked-host-pressure",
-            "rss-limit-exceeded",
-            "timeout"
-          ]
-        },
-        "exitCode": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "childExitCode": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 0
-            },
-            {
-              "const": false
-            }
-          ]
-        },
-        "logicalCpuCount": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "runnableProcessCount": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "systemMemoryBytes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "availableMemoryBytes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "rssHeadroomBytes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "maxRssBytes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "peakRssBytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "processTreeRssAvailable": {
-          "type": "boolean"
-        },
-        "elapsedMs": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "timeoutMs": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 1
-            },
-            {
-              "const": false
-            }
-          ]
-        },
-        "admissionOutcome": {
-          "enum": [
-            "ready",
-            "blocked-host-pressure"
-          ]
-        },
-        "admissionAdvisories": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
-        },
-        "admissionReasons": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
-        }
-      },
-      "additionalProperties": false
-    }
-  }
+  "additionalProperties": false
 }

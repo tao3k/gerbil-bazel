@@ -18,4 +18,7 @@ schema=$(resolve_runfile "${3:?package receipt schema path is required}")
 grep -F '"const": "gerbil-bazel.package-receipt.v1"' "$schema" >/dev/null
 grep -F '"additionalProperties": false' "$schema" >/dev/null
 grep -F '"packageReference"' "$schema" >/dev/null
-grep -F '"resourceGuard"' "$schema" >/dev/null
+if grep -E '"(durationSeconds|resourceBudget|resourceGuard)"' "$schema" >/dev/null; then
+  printf 'execution telemetry leaked into the deterministic package receipt schema\n' >&2
+  exit 1
+fi

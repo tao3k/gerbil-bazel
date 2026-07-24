@@ -25,40 +25,22 @@ done
 
 "$gxi" "$validator" "$schema" "${receipts[@]}"
 
-write_package_receipt() {
-  local path=$1
-  local resource_budget=$2
-  printf '%s\n' \
-    '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","durationSeconds":0,"libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test","resourceBudget":'"$resource_budget"'}' \
-    >"$path"
-}
-
-missing_budget="${TEST_TMPDIR:?TEST_TMPDIR is required}/missing-resource-budget.json"
-unknown_budget_field="$TEST_TMPDIR/unknown-resource-budget-field.json"
-zero_positive_budget_field="$TEST_TMPDIR/zero-positive-resource-budget-field.json"
-invalid_budget_decision="$TEST_TMPDIR/invalid-resource-budget-decision.json"
-negative_available_memory="$TEST_TMPDIR/negative-resource-budget-available-memory.json"
-
-printf '%s\n' \
-  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","durationSeconds":0,"libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test"}' \
-  >"$missing_budget"
-write_package_receipt "$unknown_budget_field" \
-  '{"schema":"gerbil-bazel.resource-budget.v1","decision":"adaptive-configured","selectedCores":1,"requestedCores":1,"configuredCores":1,"logicalCpuCount":1,"memoryPerCoreBytes":1,"memoryCoreLimit":1,"availableMemoryBytes":0,"maxRssBytes":1,"unknown":true}'
-write_package_receipt "$zero_positive_budget_field" \
-  '{"schema":"gerbil-bazel.resource-budget.v1","decision":"adaptive-configured","selectedCores":0,"requestedCores":1,"configuredCores":1,"logicalCpuCount":1,"memoryPerCoreBytes":1,"memoryCoreLimit":1,"availableMemoryBytes":0,"maxRssBytes":1}'
-write_package_receipt "$invalid_budget_decision" \
-  '{"schema":"gerbil-bazel.resource-budget.v1","decision":"fixed","selectedCores":1,"requestedCores":1,"configuredCores":1,"logicalCpuCount":1,"memoryPerCoreBytes":1,"memoryCoreLimit":1,"availableMemoryBytes":0,"maxRssBytes":1}'
-write_package_receipt "$negative_available_memory" \
-  '{"schema":"gerbil-bazel.resource-budget.v1","decision":"adaptive-configured","selectedCores":1,"requestedCores":1,"configuredCores":1,"logicalCpuCount":1,"memoryPerCoreBytes":1,"memoryCoreLimit":1,"availableMemoryBytes":-1,"maxRssBytes":1}'
+valid_receipt='{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test"}'
 
 invalid_receipts=(
-  "$missing_budget"
-  "$unknown_budget_field"
-  "$zero_positive_budget_field"
-  "$invalid_budget_decision"
-  "$negative_available_memory"
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test"}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"","packageReference":"test","packageRevision":"test"}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"","packageRevision":"test"}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test","durationSeconds":0}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test","resourceBudget":{}}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test","resourceGuard":{}}'
+  '{"schema":"gerbil-bazel.package-receipt.v1","status":"ok","libraryOutputRequired":false,"packageIdentity":"test","packageReference":"test","packageRevision":"test","unknown":true}'
 )
-for receipt in "${invalid_receipts[@]}"; do
+
+index=0
+for payload in "${invalid_receipts[@]}"; do
+  receipt="${TEST_TMPDIR:?TEST_TMPDIR is required}/invalid-package-receipt-$index.json"
+  printf '%s\n' "$payload" >"$receipt"
   set +e
   "$gxi" "$validator" "$schema" "$receipt" >/dev/null 2>&1
   status=$?
@@ -67,4 +49,9 @@ for receipt in "${invalid_receipts[@]}"; do
     printf 'expected invalid package receipt to fail: %s\n' "$receipt" >&2
     exit 1
   fi
+  index=$((index + 1))
 done
+
+valid_path="$TEST_TMPDIR/valid-package-receipt.json"
+printf '%s\n' "$valid_receipt" >"$valid_path"
+"$gxi" "$validator" "$schema" "$valid_path"

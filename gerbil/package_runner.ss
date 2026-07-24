@@ -4,6 +4,10 @@
   "gerbil-bazel.package-request.v1")
 (def +package-receipt-schema+
   "gerbil-bazel.package-receipt.v1")
+(def +package-execution-telemetry-schema+
+  "gerbil-bazel.package-execution-telemetry.v1")
+(def +package-execution-telemetry-prefix+
+  "GERBIL_BAZEL_PACKAGE_EXECUTION_TELEMETRY ")
 
 (def (request-ref request key)
   (hash-ref request key))
@@ -403,18 +407,28 @@
        (string-append name " must be 0 or 1")
        raw)))))
 
-(def (package-receipt
+(def (package-receipt request library-required?)
+  (hash
+   ("schema" +package-receipt-schema+)
+   ("status" "ok")
+   ("libraryOutputRequired" library-required?)
+   ("packageIdentity"
+    (request-ref request "packageIdentity"))
+   ("packageReference"
+    (request-ref request "packageReference"))
+   ("packageRevision"
+    (request-ref request "packageRevision"))))
+
+(def (package-execution-telemetry
       request
       duration-seconds
-      library-required?
       budget
       guard-receipt)
-  (let (receipt
+  (let (telemetry
         (hash
-         ("schema" +package-receipt-schema+)
+         ("schema" +package-execution-telemetry-schema+)
          ("status" "ok")
          ("durationSeconds" duration-seconds)
-         ("libraryOutputRequired" library-required?)
          ("packageIdentity"
           (request-ref request "packageIdentity"))
          ("packageReference"
@@ -423,8 +437,18 @@
           (request-ref request "packageRevision"))
          ("resourceBudget" budget)))
     (when guard-receipt
-      (hash-put! receipt "resourceGuard" guard-receipt))
-    receipt))
+      (hash-put! telemetry "resourceGuard" guard-receipt))
+    telemetry))
+
+(def (emit-package-execution-telemetry! telemetry)
+  (display
+   +package-execution-telemetry-prefix+
+   (current-error-port))
+  (display
+   (receipt-json telemetry)
+   (current-error-port))
+  (newline (current-error-port))
+  (force-output (current-error-port)))
 
 (def (read-local-version-manifest path)
   (let* ((form
@@ -1026,17 +1050,21 @@
           (write-gxpkg-manifest! request package-source-root)
           (delete-tree! (path-expand ".gerbil/pkg" package-root))
           (let* ((duration-seconds
-                  (inexact->exact
+                 (inexact->exact
                    (round (- (now-seconds) started))))
                  (receipt
                   (package-receipt
                    request
+                   library-required?))
+                 (telemetry
+                  (package-execution-telemetry
+                   request
                    duration-seconds
-                   library-required?
                    budget
                    guard-receipt)))
             (write-json-file! receipt-path receipt)
             (call-with-input-file receipt-path read-json)
+            (emit-package-execution-telemetry! telemetry)
             receipt))))))
 
 (def (main request-path)

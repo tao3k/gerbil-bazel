@@ -126,9 +126,16 @@ The evaluator emits `gerbil-bazel.package-manifest.v1`. The generated repository
 emits `gerbil-bazel.package-graph.v1`, and each build emits
 `gerbil-bazel.package-receipt.v1`.
 
-Evidence includes package identity, locked revision, source and closure digests,
-dependency edges, evaluator and Gerbil versions, native ABI, execution
-environment, resource-guard policy, outputs, log, and duration.
+The package receipt is a deterministic action artifact containing package
+identity, locked revision, declared library-output requirement, and successful
+status. Host-dependent duration, adaptive CPU and memory budget, and optional
+process-guard observations are emitted separately as one structured
+`gerbil-bazel.package-execution-telemetry.v1` stderr line. Telemetry remains
+observable on cold execution but never enters the canonical cached receipt.
+
+Graph evidence contains source and closure digests, dependency edges, evaluator
+and Gerbil versions, and native ABI identity. Package action logs retain
+upstream build output and execution telemetry.
 
 Each package action also emits one upstream-compatible plain Scheme dependency
 manifest. A parent action maps only its direct dependency manifests into its
