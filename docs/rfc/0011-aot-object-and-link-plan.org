@@ -6,9 +6,11 @@
 * Status
 
 The object and link-plan capability is implemented on the feature branch.
-Focused and full Darwin validation pass. Cross-platform CI validation is
-pending. Native archive materialization remains a distinct consumer of this
-capability.
+Focused and full Darwin validation pass. Cross-platform CI run 30112905470
+passed on Linux immutable-prebuilt in 6m55s and macOS Homebrew-host in 8m38s.
+Cross-platform lock workflow 30112719689 also passed its Linux seed, Darwin
+merge, and Linux verification lifecycle. Native archive materialization remains
+a distinct consumer of this capability.
 
 * Summary
 
