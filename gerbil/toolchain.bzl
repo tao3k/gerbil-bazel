@@ -9,6 +9,10 @@ GerbilToolchainInfo = provider(
         "dependency_libraries": "depset of configured Gerbil dependency files",
         "dependency_library_root": "root marker for the configured libraries",
         "environment": "normalized environment inherited by Gerbil actions",
+        "gambit_libraries": "depset containing the selected Gambit native runtime",
+        "gambit_library_root": "root marker for the relocatable Gambit native library directory",
+        "gambit_link_libraries": "ordered native libraries required by Gambit consumers",
+        "gambit_static_link_available": "whether the selected capability publishes libgambit.a",
         "gerbil_as": "assembler executable",
         "gerbil_cc": "C compiler executable path",
         "gerbil_ld": "linker executable",
@@ -44,6 +48,7 @@ def _gerbil_toolchain_impl(ctx):
     compile_tools = [ctx.attr.gxc, ctx.attr.gxi, ctx.attr.gxpkg]
     direct_files = [
         ctx.file.dependency_library_root,
+        ctx.file.gambit_library_root,
         ctx.file.gerbil_cc,
         ctx.file.gerbil_gcc,
         ctx.file.gerbil_gsc,
@@ -53,6 +58,7 @@ def _gerbil_toolchain_impl(ctx):
     ]
     transitive = [
         ctx.attr.dependency_libraries[DefaultInfo].files,
+        ctx.attr.gambit_libraries[DefaultInfo].files,
         ctx.attr.native_scheme_env[DefaultInfo].default_runfiles.files,
     ]
     for target in tools:
@@ -61,12 +67,16 @@ def _gerbil_toolchain_impl(ctx):
 
     compile_direct_files = [
         ctx.file.dependency_library_root,
+        ctx.file.gambit_library_root,
         ctx.file.gerbil_cc,
         ctx.file.gerbil_gcc,
         ctx.file.gerbil_gsc,
         ctx.file.native_abi_fingerprint_file,
     ]
-    compile_transitive = [ctx.attr.dependency_libraries[DefaultInfo].files]
+    compile_transitive = [
+        ctx.attr.dependency_libraries[DefaultInfo].files,
+        ctx.attr.gambit_libraries[DefaultInfo].files,
+    ]
     for target in compile_tools:
         compile_direct_files.append(target[DefaultInfo].files_to_run.executable)
         compile_transitive.append(target[DefaultInfo].default_runfiles.files)
@@ -85,6 +95,10 @@ def _gerbil_toolchain_impl(ctx):
         dependency_libraries = ctx.attr.dependency_libraries[DefaultInfo].files,
         dependency_library_root = ctx.file.dependency_library_root,
         environment = action_environment,
+        gambit_libraries = ctx.attr.gambit_libraries[DefaultInfo].files,
+        gambit_library_root = ctx.file.gambit_library_root,
+        gambit_link_libraries = ctx.attr.gambit_link_libraries,
+        gambit_static_link_available = ctx.attr.gambit_static_link_available,
         gerbil_as = ctx.attr.gerbil_as,
         gerbil_cc = _execroot_path(ctx.file.gerbil_cc),
         gerbil_ld = ctx.attr.gerbil_ld,
@@ -109,6 +123,10 @@ gerbil_toolchain = rule(
         "dependency_libraries": attr.label(mandatory = True),
         "dependency_library_root": attr.label(allow_single_file = True, mandatory = True),
         "environment": attr.string_dict(),
+        "gambit_libraries": attr.label(mandatory = True),
+        "gambit_library_root": attr.label(allow_single_file = True, mandatory = True),
+        "gambit_link_libraries": attr.string_list(mandatory = True),
+        "gambit_static_link_available": attr.bool(mandatory = True),
         "gerbil_as": attr.string(mandatory = True),
         "gerbil_cc": attr.label(allow_single_file = True, mandatory = True),
         "gerbil_gcc": attr.label(allow_single_file = True, mandatory = True),

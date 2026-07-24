@@ -114,6 +114,11 @@ else
 fi
 normalize_gambuild_compiler "$stage/$gerbil_home/bin/gambuild-C"
 
+gambit_static_library=
+if [[ -f "$stage/$gerbil_home/lib/libgambit.a" ]]; then
+  gambit_static_library="$gerbil_home/lib/libgambit.a"
+fi
+
 dependency_roots='[]'
 for candidate in "$prefix/lib" "$prefix/current/lib"; do
   if [[ -d "$candidate" ]]; then
@@ -157,6 +162,7 @@ jq -n \
   --arg system "$system" \
   --arg architecture "$architecture" \
   --arg gerbil_home "$gerbil_home" \
+  --arg gambit_static_library "$gambit_static_library" \
   --argjson tools "$tools" \
   --argjson dependency_roots "$dependency_roots" \
   '{
@@ -170,7 +176,9 @@ jq -n \
     tools: $tools,
     dependencyRoots: $dependency_roots,
     environment: {}
-  }' >"$manifest"
+  } + if $gambit_static_library == "" then {} else {
+    gambitStaticLibrary: $gambit_static_library
+  } end' >"$manifest"
 
 archive_started_at="$SECONDS"
 tar \

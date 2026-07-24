@@ -3,7 +3,8 @@
 
 * Status
 
-Implemented on the feature branch. Cross-platform CI validation is pending.
+Implemented and validated on the feature branch. Linux immutable-prebuilt and
+macOS Homebrew-host CI both pass in run 30098177578.
 
 * Motivation
 

@@ -1,6 +1,7 @@
 load(
     "@gerbil_bazel//gerbil:defs.bzl",
     "GerbilPackageInfo",
+    "gerbil_aot_objects",
     "gerbil_package_binary",
     "gerbil_test",
 )
@@ -75,6 +76,50 @@ sh_test(
     srcs = ["package_binary_test.sh"],
     args = ["$(rlocationpath :package_binary)"],
     data = [":package_binary"],
+)
+
+gerbil_aot_objects(
+    name = "package_aot",
+    c_srcs = ["aot-runtime.c"],
+    linker_name = "test_package_linker",
+    main_symbol = "test_package_gambit_main",
+    module = "example.invalid/test-package/src/value",
+    package = "@test_package//:build",
+)
+
+filegroup(
+    name = "package_aot_plan",
+    srcs = [":package_aot"],
+    output_group = "link_plan",
+)
+
+filegroup(
+    name = "package_aot_receipt",
+    srcs = [":package_aot"],
+    output_group = "receipt",
+)
+
+sh_test(
+    name = "package_aot_test",
+    srcs = ["package_aot_test.sh"],
+    args = [
+        "$(rlocationpath :package_aot_plan)",
+        "$(rlocationpath :package_aot_receipt)",
+        "$(rlocationpath @local_gerbil//:gxi)",
+        "$(rlocationpath @gerbil_bazel//gerbil:validate_aot_v1.ss)",
+        "$(rlocationpath @gerbil_bazel//schemas:gerbil-bazel.native-link-plan.v1.schema.json)",
+        "$(rlocationpath @gerbil_bazel//schemas:gerbil-bazel.aot-receipt.v1.schema.json)",
+    ],
+    data = [
+        ":package_aot",
+        ":package_aot_plan",
+        ":package_aot_receipt",
+        "@gerbil_bazel//gerbil:functional.ss",
+        "@gerbil_bazel//gerbil:validate_aot_v1.ss",
+        "@gerbil_bazel//schemas:gerbil-bazel.aot-receipt.v1.schema.json",
+        "@gerbil_bazel//schemas:gerbil-bazel.native-link-plan.v1.schema.json",
+        "@local_gerbil//:gxi",
+    ],
 )
 
 sh_test(

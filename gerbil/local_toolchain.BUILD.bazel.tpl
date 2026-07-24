@@ -41,11 +41,25 @@ filegroup(
     srcs = ["lib/.root"],
 )
 
+filegroup(
+    name = "gambit_libraries",
+    srcs = {{GAMBIT_LIBRARY_FILES}},
+)
+
+filegroup(
+    name = "gambit_library_root",
+    srcs = ["gambit/.root"],
+)
+
 gerbil_toolchain(
     name = "toolchain_impl",
     dependency_libraries = ":dependency_libraries",
     dependency_library_root = "lib/.root",
     environment = {{ENVIRONMENT_DICT}},
+    gambit_libraries = ":gambit_libraries",
+    gambit_library_root = "gambit/.root",
+    gambit_link_libraries = {{GAMBIT_LINK_LIBRARIES}},
+    gambit_static_link_available = {{GAMBIT_STATIC_LINK_AVAILABLE}},
     gerbil_as = {{GERBIL_AS}},
     gerbil_cc = {{GERBIL_CC}},
     gerbil_gcc = {{GERBIL_GCC}},

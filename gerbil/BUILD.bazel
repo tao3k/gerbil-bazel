@@ -186,6 +186,8 @@ sh_test(
 )
 
 exports_files([
+    "aot.bzl",
+    "aot_runner.ss",
     "defs.bzl",
     "binary.bzl",
     "extensions.bzl",
@@ -208,6 +210,7 @@ exports_files([
     "script.bzl",
     "test.bzl",
     "toolchain.bzl",
+    "validate_aot_v1.ss",
     "validate_json.ss",
     "validate_package_execution_telemetry_v1.ss",
     "validate_package_receipt_v1.ss",

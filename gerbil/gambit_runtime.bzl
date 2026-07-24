@@ -68,6 +68,24 @@ def discover_gambit_producer_options(repository_ctx, gerbil_home):
         object = _gambuild_value(repository_ctx, gerbil_home, "FLAGS_OBJ"),
     )
 
+def materialize_gambit_link_runtime(repository_ctx, gerbil_home):
+    """Publishes an optional static Gambit runtime as a relocatable capability."""
+    library = repository_ctx.path("{}/lib/libgambit.a".format(gerbil_home))
+    repository_ctx.file(
+        "gambit/.root",
+        "gerbil-bazel Gambit native library root\n",
+    )
+    if library.exists:
+        repository_ctx.symlink(library, "gambit/lib/libgambit.a")
+        return struct(
+            available = True,
+            files = ["gambit/lib/libgambit.a"],
+        )
+    return struct(
+        available = False,
+        files = [],
+    )
+
 def _materialized_compiler(repository_ctx, compiler_command):
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:+-=, "
     for character in compiler_command.elems():

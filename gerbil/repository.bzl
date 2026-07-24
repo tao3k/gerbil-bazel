@@ -4,6 +4,7 @@ load(
     ":gambit_runtime.bzl",
     "discover_gambit_compiler_command",
     "discover_gambit_home",
+    "materialize_gambit_link_runtime",
     "normalized_gambit_runtime",
 )
 load(
@@ -170,6 +171,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
         gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
     )
+    gambit_link_runtime = materialize_gambit_link_runtime(
+        repository_ctx,
+        gambit_home,
+    )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
         repository_ctx.attr.environment,
@@ -250,6 +255,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         json.encode_indent({
             "environment": environment,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gambitStaticLinkAvailable": gambit_link_runtime.available,
             "gambitProducerOptions": {
                 "dynamic": runtime.producer_dynamic_options,
                 "object": runtime.producer_object_options,
@@ -273,6 +279,9 @@ def _local_gerbil_repository_impl(repository_ctx):
         {
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
+            "{{GAMBIT_LINK_LIBRARIES}}": repr(host.gambit_link_libraries),
+            "{{GAMBIT_LIBRARY_FILES}}": repr(gambit_link_runtime.files),
+            "{{GAMBIT_STATIC_LINK_AVAILABLE}}": repr(gambit_link_runtime.available),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
             "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_GCC}}": repr("gerbil-gcc"),

@@ -1,6 +1,10 @@
 """Repository rule for importing an immutable Gerbil toolchain capability."""
 
-load(":gambit_runtime.bzl", "normalized_gambit_runtime")
+load(
+    ":gambit_runtime.bzl",
+    "materialize_gambit_link_runtime",
+    "normalized_gambit_runtime",
+)
 load(
     ":host_system.bzl",
     "relocatable_action_environment",
@@ -294,6 +298,25 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home_relative,
         "Gerbil home",
     ))
+    declared_gambit_static_library = manifest.get("gambitStaticLibrary")
+    if declared_gambit_static_library != None:
+        declared_gambit_static_library = _safe_relative_path(
+            declared_gambit_static_library,
+            "manifest gambitStaticLibrary",
+        )
+        expected_gambit_static_library = gerbil_home_relative + "/lib/libgambit.a"
+        if declared_gambit_static_library != expected_gambit_static_library:
+            fail(
+                "manifest gambitStaticLibrary must identify {}, got {}".format(
+                    expected_gambit_static_library,
+                    declared_gambit_static_library,
+                ),
+            )
+        _payload_path(
+            repository_ctx,
+            declared_gambit_static_library,
+            "Gambit static library",
+        )
     native_abi = _hex_digest(
         manifest.get("nativeAbiFingerprint"),
         40,
@@ -316,6 +339,10 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         environment,
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
         gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
+    )
+    gambit_link_runtime = materialize_gambit_link_runtime(
+        repository_ctx,
+        gerbil_home,
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -393,6 +420,8 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "gerbilBuildCoresSource": build_cores.source,
             "gerbilHome": gerbil_home_relative,
             "gambitDynamicLinkOptions": host.gambit_dynamic_link_options,
+            "gambitStaticLinkDeclared": declared_gambit_static_library != None,
+            "gambitStaticLinkAvailable": gambit_link_runtime.available,
             "gambitProducerOptions": {
                 "dynamic": runtime.producer_dynamic_options,
                 "object": runtime.producer_object_options,
@@ -419,6 +448,9 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         {
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINTS}}": _string_list(platform.constraints),
+            "{{GAMBIT_LINK_LIBRARIES}}": repr(host.gambit_link_libraries),
+            "{{GAMBIT_LIBRARY_FILES}}": repr(gambit_link_runtime.files),
+            "{{GAMBIT_STATIC_LINK_AVAILABLE}}": repr(gambit_link_runtime.available),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
             "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_GCC}}": repr("gerbil-gcc"),
