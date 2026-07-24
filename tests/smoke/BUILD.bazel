@@ -1,16 +1,70 @@
+load("@gerbil_bazel//gerbil:defs.bzl", "GerbilPackageInfo", "gerbil_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 exports_files([
     "package-graph-dependency/build.ss",
     "package-graph-dependency/gerbil.pkg",
     "package-graph-dependency/src/main.ss",
+    "package-graph-dependency/test/dependency-test.ss",
     "package-graph/build.ss",
     "package-graph/gerbil.pkg",
     "package-graph/src/main.ss",
     "package-manifest/build.ss",
     "package-manifest/gerbil.pkg",
     "package-manifest/src/main.ss",
+    "package-test/build.ss",
+    "package-test/gerbil.pkg",
+    "package-test/src/value.ss",
+    "package-test/test/blocking-test.ss",
+    "package-test/test/failure-test.ss",
+    "package-test/test/value-test.ss",
 ])
+
+# Loading GerbilPackageInfo here is intentional: this BUILD file is the public
+# API smoke consumer, while the generated @test_package//:build alias proves
+# provider forwarding during analysis.
+_PUBLIC_PACKAGE_PROVIDER = GerbilPackageInfo
+
+gerbil_test(
+    name = "gerbil_test_success",
+    package = "@test_package//:build",
+    tests = ["package-test/test/value-test.ss"],
+)
+
+gerbil_test(
+    name = "gerbil_test_dependency",
+    package = "@root_package_with_dependency//:build",
+    tests = ["package-graph-dependency/test/dependency-test.ss"],
+)
+
+gerbil_test(
+    name = "gerbil_test_failure",
+    package = "@test_package//:build",
+    tags = ["manual"],
+    tests = ["package-test/test/failure-test.ss"],
+)
+
+gerbil_test(
+    name = "gerbil_test_blocking",
+    package = "@test_package//:build",
+    tags = ["manual"],
+    tests = ["package-test/test/blocking-test.ss"],
+)
+
+sh_test(
+    name = "gerbil_test_lifecycle_test",
+    srcs = ["gerbil_test_lifecycle_test.sh"],
+    args = [
+        "$(rlocationpath :gerbil_test_success)",
+        "$(rlocationpath :gerbil_test_failure)",
+        "$(rlocationpath :gerbil_test_blocking)",
+    ],
+    data = [
+        ":gerbil_test_blocking",
+        ":gerbil_test_failure",
+        ":gerbil_test_success",
+    ],
+)
 
 sh_test(
     name = "toolchain_environment_test",
@@ -33,8 +87,8 @@ sh_test(
         "@gerbil_bazel//gerbil:functional.ss",
         "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
         "@gerbil_bazel//gerbil:resource_policy.ss",
-        "@local_gerbil//:install_dependencies",
         "@local_gerbil//:gxi",
+        "@local_gerbil//:install_dependencies",
     ],
 )
 

@@ -250,8 +250,96 @@ capabilities and package graphs remain separate declarations.
 
 The generated repository exposes =:build=, =:build_receipt=,
 =:gxpkg_manifest=, =:package-graph.json=, =:source_closure=, and deterministic
-=:package_N= targets. Generated rules carry =GerbilPackageInfo= privately
-between graph-owned targets.
+=:package_N= targets. Generated rules carry =GerbilPackageInfo= between
+graph-owned targets, and the public =:build= alias forwards that capability to
+downstream consumer rules.
+
+* Public package consumer capability
+
+=GerbilPackageInfo= is the stable analysis boundary between the generated
+package graph and downstream rules. It exposes the built package root,
+transitive dependency package roots, upstream dependency manifest, package
+identity and reference, build log, and receipt. It does not expose the private
+=gerbil_package= action rule.
+
+The first public consumer is =gerbil_test=:
+
+#+begin_src starlark
+load(
+    "@gerbil_bazel//gerbil:defs.bzl",
+    "GerbilPackageInfo",
+    "gerbil_test",
+)
+
+gerbil_test(
+    name = "test",
+    package = "@root_package//:build",
+    tests = glob(["test/**/*-test.ss"]),
+    environment = {
+        "APPLICATION_MODE": "test",
+    },
+)
+#+end_src
+
+The rule derives =GERBIL_PATH= and =GERBIL_LOADPATH= from provider artifacts
+and the selected toolchain. The downstream author does not supply package root
+markers, dependency source repositories, native environment wrappers, or raw
+tool labels. Test modules follow upstream =gxtest= discovery: each suite is a
+phase-0 export whose symbol ends in singular =-test=.
+
+#+begin_src mermaid
+flowchart LR
+    GP["gerbil.pkg"] --> PG["generated package graph"]
+    PG --> PI["public GerbilPackageInfo"]
+    PI --> T["gerbil_test"]
+    DR["transitive dependency roots"] --> PI
+    TC["registered Gerbil toolchain"] --> T
+    TF["phase-0 *-test exports"] --> T
+    T --> E["terminal exec gxtest"]
+    E --> B["Bazel-owned test process"]
+#+end_src
+
+** Test process lifecycle
+
+The test launcher is a bounded setup bridge, not a runtime supervisor. It
+resolves runfiles, assembles the package load path, applies the declared test
+environment, changes to the built package root, and terminally executes the
+toolchain's =gxtest=. It never invokes =native_scheme_env= and never starts a
+background wait loop.
+
+No currently shipped Gerbil Scheme module provides a source-proven process
+replacement API. Using =run-process= would introduce another process owner and
+recreate the lifecycle failure. The minimal shell =exec= is therefore the
+explicit operating-system handoff boundary.
+
+#+begin_src mermaid
+sequenceDiagram
+    participant B as "Bazel test runner"
+    participant L as "bounded launcher PID"
+    participant G as "gxtest, same PID"
+    B->>L: "start test"
+    L->>L: "resolve runfiles and load path"
+    L->>G: "terminal exec"
+    Note over L,G: "PID ownership does not fork"
+    alt "success or test failure"
+        G-->>B: "exact child exit status"
+    else "cancellation or timeout"
+        B->>G: "signal terminal PID"
+        G-->>B: "signal-derived status; no wrapper remains"
+    end
+#+end_src
+
+The regression harness exercises four boundaries and emits
+=gerbil-bazel.test-lifecycle-receipt.v1=:
+
+- successful suite status =0=;
+- intentional suite failure status =42= from upstream =gxtest=;
+- terminal cancellation with a nonzero =gxtest= status;
+- forced timeout status =137=;
+- launcher PID replacement and zero child wrapper processes.
+
+This receipt is execution evidence. It is not a canonical cache-key input or a
+package artifact.
 
 * Evidence contracts
 
@@ -318,4 +406,8 @@ The implementation is accepted only when all of these gates pass:
 - host, prebuilt, and auto capability gates on supported platforms;
 - checked-in Bzlmod lock verification;
 - graph and package receipt schema validation;
+- public =GerbilPackageInfo= loading through =:build=;
+- direct and transitive dependency imports through =gerbil_test=;
+- success, failure, cancellation, and timeout lifecycle receipts with no
+  surviving wrapper process;
 - full Bazel query, build, test, and CI gates.

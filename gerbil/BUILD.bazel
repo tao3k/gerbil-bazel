@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 toolchain_type(name = "toolchain_type")
 
 exports_files(["functional.ss"])
+
 exports_files(["package_manifest.ss"])
 
 sh_binary(
@@ -143,8 +144,8 @@ sh_test(
     data = [
         ":validate_package_receipt_v1.ss",
         "//schemas:gerbil-bazel.package-receipt.v1.schema.json",
-        "@root_package//:build_receipt",
         "@local_gerbil//:gxi",
+        "@root_package//:build_receipt",
     ],
 )
 
@@ -194,10 +195,12 @@ exports_files([
     "prebuilt_toolchain.BUILD.bazel.tpl",
     "package.bzl",
     "package_runner.ss",
+    "providers.bzl",
     "repository.bzl",
     "resource_guard.ss",
     "resource_policy.ss",
     "script.bzl",
+    "test.bzl",
     "toolchain.bzl",
     "validate_json.ss",
     "validate_package_receipt_v1.ss",

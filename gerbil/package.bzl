@@ -1,19 +1,7 @@
 """Private Bazel action used by generated Gerbil package graphs."""
 
+load(":providers.bzl", "GerbilPackageInfo")
 load(":toolchain.bzl", "GERBIL_TOOLCHAIN_TYPE", "resolved_gerbil_toolchain")
-
-GerbilPackageInfo = provider(
-    doc = "Outputs carried between generated Gerbil package targets.",
-    fields = {
-        "dependency_roots": "transitive depset of built dependency package roots",
-        "gxpkg_manifest": "plain upstream-compatible gxpkg dependency manifest",
-        "log": "complete package build log",
-        "package_identity": "identity declared by this package's gerbil.pkg",
-        "package_reference": "graph reference used by parent gerbil.pkg manifests",
-        "package_root": "tree artifact containing the isolated built package",
-        "receipt": "machine-readable package build receipt",
-    },
-)
 
 def _staged_path(path):
     if path.startswith("../"):

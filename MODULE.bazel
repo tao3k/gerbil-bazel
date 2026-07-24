@@ -31,12 +31,16 @@ gerbil.auto(
     linux_prebuilt_urls = GERBIL_LINUX_URLS,
 )
 gerbil.package(
-    manifest = "//tests/smoke:package-graph/gerbil.pkg",
     name = "root_package",
+    manifest = "//tests/smoke:package-graph/gerbil.pkg",
 )
 gerbil.package(
-    manifest = "//tests/smoke:package-graph-dependency/gerbil.pkg",
     name = "root_package_with_dependency",
+    manifest = "//tests/smoke:package-graph-dependency/gerbil.pkg",
+)
+gerbil.package(
+    name = "test_package",
+    manifest = "//tests/smoke:package-test/gerbil.pkg",
 )
 gerbil.dependency(
     graph = "root_package_with_dependency",
@@ -54,6 +58,7 @@ use_repo(
     "local_gerbil",
     "root_package",
     "root_package_with_dependency",
+    "test_package",
 )
 
 register_toolchains(

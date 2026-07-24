@@ -87,6 +87,39 @@ Additional `package_N` targets are generated for the reachable dependency
 closure. Generated target edges are static and follow the evaluated manifest
 graph.
 
+## Package consumer API
+
+`@root_package//:build` carries the public `GerbilPackageInfo` capability.
+Consumers use that capability rather than reconstructing package directories,
+load paths, dependency roots, or toolchain environment:
+
+```starlark
+load(
+    "@gerbil_bazel//gerbil:defs.bzl",
+    "GerbilPackageInfo",
+    "gerbil_test",
+)
+
+gerbil_test(
+    name = "test",
+    package = "@root_package//:build",
+    tests = glob(["test/**/*-test.ss"]),
+    environment = {
+        "APPLICATION_MODE": "test",
+    },
+)
+```
+
+`gerbil_test` resolves the package root, its transitive package roots, and the
+registered Gerbil libraries into one runtime load path. Test files follow the
+upstream `gxtest` convention: export a phase-0 suite whose symbol ends in
+`-test`.
+
+The generated launcher performs setup and then terminally `exec`s `gxtest`.
+There is no resident `native_scheme_env` or process-waiting wrapper. Child
+success, failure, cancellation, and timeout status therefore reach Bazel
+without a second process owner.
+
 ## Evidence
 
 The evaluator emits `gerbil-bazel.package-manifest.v1`. The generated repository

@@ -192,7 +192,7 @@
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
         "bzlTransitiveDigest": "54uOFO11TS58DqGfIzawA4ct0vkfVoq5spIZHAOm2uU=",
-        "usagesDigest": "jmVO4hEgwFxOAUcD3wy+ykNitlPnx9MY03A/sK4aEjc=",
+        "usagesDigest": "tEyPiHCZithf/kVYEDxuTeXBakwDGpZkYzpfJldvuuk=",
         "recordedInputs": [
           "REPO_MAPPING:,local_gerbil +gerbil+local_gerbil"
         ],
@@ -258,12 +258,26 @@
               "root_manifest": "@@//tests/smoke:package-graph-dependency/gerbil.pkg",
               "root_revision": ""
             }
+          },
+          "test_package": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
+            "attributes": {
+              "dependency_packages": {},
+              "dependency_revisions": {},
+              "dependency_sha256": {},
+              "dependency_strip_prefixes": {},
+              "dependency_urls": {},
+              "environment": {},
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-test/gerbil.pkg",
+              "root_revision": ""
+            }
           }
         }
       },
       "os:osx,arch:aarch64": {
         "bzlTransitiveDigest": "54uOFO11TS58DqGfIzawA4ct0vkfVoq5spIZHAOm2uU=",
-        "usagesDigest": "jmVO4hEgwFxOAUcD3wy+ykNitlPnx9MY03A/sK4aEjc=",
+        "usagesDigest": "tEyPiHCZithf/kVYEDxuTeXBakwDGpZkYzpfJldvuuk=",
         "recordedInputs": [
           "REPO_MAPPING:,local_gerbil +gerbil+local_gerbil"
         ],
@@ -322,6 +336,20 @@
               "environment": {},
               "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
               "root_manifest": "@@//tests/smoke:package-graph-dependency/gerbil.pkg",
+              "root_revision": ""
+            }
+          },
+          "test_package": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
+            "attributes": {
+              "dependency_packages": {},
+              "dependency_revisions": {},
+              "dependency_sha256": {},
+              "dependency_strip_prefixes": {},
+              "dependency_urls": {},
+              "environment": {},
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-test/gerbil.pkg",
               "root_revision": ""
             }
           }
