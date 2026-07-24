@@ -20,22 +20,7 @@
 (def (now-seconds)
   (time->seconds (current-time)))
 
-(def (normalized-exit-code status)
-  (cond
-   ((< status 0) 1)
-   ((> status 255) (quotient status 256))
-   (else status)))
-
-(def (positive-integer text)
-  (let (value (and text (string->number text)))
-    (and (exact-integer? value) (> value 0) value)))
-
-(def (non-negative-integer text)
-  (let (value (and text (string->number text)))
-    (and
-     (exact-integer? value)
-     (>= value 0)
-     value)))
+(include "functional.ss")
 
 (def (positive-integer-from-env name fallback)
   (or (positive-integer (getenv name #f)) fallback))

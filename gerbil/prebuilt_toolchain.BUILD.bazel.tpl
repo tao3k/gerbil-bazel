@@ -15,7 +15,7 @@ gerbil_scheme_executable(
         "bin/gxpkg_raw",
         "native_abi.txt",
     ],
-    includes = ["resource_policy.ss"],
+    includes = ["functional.ss", "resource_policy.ss"],
 )
 
 {{TOOL_RULES}}

@@ -262,12 +262,6 @@
            rest)))
         (else (loop rest)))))))
 
-(def (tail-lines lines maximum)
-  (let (count (length lines))
-    (if (> count maximum)
-        (list-tail lines (- count maximum))
-        lines)))
-
 (def (emit-lines! lines port)
   (for-each
    (lambda (line)
@@ -449,31 +443,6 @@
       label
       key))
    required))
-
-(def (non-empty-string? value)
-  (and
-   (string? value)
-   (> (string-length value) 0)))
-
-(def (non-negative-exact-integer? value)
-  (and
-   (exact-integer? value)
-   (>= value 0)))
-
-(def (list-of? predicate value)
-  (and
-   (list? value)
-   (andmap predicate value)))
-
-(def (unique-items? items)
-  (let loop ((remaining items) (seen '()))
-    (cond
-     ((null? remaining) #t)
-     ((member (car remaining) seen) #f)
-     (else
-      (loop
-       (cdr remaining)
-       (cons (car remaining) seen))))))
 
 (def (lexical-absolute-path path)
   (path-simplify (absolute-path path)))

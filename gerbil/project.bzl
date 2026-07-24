@@ -98,7 +98,8 @@ def _gerbil_project_compile_impl(ctx):
         executable = toolchain.gxi,
         inputs = depset(
             direct = [
-                ctx.file._resource_policy,
+            ctx.file._functional,
+            ctx.file._resource_policy,
                 ctx.file._runner,
                 request,
                 toolchain.dependency_library_root,
@@ -152,6 +153,10 @@ gerbil_project_compile = rule(
         "_runner": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:project_runner.ss",
+        ),
+        "_functional": attr.label(
+            default = "//gerbil:functional.ss",
+            allow_single_file = True,
         ),
         "_resource_policy": attr.label(
             allow_single_file = True,

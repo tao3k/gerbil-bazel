@@ -216,8 +216,10 @@ sh_test(
         "$(rlocationpath @gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl)",
         "$(rlocationpath @local_gerbil//:gxi)",
         "$(rlocationpath @gerbil_bazel//gerbil:resource_policy.ss)",
+        "$(rlocationpath @gerbil_bazel//gerbil:functional.ss)",
     ],
     data = [
+        "@gerbil_bazel//gerbil:functional.ss",
         "@gerbil_bazel//gerbil:install_gerbil_dependencies.ss.tpl",
         "@gerbil_bazel//gerbil:resource_policy.ss",
         "@local_gerbil//:install_dependencies",

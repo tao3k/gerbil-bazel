@@ -17,11 +17,13 @@ install_launcher=$(resolve_runfile "${1:?install launcher runfile key is require
 template=$(resolve_runfile "${2:?install template runfile key is required}")
 gxi=$(resolve_runfile "${3:?gxi runfile key is required}")
 resource_policy=$(resolve_runfile "${4:?resource policy runfile key is required}")
+functional=$(resolve_runfile "${5:?functional runfile key is required}")
 test -x "$install_launcher"
 test -x "$install_launcher.gxpkg"
 test -f "$template"
 test -x "$gxi"
 test -f "$resource_policy"
+test -f "$functional"
 
 temporary_root=$(mktemp -d)
 trap 'rm -rf "$temporary_root"' EXIT
@@ -31,6 +33,7 @@ rendered="$temporary_root/install-dependencies.ss"
 log="$temporary_root/gxpkg.log"
 mkdir -p "$workspace"
 cp "$resource_policy" "$temporary_root/resource_policy.ss"
+cp "$functional" "$temporary_root/functional.ss"
 
 cat >"$fake_gxpkg" <<'EOF'
 #!/usr/bin/env bash

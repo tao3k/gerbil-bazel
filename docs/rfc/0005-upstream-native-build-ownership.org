@@ -195,6 +195,51 @@ or a Shell pipeline for resource decisions. This paragraph supersedes older
 references below to a generic launcher selecting CPU facts through =getconf= or
 =sysctl=.
 
+*** Functional helper boundary and reproducibility audit
+
+=gerbil/functional.ss= is the shared source-library extension for small,
+deterministic Gerbil value operations used by build-control programs.  It is
+loaded explicitly by =resource_policy.ss= instead of being resolved through an
+ambient =GERBIL_LOADPATH=.  At this boundary, explicit source composition is
+deliberate: Bazel can hash the exact helper bytes together with every consumer
+action.  A future separately compiled Gerbil module MUST expose an equivalent
+declared provider edge; an implicit host-installed module is not an acceptable
+replacement.
+
+The extraction boundary is strict:
+
+- =functional.ss= owns pure predicates, numeric text parsing, normalized exit
+  status values, bounded list projections, and value-based uniqueness.
+- Resource observations, environment reads, filesystem and process effects,
+  cgroup policy, process-tree termination, destructive path operations,
+  installer readiness, and receipt schemas remain with their domain owners.
+- =unique-items?= uses Gerbil 0.18.2's =:std/misc/hash= API.  The expected
+  complexity is O(n), replacing the former list-and-=member= implementation's
+  O(n^2) behavior while preserving value equality for distinct but equal
+  strings.
+
+#+begin_src mermaid
+flowchart LR
+    F["functional.ss<br/>deterministic value helpers"] --> RP["resource_policy.ss<br/>host and resource policy"]
+    RP --> PR["project_runner.ss<br/>project action"]
+    RP --> GI["generated installer<br/>dependency action"]
+    B["Bazel declared closure"] --> PI["project.bzl action inputs"]
+    B --> TI["local/prebuilt toolchain includes"]
+    B --> RF["repository materialization and test runfiles"]
+    PI --> F
+    TI --> F
+    RF --> F
+#+end_src
+
+The 2026-07-23 local Gerbil 0.18.2 audit measured 10,000 distinct strings at
+2.24 s for the former list implementation and 0.59 s for the hash
+implementation.  At 20,000 strings, the same probes measured 7.44 s and
+0.72 s respectively.  These are developer-machine observations, not portable
+performance gates; their purpose is to confirm the expected scaling change.
+The semantic and build-closure gate is the Bazel regression lane:
+=//gerbil:resource_guard_test=, =//gerbil:run_project_test=, and
+=//tests/smoke:install_dependencies_test=.
+
 ** Adaptive dependency-install budget
 
 The repository-generated Scheme installer, compiled by =gxc=, MUST preserve
@@ -386,6 +431,11 @@ module scheduler run.
 
 ** Stable compile action identity
 
+The declared identity MUST include =gerbil/functional.ss= in project action
+inputs and in generated-installer includes, repository materialization, and
+test runfiles.  Editing a shared helper MUST invalidate every affected action
+without adding live host observations to the action key.
+
 A =GerbilProjectCompile= key MUST distinguish output-affecting build semantics
 from execution-only scheduling observations.  Semantic identity includes the
 declared source and dependency trees, Gerbil and Gambit capability, native ABI,
@@ -485,6 +535,12 @@ The following changes violate this RFC:
 
 * Maintenance gate
 
+Changes to the functional extension MUST preserve the extraction boundary
+above, the Gerbil 0.18.2 hash equality proof, the three-target regression lane,
+and subsequent Linux/macOS validation.  Generic helpers MUST NOT absorb path
+security, resource policy, destructive effects, receipt schemas, or package
+readiness merely to reduce the number of files.
+
 Every build-system pull request MUST answer the following questions.
 
 1. Which exact upstream revision and native owner were audited?
@@ -519,6 +575,11 @@ on macOS and 9 minutes 25 seconds on Ubuntu.  The macOS result is therefore a
 near-threshold risk and MUST drive the next cache and phase-attribution work.
 
 * Required receipts
+
+Functional-extension changes require resource-guard, project-runner,
+installer-runtime/relocation, and compile-action-identity receipts.  Provider
+receipts that claim installed-runtime verification MUST be persisted in the CI
+artifact rather than existing only in job stdout.
 
 The maintenance record SHOULD preserve:
 

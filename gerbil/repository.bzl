@@ -331,6 +331,10 @@ def _local_gerbil_repository_impl(repository_ctx):
         executable = True,
     )
     repository_ctx.symlink(
+        repository_ctx.path(repository_ctx.attr._functional),
+        "functional.ss",
+    )
+    repository_ctx.symlink(
         repository_ctx.path(repository_ctx.attr._resource_policy),
         "resource_policy.ss",
     )
@@ -425,6 +429,10 @@ local_gerbil_repository = repository_rule(
         "_native_tool_template": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:native_tool.sh.tpl",
+        ),
+        "_functional": attr.label(
+            default = "//gerbil:functional.ss",
+            allow_single_file = True,
         ),
         "_resource_policy": attr.label(
             allow_single_file = True,
