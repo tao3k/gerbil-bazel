@@ -191,9 +191,11 @@
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "ATs2bYRLNi7E32yHurT7rYGp2CNLN0IoetNP0c77lFc=",
-        "usagesDigest": "nFwAJOsoJtlQPfzk3wIxC40qNW3UKy8Znp4RnQ/IsUQ=",
-        "recordedInputs": [],
+        "bzlTransitiveDigest": "54uOFO11TS58DqGfIzawA4ct0vkfVoq5spIZHAOm2uU=",
+        "usagesDigest": "jmVO4hEgwFxOAUcD3wy+ykNitlPnx9MY03A/sK4aEjc=",
+        "recordedInputs": [
+          "REPO_MAPPING:,local_gerbil +gerbil+local_gerbil"
+        ],
         "generatedRepoSpecs": {
           "local_gerbil": {
             "repoRuleId": "@@//gerbil:prebuilt_repository.bzl%prebuilt_gerbil_repository",
@@ -210,8 +212,6 @@
               ],
               "install_digest": "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
               "manifest_path": "gerbil-bazel-capability.json",
-              "project_dependency_packages": [],
-              "project_library_relative_path": ".gerbil/lib",
               "sha256": "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
               "strip_prefix": "",
               "urls": [
@@ -219,57 +219,54 @@
               ]
             }
           },
-          "project_gerbil": {
-            "repoRuleId": "@@//gerbil:prebuilt_repository.bzl%prebuilt_gerbil_repository",
+          "root_package": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
             "attributes": {
-              "darwin_homebrew_formulae": [
-                "openssl@3",
-                "sqlite",
-                "zlib"
-              ],
+              "dependency_packages": {},
+              "dependency_revisions": {},
+              "dependency_sha256": {},
+              "dependency_strip_prefixes": {},
+              "dependency_urls": {},
               "environment": {},
-              "expected_version_prefixes": [
-                "Gerbil v0.18.2",
-                "Gerbil 07c8481"
-              ],
-              "install_digest": "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
-              "manifest_path": "gerbil-bazel-capability.json",
-              "project_dependency_packages": [],
-              "project_library_relative_path": "project-library",
-              "project_root_marker": "@@//tests/smoke:project-root.marker",
-              "sha256": "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
-              "strip_prefix": "",
-              "urls": [
-                "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz"
-              ]
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-graph/gerbil.pkg",
+              "root_revision": ""
             }
           },
-          "clan_sources": {
-            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+          "root_package_with_dependency": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
             "attributes": {
-              "package": "clan",
-              "project_library_relative_path": "project-library",
-              "project_root_marker": "@@//tests/smoke:project-root.marker"
-            }
-          },
-          "downloaded_fixture_sources": {
-            "repoRuleId": "@@//gerbil:source_package_repository.bzl%source_package_repository",
-            "attributes": {
-              "build_script": "build.ss",
-              "package": "gerbil-utils",
-              "sha256": "e7777c505e71de490dc05f8e3ff4473dddbc998a99899c085d31750add551296",
-              "strip_prefix": "gerbil-utils-f45a4ef3bfecd2af39e114ed736ce9082cbb8244",
-              "urls": [
-                "https://github.com/mighty-gerbils/gerbil-utils/archive/f45a4ef3bfecd2af39e114ed736ce9082cbb8244.tar.gz"
-              ]
+              "dependency_packages": {
+                "github.com/mighty-gerbils/gerbil-utils": "clan"
+              },
+              "dependency_revisions": {
+                "github.com/mighty-gerbils/gerbil-utils": "f45a4ef3bfecd2af39e114ed736ce9082cbb8244"
+              },
+              "dependency_sha256": {
+                "github.com/mighty-gerbils/gerbil-utils": "e7777c505e71de490dc05f8e3ff4473dddbc998a99899c085d31750add551296"
+              },
+              "dependency_strip_prefixes": {
+                "github.com/mighty-gerbils/gerbil-utils": "gerbil-utils-f45a4ef3bfecd2af39e114ed736ce9082cbb8244"
+              },
+              "dependency_urls": {
+                "github.com/mighty-gerbils/gerbil-utils": [
+                  "https://github.com/mighty-gerbils/gerbil-utils/archive/f45a4ef3bfecd2af39e114ed736ce9082cbb8244.tar.gz"
+                ]
+              },
+              "environment": {},
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-graph-dependency/gerbil.pkg",
+              "root_revision": ""
             }
           }
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "ATs2bYRLNi7E32yHurT7rYGp2CNLN0IoetNP0c77lFc=",
-        "usagesDigest": "nFwAJOsoJtlQPfzk3wIxC40qNW3UKy8Znp4RnQ/IsUQ=",
-        "recordedInputs": [],
+        "bzlTransitiveDigest": "54uOFO11TS58DqGfIzawA4ct0vkfVoq5spIZHAOm2uU=",
+        "usagesDigest": "jmVO4hEgwFxOAUcD3wy+ykNitlPnx9MY03A/sK4aEjc=",
+        "recordedInputs": [
+          "REPO_MAPPING:,local_gerbil +gerbil+local_gerbil"
+        ],
         "generatedRepoSpecs": {
           "local_gerbil": {
             "repoRuleId": "@@//gerbil:repository.bzl%local_gerbil_repository",
@@ -285,49 +282,47 @@
                 "Gerbil v0.18.2",
                 "Gerbil 07c8481"
               ],
-              "project_dependency_packages": [],
-              "project_library_relative_path": ".gerbil/lib",
               "tool_paths": {}
             }
           },
-          "project_gerbil": {
-            "repoRuleId": "@@//gerbil:repository.bzl%local_gerbil_repository",
+          "root_package": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
             "attributes": {
-              "darwin_homebrew_formulae": [
-                "openssl@3",
-                "sqlite",
-                "zlib"
-              ],
-              "dependency_roots": [],
+              "dependency_packages": {},
+              "dependency_revisions": {},
+              "dependency_sha256": {},
+              "dependency_strip_prefixes": {},
+              "dependency_urls": {},
               "environment": {},
-              "expected_version_prefixes": [
-                "Gerbil v0.18.2",
-                "Gerbil 07c8481"
-              ],
-              "project_dependency_packages": [],
-              "project_library_relative_path": "project-library",
-              "project_root_marker": "@@//tests/smoke:project-root.marker",
-              "tool_paths": {}
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-graph/gerbil.pkg",
+              "root_revision": ""
             }
           },
-          "clan_sources": {
-            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+          "root_package_with_dependency": {
+            "repoRuleId": "@@//gerbil:package_graph_repository.bzl%package_graph_repository",
             "attributes": {
-              "package": "clan",
-              "project_library_relative_path": "project-library",
-              "project_root_marker": "@@//tests/smoke:project-root.marker"
-            }
-          },
-          "downloaded_fixture_sources": {
-            "repoRuleId": "@@//gerbil:source_package_repository.bzl%source_package_repository",
-            "attributes": {
-              "build_script": "build.ss",
-              "package": "gerbil-utils",
-              "sha256": "e7777c505e71de490dc05f8e3ff4473dddbc998a99899c085d31750add551296",
-              "strip_prefix": "gerbil-utils-f45a4ef3bfecd2af39e114ed736ce9082cbb8244",
-              "urls": [
-                "https://github.com/mighty-gerbils/gerbil-utils/archive/f45a4ef3bfecd2af39e114ed736ce9082cbb8244.tar.gz"
-              ]
+              "dependency_packages": {
+                "github.com/mighty-gerbils/gerbil-utils": "clan"
+              },
+              "dependency_revisions": {
+                "github.com/mighty-gerbils/gerbil-utils": "f45a4ef3bfecd2af39e114ed736ce9082cbb8244"
+              },
+              "dependency_sha256": {
+                "github.com/mighty-gerbils/gerbil-utils": "e7777c505e71de490dc05f8e3ff4473dddbc998a99899c085d31750add551296"
+              },
+              "dependency_strip_prefixes": {
+                "github.com/mighty-gerbils/gerbil-utils": "gerbil-utils-f45a4ef3bfecd2af39e114ed736ce9082cbb8244"
+              },
+              "dependency_urls": {
+                "github.com/mighty-gerbils/gerbil-utils": [
+                  "https://github.com/mighty-gerbils/gerbil-utils/archive/f45a4ef3bfecd2af39e114ed736ce9082cbb8244.tar.gz"
+                ]
+              },
+              "environment": {},
+              "gxi": "@@+gerbil+local_gerbil//:gxi.sh",
+              "root_manifest": "@@//tests/smoke:package-graph-dependency/gerbil.pkg",
+              "root_revision": ""
             }
           }
         }

@@ -335,22 +335,8 @@ sed \
   -e "s|@@HOST_TOOL_PATHS@@|$host_tool_paths|g" \
   "$template" \
   >"$test_root/consumer/MODULE.bazel"
-provider_fixture="$repo_root/tests/repository-provider"
-sed \
-  -e "s|@@REPOSITORY_NAME@@|$repository_name|g" \
-  "$provider_fixture/consumer.BUILD.bazel.tpl" \
+printf 'package(default_visibility = ["//visibility:public"])\n' \
   >"$test_root/consumer/BUILD.bazel"
-cp "$provider_fixture/project-root.marker" "$test_root/consumer/project-root.marker"
-cp "$provider_fixture/project_library_view_test.sh" \
-  "$test_root/consumer/project_library_view_test.sh"
-cp "$provider_fixture/project_dependency_state_test.sh" \
-  "$test_root/consumer/project_dependency_state_test.sh"
-project_view_prepopulated=false
-if [[ "$selected_provider" != prebuilt || "$fixture" != synthetic ]]; then
-  mkdir -p "$test_root/consumer/.gerbil/lib"
-  cp -R "$provider_fixture/project-library/." "$test_root/consumer/.gerbil/lib/"
-  project_view_prepopulated=true
-fi
 if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
   ambient_bin="$test_root/ambient-bin"
   mkdir -p "$ambient_bin"
@@ -488,7 +474,6 @@ fi
       "${gxc_failure_receipts[0]}"
   fi
 install_seconds=0
-dependency_transition=false
 installer_compile_wiring_verified=false
 installer_runtime_verified=false
 if [[ "$selected_provider" == prebuilt ]]; then
@@ -504,22 +489,12 @@ if [[ "$selected_provider" == prebuilt ]]; then
     exit 1
   fi
 
-  if [[ "$fixture" == synthetic ]]; then
-    "$bazel_bin" --output_user_root="$test_root/bazel" build \
-      //:project_dependency_state_missing_test
-  fi
-
   install_started_at="$SECONDS"
   "$bazel_bin" --output_user_root="$test_root/bazel" build \
     "@$repository_name//:install_dependencies"
   installer_compile_wiring_verified=true
 
-  if [[ "$fixture" == synthetic ]]; then
-    mkdir -p "$test_root/consumer/.gerbil/lib"
-    cp -R "$provider_fixture/project-library/." \
-      "$test_root/consumer/.gerbil/lib/"
-    project_view_prepopulated=true
-  elif [[ "${GERBIL_VERIFY_GENERATED_INSTALLER_RUNTIME:-0}" == 1 ]]; then
+  if [[ "${GERBIL_VERIFY_GENERATED_INSTALLER_RUNTIME:-0}" == 1 ]]; then
     printf '(package: provider-runtime)\n' \
       >"$test_root/consumer/gerbil.pkg"
     "$bazel_bin" --output_user_root="$test_root/bazel" run \
@@ -541,9 +516,6 @@ if [[ "$selected_provider" == prebuilt ]]; then
   install_seconds="$((SECONDS - install_started_at))"
 fi
 
-project_view_started_at="$SECONDS"
-"$bazel_bin" --output_user_root="$test_root/bazel" build //:project_library_view_test
-project_view_seconds="$((SECONDS - project_view_started_at))"
 provider_receipt_json="$(
   jq -cn \
     --arg schema gerbil-bazel.repository-provider-test-receipt.v1 \
@@ -552,13 +524,10 @@ provider_receipt_json="$(
     --arg fixture "$fixture" \
     --arg version "$observed_version" \
     --argjson compiler_driver_verified "$compiler_driver_verified" \
-    --argjson dependency_transition "$dependency_transition" \
     --argjson installer_compile_wiring_verified "$installer_compile_wiring_verified" \
     --argjson installer_runtime_verified "$installer_runtime_verified" \
-    --argjson project_view_prepopulated "$project_view_prepopulated" \
     --argjson install_seconds "$install_seconds" \
     --argjson provider_seconds "$provider_seconds" \
-    --argjson project_view_seconds "$project_view_seconds" \
     --argjson tool_seconds "$tool_seconds" \
     '{
       schema: $schema,
@@ -568,15 +537,12 @@ provider_receipt_json="$(
       fixture: $fixture,
       version: $version,
       compilerDriverVerified: $compiler_driver_verified,
-      dependencyTransition: $dependency_transition,
       installerCompileWiringVerified: $installer_compile_wiring_verified,
       installerRuntimeVerified: $installer_runtime_verified,
-      projectViewPrepopulated: $project_view_prepopulated,
       installSeconds: $install_seconds,
       providerSeconds: $provider_seconds,
-      projectViewSeconds: $project_view_seconds,
       toolSeconds: $tool_seconds,
-      totalSeconds: ($provider_seconds + $install_seconds + $project_view_seconds + $tool_seconds)
+      totalSeconds: ($provider_seconds + $install_seconds + $tool_seconds)
     }'
 )"
 write_provider_receipt "$provider_receipt_json"

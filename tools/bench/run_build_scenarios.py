@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run structural Bazel build scenarios and emit one JSON v1 receipt."""
+"""Produce structural cache evidence for generated Gerbil package actions."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import json
 import os
 import platform
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -19,10 +18,9 @@ from typing import Any, Iterable, Sequence
 
 
 SCHEMA = "gerbil-bazel.build-scenario-receipt.v1"
-PROJECT_COMPILE_MNEMONIC = "GerbilProjectCompile"
-DEFAULT_TARGET = "//tests/smoke:compile"
-DEPENDENCY_FLAG = "--//tests/smoke:dependency_state=changed"
-CONFIGURATION_FLAG = "--//tests/smoke:configuration_state=changed"
+PACKAGE_BUILD_MNEMONIC = "GerbilPackageBuild"
+DEFAULT_TARGET = "@root_package_with_dependency//:build"
+EXPECTED_PACKAGE_ACTIONS = frozenset({"package_0", "package_1"})
 
 
 @dataclass(frozen=True)
@@ -35,180 +33,77 @@ class Scenario:
 
 SCENARIOS = (
     Scenario(
-        identifier="project-cold",
-        intent="Build the declared project in a fresh Bazel output root.",
-        build_flags=(),
-        expected_labels=frozenset(
-            {
-                "//tests/smoke:compile",
-                "//tests/smoke:dependency_compile",
-                "//tests/smoke:independent_compile",
-            }
-        ),
+        "package-cold",
+        "A fresh output root executes the complete reachable package closure.",
+        (),
+        EXPECTED_PACKAGE_ACTIONS,
     ),
     Scenario(
-        identifier="identical-rerun",
-        intent="Repeat the exact build without changing inputs or configuration.",
-        build_flags=(),
-        expected_labels=frozenset(),
+        "identical-rerun",
+        "An identical graph and configuration execute no package action.",
+        (),
+        frozenset(),
     ),
     Scenario(
-        identifier="dependency-delta",
-        intent="Change one declared dependency while preserving the independent branch.",
-        build_flags=(DEPENDENCY_FLAG,),
-        expected_labels=frozenset(
-            {
-                "//tests/smoke:compile",
-                "//tests/smoke:dependency_compile",
-            }
-        ),
+        "ambient-environment-delta",
+        "An ambient Bazel action_env change cannot alter explicit package actions.",
+        ("--action_env=GERBIL_BAZEL_SCENARIO_REVISION=1",),
+        frozenset(),
     ),
     Scenario(
-        identifier="configuration-delta",
-        intent="Change a declared environment input shared by every project action.",
-        build_flags=(DEPENDENCY_FLAG, CONFIGURATION_FLAG),
-        expected_labels=frozenset(
-            {
-                "//tests/smoke:compile",
-                "//tests/smoke:dependency_compile",
-                "//tests/smoke:independent_compile",
-            }
-        ),
+        "configuration-delta",
+        "A Bazel compilation-mode change creates a distinct package action graph.",
+        ("--compilation_mode=opt",),
+        EXPECTED_PACKAGE_ACTIONS,
     ),
 )
 
 
-def available_cpu_count() -> int:
-    affinity = getattr(os, "sched_getaffinity", None)
-    if affinity is not None:
-        try:
-            return max(1, len(affinity(0)))
-        except OSError:
-            pass
-    return max(1, os.cpu_count() or 1)
-
-
-def resolve_executable(requested: str | None, candidates: Sequence[str]) -> str:
-    if requested:
-        resolved = shutil.which(requested)
-        if resolved:
-            return resolved
-        requested_path = Path(requested).expanduser()
-        if requested_path.is_file() and os.access(requested_path, os.X_OK):
-            return str(requested_path.resolve())
-        raise RuntimeError(f"executable is unavailable: {requested}")
-    for candidate in candidates:
-        resolved = shutil.which(candidate)
-        if resolved:
-            return resolved
-    raise RuntimeError(
-        "Bazel is unavailable; set BAZEL or pass --bazel with a Bazel/Bazelisk path"
-    )
-
-
-def command_version(command: Sequence[str]) -> str:
-    completed = subprocess.run(
-        command,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if completed.returncode != 0:
-        return "unavailable"
-    return completed.stdout.strip()
-
-
-def bazel_target_version(
-    bazel: str,
-    target: str,
-    *,
-    workspace: Path,
-    output_user_root: Path,
-) -> str:
-    command = (
-        bazel,
-        f"--output_user_root={output_user_root}",
-        "run",
-        "--color=no",
-        "--curses=no",
-        "--noshow_progress",
-        "--disk_cache=",
-        "--remote_cache=",
-        target,
-        "--",
-        "--version",
-    )
-    completed = subprocess.run(
-        command,
-        check=False,
-        cwd=workspace,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(
-            f"failed to read {target} version through Bazel: "
-            f"{detail or f'exit {completed.returncode}'}"
-        )
-
-    version = completed.stdout.strip()
-    if not version:
-        raise RuntimeError(f"empty version output from Bazel target {target}")
-    return version
+def resolve_executable(value: str) -> str:
+    resolved = shutil.which(value)
+    if resolved is None:
+        raise RuntimeError(f"required executable is unavailable: {value}")
+    return resolved
 
 
 def decode_json_stream(path: Path) -> list[dict[str, Any]]:
-    if not path.exists() or path.stat().st_size == 0:
+    if not path.exists():
         return []
-    source = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
     decoder = json.JSONDecoder()
-    offset = 0
     records: list[dict[str, Any]] = []
-    while offset < len(source):
-        while offset < len(source) and source[offset].isspace():
+    offset = 0
+    while offset < len(text):
+        while offset < len(text) and text[offset].isspace():
             offset += 1
-        if offset >= len(source):
+        if offset == len(text):
             break
-        record, offset = decoder.raw_decode(source, offset)
-        if not isinstance(record, dict):
-            raise ValueError(f"execution log record is not an object: {path}")
-        records.append(record)
+        value, offset = decoder.raw_decode(text, offset)
+        if isinstance(value, dict):
+            records.append(value)
+        elif isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
     return records
 
 
-def output_tail(output: str, line_count: int = 30) -> list[str]:
-    lines = output.splitlines()
-    return lines[-line_count:]
+def package_action_name(label: str) -> str:
+    if "//:" not in label:
+        return label
+    return label.rsplit("//:", 1)[1]
 
 
-def remove_scenario_root(path: Path) -> None:
-    """Remove Bazel output trees after restoring owner write permissions."""
-    for root, directories, files in os.walk(path):
-        root_path = Path(root)
-        try:
-            root_path.chmod(root_path.stat().st_mode | stat.S_IRWXU)
-        except FileNotFoundError:
-            continue
-        for name in directories:
-            directory = root_path / name
-            if directory.is_symlink():
-                continue
-            try:
-                directory.chmod(directory.stat().st_mode | stat.S_IRWXU)
-            except FileNotFoundError:
-                pass
-        for name in files:
-            file = root_path / name
-            if file.is_symlink():
-                continue
-            try:
-                file.chmod(file.stat().st_mode | stat.S_IRUSR | stat.S_IWUSR)
-            except FileNotFoundError:
-                pass
-    shutil.rmtree(path)
+def package_action_records(
+    records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in records
+        if record.get("mnemonic") == PACKAGE_BUILD_MNEMONIC
+    ]
+
+
+def action_label(record: dict[str, Any]) -> str:
+    return package_action_name(str(record.get("targetLabel", "")))
 
 
 def run_scenario(
@@ -225,46 +120,37 @@ def run_scenario(
         bazel,
         f"--output_user_root={output_user_root}",
         "build",
-        target,
-        "--color=no",
-        "--curses=no",
         "--disk_cache=",
-        "--noshow_progress",
-        "--remote_cache=",
+        f"--repository_cache={scenario_root / 'repository-cache'}",
         f"--execution_log_json_file={execution_log}",
         *scenario.build_flags,
+        target,
     ]
     started_ns = time.monotonic_ns()
     completed = subprocess.run(
         command,
-        check=False,
         cwd=workspace,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        check=False,
     )
     elapsed_ms = (time.monotonic_ns() - started_ns) // 1_000_000
     records = decode_json_stream(execution_log)
-    project_records = [
-        record
-        for record in records
-        if record.get("mnemonic") == PROJECT_COMPILE_MNEMONIC
-    ]
+    package_records = package_action_records(records)
     executed_labels = sorted(
         {
-            str(record.get("targetLabel", ""))
-            for record in project_records
+            action_label(record)
+            for record in package_records
             if not record.get("cacheHit", False)
         }
-        - {""}
     )
     cache_hit_labels = sorted(
         {
-            str(record.get("targetLabel", ""))
-            for record in project_records
+            action_label(record)
+            for record in package_records
             if record.get("cacheHit", False)
         }
-        - {""}
     )
     expected_labels = sorted(scenario.expected_labels)
     assertions = [
@@ -273,7 +159,7 @@ def run_scenario(
             "passed": completed.returncode == 0,
         },
         {
-            "name": "gerbil-project-compile-frontier",
+            "name": "gerbil-package-build-frontier",
             "passed": executed_labels == expected_labels,
         },
     ]
@@ -290,7 +176,7 @@ def run_scenario(
         },
         "actions": {
             "executionLogRecordCount": len(records),
-            "gerbilProjectCompileRecordCount": len(project_records),
+            "gerbilPackageBuildRecordCount": len(package_records),
             "expectedExecutedLabels": expected_labels,
             "observedExecutedLabels": executed_labels,
             "observedCacheHitLabels": cache_hit_labels,
@@ -298,69 +184,78 @@ def run_scenario(
         "assertions": assertions,
     }
     if status == "failed":
-        receipt["outputTail"] = output_tail(completed.stdout)
+        receipt["outputTail"] = completed.stdout.splitlines()[-80:]
     return receipt
 
 
-def optimization_decision(scenarios: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    by_id = {scenario["id"]: scenario for scenario in scenarios}
+def optimization_decision(
+    scenarios: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
     failed = [
-        identifier
-        for identifier, scenario in by_id.items()
+        scenario["id"]
+        for scenario in scenarios
         if scenario["status"] != "passed"
     ]
-    if "project-cold" in failed:
-        candidate = "project-build-foundation"
+    if "package-cold" in failed:
+        candidate = "repair-package-closure-execution"
     elif "identical-rerun" in failed:
-        candidate = "identical-action-cache-reuse"
-    elif "dependency-delta" in failed:
-        candidate = "project-dependency-invalidation"
+        candidate = "repair-identical-package-action-reuse"
+    elif "ambient-environment-delta" in failed:
+        candidate = "repair-ambient-environment-isolation"
     elif "configuration-delta" in failed:
-        candidate = "project-action-configuration-identity"
+        candidate = "repair-configuration-invalidation"
     elif failed:
-        candidate = "scenario-specific-correctness"
+        candidate = "repair-structural-package-frontier"
     else:
-        candidate = "upstream-source-provisioning"
+        candidate = "measure-package-action-duration"
     return {
         "status": "blocked" if failed else "ready",
         "optimizationCandidate": candidate,
         "failedScenarios": failed,
         "reason": (
-            "Repair the first failing structural boundary before timing optimization."
+            "Repair the first failing structural package boundary before timing "
+            "optimization."
             if failed
-            else "Project cache reuse and invalidation frontiers are structurally correct; "
-            "measure the exact upstream source bootstrap next."
+            else "All package action frontiers are correct; timing work is admissible."
         ),
     }
 
 
-def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--bazel",
-        default=os.environ.get("BAZEL"),
-        help="Bazel or Bazelisk executable; defaults to BAZEL, bazelisk, then bazel",
+def command_output(command: Sequence[str], workspace: Path) -> str:
+    completed = subprocess.run(
+        command,
+        cwd=workspace,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
     )
+    output = completed.stdout.strip()
+    if completed.returncode != 0:
+        diagnostic = completed.stderr.strip() or output
+        raise RuntimeError(f"command failed ({completed.returncode}): {diagnostic}")
+    if not output:
+        raise RuntimeError(f"command produced no output: {' '.join(command)}")
+    return output.splitlines()[-1]
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bazel", default=os.environ.get("BAZEL", "bazelisk"))
     parser.add_argument(
         "--receipt",
-        type=Path,
-        default=Path(".ci/receipts/build-scenarios.json"),
-        help="JSON receipt output path",
+        default=".ci/receipts/build-scenarios.json",
     )
     parser.add_argument("--target", default=DEFAULT_TARGET)
-    parser.add_argument(
-        "--keep-root",
-        action="store_true",
-        help="Preserve the isolated Bazel output root for diagnosis",
-    )
+    parser.add_argument("--keep-root", action="store_true")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     workspace = Path(__file__).resolve().parents[2]
-    bazel = resolve_executable(args.bazel, ("bazelisk", "bazel"))
-    scenario_root = Path(tempfile.mkdtemp(prefix="gerbil-bazel-scenarios-"))
+    bazel = resolve_executable(args.bazel)
+    scenario_root = Path(tempfile.mkdtemp(prefix="gerbil-package-scenarios-"))
     output_user_root = scenario_root / "bazel-output-user-root"
     results: list[dict[str, Any]] = []
     try:
@@ -380,20 +275,25 @@ def main(argv: Sequence[str]) -> int:
             "schema": SCHEMA,
             "status": "passed" if decision["status"] == "ready" else "failed",
             "host": {
-                "system": platform.system().lower(),
-                "architecture": platform.machine().lower(),
-                "availableLogicalCpuCount": available_cpu_count(),
+                "system": platform.system(),
+                "architecture": platform.machine(),
+                "availableLogicalCpuCount": os.cpu_count() or 1,
             },
-        "toolchain": {
-            "bazel": bazel,
-            "bazelVersion": command_version((bazel, "--version")),
-            "gerbilVersion": bazel_target_version(
-                bazel,
-                "@local_gerbil//:gxi",
-                workspace=workspace,
-                output_user_root=output_user_root,
-            ),
-        },
+            "toolchain": {
+                "bazel": bazel,
+                "bazelVersion": command_output([bazel, "--version"], workspace),
+                "gerbilVersion": command_output(
+                    [
+                        bazel,
+                        f"--output_user_root={output_user_root}",
+                        "run",
+                        "@local_gerbil//:gxi",
+                        "--",
+                        "--version",
+                    ],
+                    workspace,
+                ),
+            },
             "isolation": {
                 "freshOutputUserRoot": True,
                 "sharedActionCachesEnabled": False,
@@ -402,39 +302,30 @@ def main(argv: Sequence[str]) -> int:
             "scenarios": results,
             "decision": decision,
         }
-        args.receipt.parent.mkdir(parents=True, exist_ok=True)
-        temporary_receipt = args.receipt.with_suffix(args.receipt.suffix + ".tmp")
-        temporary_receipt.write_text(
-            json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        receipt_path = Path(args.receipt)
+        if not receipt_path.is_absolute():
+            receipt_path = workspace / receipt_path
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = receipt_path.with_suffix(receipt_path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
-        temporary_receipt.replace(args.receipt)
-        print(json.dumps(receipt, separators=(",", ":"), sort_keys=True))
+        temporary.replace(receipt_path)
+        print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
         return 0 if receipt["status"] == "passed" else 1
     finally:
-        shutdown = subprocess.run(
+        subprocess.run(
             [bazel, f"--output_user_root={output_user_root}", "shutdown"],
+            cwd=workspace,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
         )
-        if shutdown.returncode != 0:
-            print(
-                "warning: isolated Bazel server shutdown failed: "
-                + "\n".join(output_tail(shutdown.stdout, 10)),
-                file=sys.stderr,
-            )
         if args.keep_root:
             print(f"preserved scenario root: {scenario_root}", file=sys.stderr)
         else:
-            try:
-                remove_scenario_root(scenario_root)
-            except OSError as error:
-                print(
-                    f"warning: could not remove scenario root {scenario_root}: {error}",
-                    file=sys.stderr,
-                )
+            shutil.rmtree(scenario_root, ignore_errors=True)
 
 
 if __name__ == "__main__":

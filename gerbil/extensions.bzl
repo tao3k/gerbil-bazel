@@ -1,9 +1,8 @@
-"""Bzlmod extension for native Gerbil toolchains."""
+"""Bzlmod extension for Gerbil toolchains and canonical package graphs."""
 
+load(":package_graph_repository.bzl", "package_graph_repository")
 load(":prebuilt_repository.bzl", "prebuilt_gerbil_repository")
-load(":project_dependency_sources_repository.bzl", "project_dependency_sources_repository")
 load(":repository.bzl", "local_gerbil_repository")
-load(":source_package_repository.bzl", "source_package_repository")
 
 _host = tag_class(attrs = {
     "darwin_homebrew_formulae": attr.string_list(default = [
@@ -15,10 +14,6 @@ _host = tag_class(attrs = {
     "environment": attr.string_dict(),
     "expected_version_prefixes": attr.string_list(),
     "name": attr.string(default = "local_gerbil"),
-    "project_dependency_packages": attr.string_list(),
-    "project_dependency_source_packages": attr.string_list(),
-    "project_library_relative_path": attr.string(default = ".gerbil/lib"),
-    "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
 })
 
@@ -33,10 +28,6 @@ _prebuilt = tag_class(attrs = {
     "install_digest": attr.string(mandatory = True),
     "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
     "name": attr.string(mandatory = True),
-    "project_dependency_packages": attr.string_list(),
-    "project_dependency_source_packages": attr.string_list(),
-    "project_library_relative_path": attr.string(default = ".gerbil/lib"),
-    "project_root_marker": attr.label(),
     "sha256": attr.string(mandatory = True),
     "strip_prefix": attr.string(),
     "urls": attr.string_list(mandatory = True),
@@ -58,17 +49,22 @@ _auto = tag_class(attrs = {
     "linux_prebuilt_strip_prefix": attr.string(),
     "linux_prebuilt_urls": attr.string_list(mandatory = True),
     "name": attr.string(default = "local_gerbil"),
-    "project_dependency_packages": attr.string_list(),
-    "project_dependency_source_packages": attr.string_list(),
-    "project_library_relative_path": attr.string(default = ".gerbil/lib"),
-    "project_root_marker": attr.label(),
     "tool_paths": attr.string_dict(),
 })
 
-_source_package = tag_class(attrs = {
-    "build_script": attr.string(default = "build.ss"),
+_package = tag_class(attrs = {
+    "environment": attr.string_dict(),
+    "manifest": attr.label(mandatory = True),
     "name": attr.string(mandatory = True),
+    "root_revision": attr.string(),
+    "toolchain_repository": attr.string(default = "local_gerbil"),
+})
+
+_dependency = tag_class(attrs = {
+    "graph": attr.string(mandatory = True),
     "package": attr.string(mandatory = True),
+    "reference": attr.string(mandatory = True),
+    "revision": attr.string(),
     "sha256": attr.string(mandatory = True),
     "strip_prefix": attr.string(),
     "urls": attr.string_list(mandatory = True),
@@ -97,28 +93,12 @@ def _normalized_system(value):
 
 def _claim_name(names, name, kind):
     if name in names:
-        fail("duplicate Gerbil toolchain repository {}: {} conflicts with {}".format(
+        fail("duplicate Gerbil repository {}: {} conflicts with {}".format(
             name,
             kind,
             names[name],
         ))
     names[name] = kind
-
-def _source_repo_name(package):
-    return package.replace("-", "_").replace("/", "_").replace(".", "_") + "_sources"
-
-def _instantiate_project_dependency_sources(names, tag, kind):
-    if not tag.project_root_marker:
-        return
-    for package in (getattr(tag, "project_dependency_source_packages", []) or tag.project_dependency_packages):
-        repo_name = _source_repo_name(package)
-        _claim_name(names, repo_name, kind + ".dependency_source")
-        project_dependency_sources_repository(
-            name = repo_name,
-            package = package,
-            project_library_relative_path = tag.project_library_relative_path,
-            project_root_marker = tag.project_root_marker,
-        )
 
 def _instantiate_auto(module_ctx, auto):
     system = _normalized_system(module_ctx.os.name)
@@ -129,9 +109,6 @@ def _instantiate_auto(module_ctx, auto):
             dependency_roots = auto.dependency_roots,
             environment = auto.environment,
             expected_version_prefixes = auto.expected_version_prefixes,
-            project_dependency_packages = auto.project_dependency_packages,
-            project_library_relative_path = auto.project_library_relative_path,
-            project_root_marker = auto.project_root_marker,
             tool_paths = auto.tool_paths,
         )
         return
@@ -153,21 +130,63 @@ def _instantiate_auto(module_ctx, auto):
         expected_version_prefixes = auto.expected_version_prefixes,
         install_digest = auto.linux_prebuilt_install_digest,
         manifest_path = auto.linux_prebuilt_manifest_path,
-        project_dependency_packages = auto.project_dependency_packages,
-        project_library_relative_path = auto.project_library_relative_path,
-        project_root_marker = auto.project_root_marker,
         sha256 = auto.linux_prebuilt_sha256,
         strip_prefix = auto.linux_prebuilt_strip_prefix,
         urls = auto.linux_prebuilt_urls,
     )
 
+def _dependency_locks(module_ctx):
+    locks = {}
+    for module in module_ctx.modules:
+        for dependency in module.tags.dependency:
+            graph_locks = locks.get(dependency.graph)
+            if graph_locks == None:
+                graph_locks = {}
+                locks[dependency.graph] = graph_locks
+            if dependency.reference in graph_locks:
+                fail("duplicate Gerbil dependency lock {} for graph {}".format(
+                    dependency.reference,
+                    dependency.graph,
+                ))
+            graph_locks[dependency.reference] = dependency
+    return locks
+
+def _instantiate_package_graph(names, package, graph_locks):
+    _claim_name(names, package.name, "package")
+    dependency_packages = {}
+    dependency_revisions = {}
+    dependency_sha256 = {}
+    dependency_strip_prefixes = {}
+    dependency_urls = {}
+    for reference in sorted(graph_locks.keys()):
+        dependency = graph_locks[reference]
+        dependency_packages[reference] = dependency.package
+        dependency_revisions[reference] = dependency.revision
+        dependency_sha256[reference] = dependency.sha256
+        dependency_urls[reference] = dependency.urls
+        if dependency.strip_prefix:
+            dependency_strip_prefixes[reference] = dependency.strip_prefix
+    package_graph_repository(
+        name = package.name,
+        dependency_packages = dependency_packages,
+        dependency_revisions = dependency_revisions,
+        dependency_sha256 = dependency_sha256,
+        dependency_strip_prefixes = dependency_strip_prefixes,
+        dependency_urls = dependency_urls,
+        environment = package.environment,
+        gxi = Label("@{}//:gxi.sh".format(package.toolchain_repository)),
+        root_manifest = package.manifest,
+        root_revision = package.root_revision,
+    )
+
 def _gerbil_extension_impl(module_ctx):
     names = {}
+    locks = _dependency_locks(module_ctx)
+    declared_graphs = {}
     for module in module_ctx.modules:
         for auto in module.tags.auto:
             _claim_name(names, auto.name, "auto")
             _instantiate_auto(module_ctx, auto)
-            _instantiate_project_dependency_sources(names, auto, "auto")
         for host in module.tags.host:
             _claim_name(names, host.name, "host")
             local_gerbil_repository(
@@ -176,9 +195,6 @@ def _gerbil_extension_impl(module_ctx):
                 dependency_roots = host.dependency_roots,
                 environment = host.environment,
                 expected_version_prefixes = host.expected_version_prefixes,
-                project_dependency_packages = host.project_dependency_packages,
-                project_library_relative_path = host.project_library_relative_path,
-                project_root_marker = host.project_root_marker,
                 tool_paths = host.tool_paths,
             )
         for prebuilt in module.tags.prebuilt:
@@ -190,23 +206,23 @@ def _gerbil_extension_impl(module_ctx):
                 expected_version_prefixes = prebuilt.expected_version_prefixes,
                 install_digest = prebuilt.install_digest,
                 manifest_path = prebuilt.manifest_path,
-                project_dependency_packages = prebuilt.project_dependency_packages,
-                project_library_relative_path = prebuilt.project_library_relative_path,
-                project_root_marker = prebuilt.project_root_marker,
                 sha256 = prebuilt.sha256,
                 strip_prefix = prebuilt.strip_prefix,
                 urls = prebuilt.urls,
             )
-        for source_package in module.tags.source_package:
-            _claim_name(names, source_package.name, "source_package")
-            source_package_repository(
-                name = source_package.name,
-                build_script = source_package.build_script,
-                package = source_package.package,
-                sha256 = source_package.sha256,
-                strip_prefix = source_package.strip_prefix,
-                urls = source_package.urls,
-            )
+        for package in module.tags.package:
+            if package.name in declared_graphs:
+                fail("duplicate Gerbil package graph {}".format(package.name))
+            declared_graphs[package.name] = True
+            _instantiate_package_graph(names, package, locks.get(package.name, {}))
+
+    orphan_locks = sorted([
+        graph
+        for graph in locks.keys()
+        if graph not in declared_graphs
+    ])
+    if orphan_locks:
+        fail("Gerbil dependency locks reference undeclared package graphs: {}".format(orphan_locks))
 
 gerbil = module_extension(
     implementation = _gerbil_extension_impl,
@@ -214,8 +230,9 @@ gerbil = module_extension(
     os_dependent = True,
     tag_classes = {
         "auto": _auto,
+        "dependency": _dependency,
         "host": _host,
+        "package": _package,
         "prebuilt": _prebuilt,
-        "source_package": _source_package,
     },
 )

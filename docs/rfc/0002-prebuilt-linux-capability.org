@@ -1,406 +1,156 @@
-#+title: RFC 0002: Immutable Prebuilt Linux Gerbil Capability
+#+title: RFC 0002: Immutable Gerbil Toolchain Capabilities
 #+author: gerbil-bazel maintainers
 #+language: en
-
-* Nested tool discovery
-
-The provider environment prepends the selected capability's tool directory to
-=PATH= before the first raw =gxpkg= process starts.  It also derives
-=GERBIL_GSC= from the relocated =GERBIL_HOME=, appends Gambit =GAMBOPT=
-runtime mappings for =~~=, =~~bin=, and =~~lib=.  The registered toolchain
-leaves the installed =gambuild-C= immutable.  Repository discovery reads its
-literal =C_COMPILER= declaration and queries =FLAGS_DYN= and =FLAGS_OBJ=
-without writing the installation.  A repository-owned executable-path
-=GERBIL_GSC= launcher uses Gambit's public =-cc=, =-cc-options=, and
-=-ld-options= interfaces.  Because =-cc= clears the configured mode flags,
-implicit or explicit dynamic compilation restores the complete =FLAGS_DYN=
-value and =-obj= restores the complete =FLAGS_OBJ= value.  Darwin appends its
-dynamic-link extra after =FLAGS_DYN= and selects Xcode Clang through
-=GERBIL_GCC= for the final executable link.  Linux restores the same producer
-mode flags without the Darwin extra or a separate final link driver.
-Dependency build scripts launched through
-=/usr/bin/env gxi= and compiler processes launched by =gxc= therefore resolve
-the same immutable prebuilt capability instead of retaining producer-machine
-paths.  The synthetic prebuilt fixture requires the nested =gxi= lookup to
-succeed, while capability production requires a relocated =gxc -> gsc=
-compilation to succeed.
 
 * Status
 
 - Decision: Accepted
-- Implementation: Prebuilt provider published; auto provider validated on Linux and Darwin
-- Scope: =gerbil-bazel= library and its Linux release pipeline
-- Consumer: Bzlmod projects, including =poo-flow=
-
-* Context
-
-=gerbil-bazel= already owns Gerbil toolchain discovery, registration, and rule
-consumption. A consumer registers a toolchain repository through the module
-extension, while project rules resolve =GerbilToolchainInfo= and keep
-=build.ss= as the semantic build owner.
-
-The native =gerbil.host(...)= tag is appropriate for local development and for
-macOS installations supplied by Homebrew. It is not a Linux cold-start
-solution: a fresh Linux runner still has to compile Gerbil before Bazel can
-register the native installation. A GitHub Actions cache shortens repeated runs
-inside one repository, but it cannot act as a stable cross-repository
-capability for downstream consumers.
+- Scope: Darwin host capabilities and immutable Linux prebuilt capabilities
+- Package graph: RFC 0006
 
 * Decision
 
-Capability promotion MUST be an explicit, receipt-producing operation.  It MAY
-authorize either a successful =main= producer run or a successful run for an
-open same-repository pull request whose base is =main= and whose head SHA is the
-exact requested release target.  Fork runs, non-main bases, closed pull
-requests, SHA drift, and duplicate or expired artifacts MUST fail closed.
+gerbil-bazel separates Gerbil toolchain acquisition from Gerbil package graph
+evaluation.
 
-The authorization decision emits
-=gerbil-bazel.prebuilt-promotion-authorization.v1=.  This receipt is attached to
-the immutable release beside the archive evidence, so publication authority is
-auditable without weakening the independent =installDigest= and archive
-SHA-256 proofs.
+- =gerbil.host= resolves an explicitly installed native capability.
+- =gerbil.prebuilt= imports an immutable capability archive.
+- =gerbil.auto= selects host mode on Darwin and prebuilt mode on Linux.
 
-The library SHALL expose a separate =gerbil.prebuilt(...)= tag. It imports an
-immutable, relocatable Gerbil archive by URL and SHA-256, validates the embedded
-capability manifest, matches the archive to the execution platform, and
-registers the same public Gerbil toolchain contract used by the native host
-path.
-
-The ordinary cross-platform consumer API SHALL be =gerbil.auto(...)=. The
-module extension reads =module_ctx.os= and selects exactly one repository
-provider before repository creation: native =host= on Darwin and immutable
-=prebuilt= on Linux. It SHALL reject unknown systems and a declared Linux
-archive architecture that does not match the consumer host. It SHALL NOT
-instantiate both providers and defer selection to toolchain resolution.
-
-Regular CI SHALL be a capability consumer only.  The repository root uses
-=gerbil.auto(...)= with the Homebrew host capability on Darwin and the
-digest-addressed immutable release on Linux.  Regular CI SHALL NOT bootstrap
-Gerbil source, materialize a producer prefix, package an archive, or upload a
-producer artifact.  The pinned Linux capability has installation digest
-=ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208= and
-archive SHA-256
-=741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7=.
-
-Because provider selection observes both =module_ctx.os.name= and
-=module_ctx.os.arch=, the public module extension SHALL be declared
-=os_dependent=True= and =arch_dependent=True=. A checked-in Bzlmod lockfile
-must retain operating-system- and architecture-specific extension evaluations;
-it must never replay a Darwin host repository specification on Linux, a Linux
-prebuilt repository specification on Darwin, or a Linux prebuilt repository
-specification across incompatible architectures.
-
-Homebrew remains the macOS distribution path. Linux capability production and
-consumption belong to =gerbil-bazel=. =poo-flow= SHALL consume the registered
-library capability and SHALL NOT implement another source bootstrap, direct
-=gxc= path, or Homebrew-based Linux adapter.
-
-Linux capability production SHALL retain the pinned upstream Gerbil build:
-=./configure=, parallel =make= using the discovered available CPU count, and
-=make install=.  A compiler cache may wrap the system compiler through the
-standard =CC= contract, but the producer SHALL NOT replace the upstream build
-graph or impose a versioned GCC preference.  Consumers honor an explicit
-=GERBIL_CC= override and otherwise select the platform =cc= capability.
-
-Darwin host consumption remains a distinct platform adapter.  It discovers a
-coherent =DEVELOPER_DIR= and =SDKROOT=, resolves the linker through =xcrun=,
-and projects Homebrew include, library, and pkg-config paths.  These Darwin
-requirements SHALL NOT be copied into the Linux source-build path.
+All three modes register the same =GerbilToolchainInfo= contract. They do not
+declare a package root, package library view, source graph, or build program.
 
 #+begin_src mermaid
 flowchart LR
-  REGISTER["Source Producer registered on default branch"] --> DISPATCH["Explicit Source Producer dispatch"]
-  DISPATCH --> IDENTITY["Source identity + exact installation-cache lookup"]
-  IDENTITY --> ADMISSION{"Source producer admission"}
-  ADMISSION -->|"complete cache hit"| PREFIX["Complete cached Gerbil prefix"]
-  PREFIX --> PROD
-  ADMISSION -->|"cold miss + explicit runner"| SRC
-  ADMISSION -->|"cold miss + implicit default runner"| BLOCK["Blocked admission receipt"]
-  SRC["Pinned Gerbil source"] --> PROD["Rare Linux capability producer"]
-  PROD --> RELOC["Relocated gxi runtime verification"]
-  RELOC --> QUERY["Immutable gambuild-C: read C_COMPILER; query FLAGS_DYN / FLAGS_OBJ"]
-  QUERY --> GSC["GERBIL_GSC executable-path wrapper"]
-  GSC -->|"-cc clears configured mode flags"| DYN["implicit or -dynamic: full FLAGS_DYN + platform extra"]
-  GSC --> OBJ["-obj: full FLAGS_OBJ"]
-  GSC --> PASS["-c / -link / -exe: pass through"]
-  RELOC --> GXC["Relocated gxc"]
-  GXC --> GSC
-  GXC --> FINAL["GERBIL_GCC final executable link"]
-  DYN --> COMPILE["Relocated compile and link verification"]
-  OBJ --> COMPILE
-  PASS --> COMPILE
-  FINAL --> COMPILE
-  COMPILE --> ENV["Consumer derives GAMBOPT + public compiler boundaries"]
-  ENV --> ARC["Archive + SHA-256 + manifest"]
-  ARC --> PROMOTE{"Explicit promotion authorization"}
-  MAIN["Successful main Source Producer run"] --> PROMOTE
-  PR["Source Producer on one open same-repository PR<br/>base main + exact head SHA"] --> PROMOTE
-  PROMOTE --> AUTH["Promotion authorization receipt"]
-  AUTH --> RELEASE["Immutable release asset"]
-  RELEASE --> AUTO["gerbil.auto extension selection"]
-  CI["Regular CI consumer"] --> AUTO
-  AUTO -->|"Linux + matching architecture"| REPO["gerbil.prebuilt repository rule"]
-  REPO --> CACHE["Bazel repository cache"]
-  PROJECT["Consumer project library"] --> AUTO
-  AUTO --> VIEW["lib/package project-library view"]
-  VIEW --> TC
-  CACHE --> TC["Registered GerbilToolchainInfo"]
-  TC --> RULES["Library compile / test / dev rules"]
-  RULES --> BUILDSS["build.ss semantic owner"]
-
-  HOST["Native host installation"] --> AUTO
-  AUTO -->|"Darwin"| LOCAL["gerbil.host repository rule"]
-  LOCAL --> TC
+    A["gerbil.auto"] --> O{"host OS and architecture"}
+    O -->|"Darwin"| H["gerbil.host"]
+    O -->|"Linux"| P["gerbil.prebuilt"]
+    H --> T["GerbilToolchainInfo"]
+    P --> T
+    T --> E["manifest evaluator"]
+    T --> B["generated package build actions"]
+    G["gerbil.package graph"] --> E
+    E --> B
 #+end_src
+
+* Capability contract
+
+A registered capability exposes:
+
+- =gxi=, =gxc=, =gxpkg=, and =gxtest= executables;
+- compiler, assembler, and linker paths;
+- normalized process environment;
+- native ABI fingerprint;
+- Gerbil and Gambit producer options;
+- immutable dependency library roots owned by the capability itself;
+- available logical CPU count and physical memory;
+- a machine-readable toolchain receipt.
+
+Host CPU count, memory, SDK paths, compiler paths, and link flags are discovered
+per machine. They are never fixed to one developer workstation or CI runner.
+
+* Darwin host mode
+
+Darwin resolves the coherent Xcode developer directory and SDK through the host
+adapter. Homebrew formulae may contribute include, library, linker, and
+=pkg-config= paths.
+
+The native installation remains immutable. gerbil-bazel wraps the public Gambit
+compiler interface instead of rewriting =gambuild-C=. Dynamic, object, and final
+link modes preserve the producer flags while selecting the current Xcode Clang
+toolchain.
+
+The supported distribution path is =tao3k/gerbil/gerbil-scheme= at the pinned
+Gerbil revision used by this repository.
+
+* Linux prebuilt mode
+
+The prebuilt declaration requires:
+
+- one installation digest;
+- one archive SHA-256;
+- one or more immutable URLs;
+- the declared archive architecture;
+- a capability manifest inside the archive.
+
+Repository evaluation verifies the archive digest, installation digest,
+platform, architecture, tool paths, capability manifest schema, and executable
+runtime probes before registering the toolchain.
+
+Regular Linux consumers do not compile Gerbil. Capability production is a
+separate release workflow.
+
+* Capability production
+
+Linux capability production follows the upstream Gerbil build:
+
+1. =./configure=;
+2. parallel =make= using the discovered available CPU count;
+3. =make install=;
+4. relocation and runtime verification;
+5. deterministic archive creation;
+6. capability manifest and digest emission.
+
+A compiler cache may wrap the standard =CC= interface. The producer does not
+replace the upstream Make graph or impose a version-specific GCC preference.
+
+Promotion is explicit and fail-closed. A release must be authorized by a
+successful producer run for the exact target commit and platform. The immutable
+archive, installation digest, archive SHA-256, and authorization receipt are
+published together.
 
 * Public Bzlmod API
 
-Every prebuilt Linux declaration carries two independent proofs:
-=install_digest= identifies the exact source/configuration/native build inputs,
-while =sha256= identifies the downloaded archive bytes.  The =auto= form uses
-=linux_prebuilt_install_digest= for the same contract.  A mismatch fails closed
-before toolchain registration and never invokes a source-build fallback.
-
-Cross-platform consumers declare one capability repository:
-
 #+begin_src starlark
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+
 gerbil.auto(
     name = "local_gerbil",
-    expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
+    expected_version_prefixes = ["Gerbil v0.18.2"],
     linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_install_digest = "<64 hexadecimal characters>",
-    linux_prebuilt_sha256 = "<64 hexadecimal characters>",
-    linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/<digest-addressed-capability>/<archive>",
-    ],
-    project_root_marker = "//:gerbil.pkg",
+    linux_prebuilt_install_digest = "<installation digest>",
+    linux_prebuilt_sha256 = "<archive sha256>",
+    linux_prebuilt_urls = ["<immutable release URL>"],
 )
+
 use_repo(gerbil, "local_gerbil")
 register_toolchains("@local_gerbil//:registered_toolchain")
 #+end_src
 
-The explicit Linux-only provider remains available:
+Explicit =gerbil.host= and =gerbil.prebuilt= declarations expose the same
+capability-specific fields without automatic provider selection.
 
-#+begin_src starlark
-gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
-gerbil.prebuilt(
-    install_digest = "<64 hexadecimal characters>",
-    name = "gerbil_linux_x86_64",
-    expected_version_prefixes = ["0.18.2"],
-    sha256 = "<64 hexadecimal characters>",
-    urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/<capability>/<archive>",
-    ],
-)
-use_repo(gerbil, "gerbil_linux_x86_64")
-register_toolchains("@gerbil_linux_x86_64//:registered_toolchain")
-#+end_src
+* Bzlmod lock
 
-The =auto=, =host=, and =prebuilt= tags are distinct capability declarations.
-Repository names are unique across all tag classes. The =auto= tag instantiates
-one of the existing repository providers; it does not add another toolchain
-contract. The prebuilt path never falls back to host discovery or a source
-build when download, digest, manifest, platform, or runtime validation fails.
+The extension is operating-system and architecture dependent. The checked-in
+=MODULE.bazel.lock= must retain the Linux and Darwin evaluations required by CI.
 
-* Project-package manifest view contract
+Lock refresh is a controlled cross-platform workflow:
 
-All three providers accept the same optional project-package manifest
-declaration: =project_root_marker= identifies the consumer =gerbil.pkg=, the
-relative library root defaults to =.gerbil/lib=, and the provider reads the
-manifest =depend:= declarations as the package set projected into the
-repository as =lib/<package>=. Revision pins remain owned by =gerbil.pkg= and
-=gxpkg=; Bazel strips the =@rev= suffix only to locate the installed package
-directory. The repository receipt records
-=dependencyPolicy=project-package-manifest= and a =dependencyState= map
-containing =ready= or =missing= for each declaration.
+1. seed the Linux evaluation;
+2. merge the Darwin evaluation;
+3. verify the merged lock again on Linux.
 
-The =project_dependency_packages= attribute remains as an explicit
-compatibility override for non-standard manifests. It is not the recommended
-consumer lock surface and SHOULD NOT be used to duplicate =gerbil.pkg=
-=depend:= declarations in downstream Bazel modules. Providers using this
-override record =dependencyPolicy=project-dependency-override= so receipts do
-not confuse compatibility input with =gerbil.pkg= ownership.
+Ordinary CI uses =--lockfile_mode=error= and never mutates the lock.
 
-The Linux prebuilt provider therefore imports immutable Gerbil runtime bytes
-while exposing consumer-owned package sources through Bazel repository inputs.
-It does not bake downstream packages into the archive and it does not perform
-an implicit =gxpkg= installation. Dependency installation remains an explicit,
-separate capability.
+* Package graph boundary
 
-Every provider repository publishes =install_dependencies=. Its launcher uses
-the selected provider environment, enters the consumer workspace, and runs the
-standard =gxpkg deps --install= command exactly once. When installation changes
-a watched project package from absent to present, the next Bazel command
-re-evaluates the repository and the receipt changes that package from =missing=
-to =ready=. This lifecycle is validated by an isolated synthetic prebuilt
-consumer; consumers do not need provider-specific install scripts.  The target
-is an explicit developer action, not an input-producing step hidden inside a
-compile rule.
+Toolchain repositories do not inspect =gerbil.pkg= and do not materialize
+package dependency state. RFC 0006 owns the canonical package graph, immutable
+dependency locks, generated package actions, and package receipts.
 
-The provider environment SHALL be applied by the host =env= executable to the
-single raw =gxpkg= process.  It SHALL NOT create a nested =gxpkg env env=
-lifecycle or perform an unconditional package listing.  The selected
-=GERBIL_HOME= is already visible when =gxpkg= imports =:gerbil/core=.
-The install wrapper defaults =GERBIL_BUILD_CORES=1= for this package-manager
-lifecycle to avoid provider/runtime hangs during dependency builds.  A caller
-MAY set =GERBIL_BAZEL_INSTALL_BUILD_CORES= to opt into a different
-install-time parallelism without changing the normal compile toolchain cores.
+This separation prevents a capability provider from depending on the graph that
+needs the capability for repository-phase manifest evaluation.
 
-* Archive and manifest contract
+* Required validation
 
-The archive root contains =gerbil-bazel-capability.json= and a relocatable
-=prefix/= tree. The archive SHA-256 is the capability identity supplied to
-Bazel; therefore it covers both the manifest and every runtime byte.
-
-#+begin_src json
-{
-  "schema": "gerbil-bazel.prebuilt-capability-manifest.v1",
-  "capabilityId": "gerbil-<source-ref>-linux-x86_64",
-  "version": "Gerbil v0.18.2 on Gambit ...",
-  "nativeAbiFingerprint": "<40 hexadecimal characters>",
-  "platform": {
-    "os": "linux",
-    "arch": "x86_64"
-  },
-  "gerbilHome": "prefix/current",
-  "tools": {
-    "gxc": "prefix/bin/gxc",
-    "gxi": "prefix/bin/gxi",
-    "gxpkg": "prefix/bin/gxpkg",
-    "gxtest": "prefix/bin/gxtest"
-  },
-  "dependencyRoots": [
-    "prefix/lib",
-    "prefix/current/lib"
-  ],
-  "environment": {}
-}
-#+end_src
-
-All manifest paths are relative and traversal-free. The repository rule rejects
-unknown schemas, unsafe or missing paths, a non-hexadecimal digest, a platform
-mismatch, a runtime version mismatch, and an ABI fingerprint of the wrong
-shape. Available CPU count, physical memory, compiler, assembler, and linker
-remain consumer-host capabilities and are discovered adaptively rather than
-frozen into the producer artifact.
-
-* Producer lifecycle
-
-The promotion workflow is manually dispatched with an exact source run ID,
-head SHA, and =installDigest=.  It fetches the run, pull-request metadata when
-applicable, and the artifact inventory once; then it validates the complete
-authorization frontier before downloading or publishing capability bytes.
-
-The existing pinned, upstream-parallel Linux bootstrap remains the rare
-producer. After the source build and public Bazel API validation succeed, the
-producer:
-
-The source producer is a separate =workflow_dispatch=-only workflow.  A
-non-=main= dispatch is promotable only when its runtime branch resolves to
-exactly one open same-repository pull request with base =main= and the run head
-SHA equals the pull-request head SHA.  It fails closed for a missing,
-ambiguous, forked, closed, wrong-base, or SHA-drifted pull request.  This keeps
-the producer available for deliberate capability refreshes without placing a
-cold source build on the regular consumer-CI path.
-
-The =Source Producer= workflow MUST first be registered from the default
-branch before GitHub can accept an explicit dispatch.  A cache created under a
-pull-request merge ref MUST NOT be treated as dispatch-accessible branch or
-default-branch state.  After the exact installation-cache lookup, the producer
-emits =gerbil-bazel.source-producer-admission.v1=.  A complete cache hit is
-admitted on the selected runner.  A cold miss is admitted only when
-=GERBIL_SOURCE_RUNNER= explicitly selects a registered runner label; an
-implicit =ubuntu-latest= cold miss is blocked immediately with the admission
-receipt.  Admission is not a capacity attestation: the existing 12-minute
-build guard and the later materialization receipt remain the execution proof.
-
-1. copies the installed prefix into an isolated staging tree;
-2. rejects absolute symlinks;
-3. records tool paths, dependency roots, version, platform, and native ABI;
-4. creates a deterministic archive;
-5. extracts it at a different path;
-6. runs the relocated interpreter and a runtime expression;
-7. compiles a fresh Gerbil module with the relocated =gxc= and =gsc= through
-   the same derived environment contract used by consumers;
-8. emits the archive, SHA-256, manifest, and JSON packaging receipt.
-
-Pull-request CI uploads these files only as verification evidence. A release
-workflow may publish them only after the relocation and synthetic consumer
-receipts pass. Downstream modules consume a release asset with a fixed digest,
-never an expiring workflow artifact.
-
-* Performance and failure gates
-
-- A downstream Linux consumer MUST NOT compile Gerbil.
-- A missing or invalid prebuilt capability MUST fail closed; source fallback is
-  forbidden in the consumer lane.
-- Fresh-runner download, registration, and smoke verification SHOULD complete
-  within 120 seconds.
-- Repository-cache hits SHOULD reduce registration to metadata validation and
-  normal Bazel analysis time.
-- Source production remains guarded separately and is not counted as consumer
-  cold-start time.
-- Receipts record archive identity, platform, version, adaptive host resources,
-  runtime verification, and elapsed time.
-
-* Compatibility and migration
-
-The existing =gerbil.host(...)= and =gerbil.prebuilt(...)= APIs remain
-compatible, with the project-library declaration added uniformly to every
-provider. Projects may use them for explicitly single-provider environments. A
-cross-platform project migrates to one =gerbil.auto(...)= registration;
-compile, test, and development targets remain unchanged because every path
-resolves the same toolchain provider.
-
-The migration is complete when a published Linux archive passes relocation,
-the =gerbil.prebuilt(...)= consumer test, and =poo-flow= compile/test receipts
-without a Gerbil source-build phase.
-
-* Validation evidence
-
-GitHub Actions run =29661470401= on 2026-07-18 validated the implementation:
-
-- macOS Homebrew-bottle lane: passed in 1 minute 47 seconds;
-- Linux library lane: passed in 1 minute 49 seconds with an existing Gerbil
-  install-cache hit;
-- deterministic archive packaging: 15 seconds;
-- extraction and relocation verification: 3 seconds;
-- total packaging receipt: 19 seconds;
-- synthetic isolated Bzlmod consumer: 33 seconds;
-- packaged Gerbil isolated Bzlmod consumer: 13 seconds;
-- archive size: 86,082,949 bytes;
-- archive SHA-256:
-  =958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197=.
-
-Pull-request run =29663716390= validated the auto provider on the independent
-commit =3980afa53d219328d2791baf5aa9c1bfde8ad396=:
-
-- Linux auto consumer: =selectedProvider=prebuilt=, provider registration 7
-  seconds, runtime probe 3 seconds, total 10 seconds;
-- Darwin auto consumer: =selectedProvider=host=, provider registration 13
-  seconds, runtime probe 2 seconds, total 15 seconds;
-- Linux published-capability consumer: =selectedProvider=prebuilt=, provider
-  registration 9 seconds, runtime probe 2 seconds, total 11 seconds;
-- Linux job: 1 minute 44 seconds; macOS Homebrew job: 1 minute 37 seconds.
-
-The Linux fixture poisons the host =gxi= path, and the Darwin fixture poisons
-the prebuilt archive URL and digest. Therefore each auto consumer can pass only
-when selection happens before the inactive repository provider is instantiated.
-
-The packaged consumer receipt proves the library import path and is well below
-the 120-second consumer gate. This run does not prove a faster Linux source
-cache miss because the existing installation cache was restored. Source
-production cost therefore remains a separate controlled receipt and MUST NOT be
-reported as consumer cold-start time.
-
-The trusted =main= run =29662476210= subsequently passed Linux in 1 minute 37
-seconds and macOS Homebrew in 1 minute 51 seconds. The guarded publication run
-=29662545980= authorized that exact main-branch commit and published the
-immutable release:
-
-- release tag: =gerbil-v0.18.2-07c84815-linux-x86_64=;
-- target commit: =9686b69f78b721a90921a1b606d6fc84ea7b1475=;
-- archive size: 86,082,949 bytes;
-- archive SHA-256:
-  =958d5a2197ca10182eb5bac4cb351d3228c48f9a34a246007cd22fc89f93c197=.
+- host and prebuilt runtime version probes;
+- native ABI and producer-option receipts;
+- Darwin compiler/linker mode probes;
+- Linux archive and installation digest mismatch rejection;
+- architecture mismatch rejection;
+- immutable tool wrapper behavior;
+- adaptive CPU and memory discovery;
+- generated dependency-installer compile wiring;
+- cross-platform Bzlmod lock verification;
+- package graph bootstrap proof through RFC 0006.

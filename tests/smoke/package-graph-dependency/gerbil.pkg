@@ -1,0 +1,2 @@
+(package: example.invalid/graph-with-dependency
+ depend: ("github.com/mighty-gerbils/gerbil-utils@f45a4ef3bfecd2af39e114ed736ce9082cbb8244"))

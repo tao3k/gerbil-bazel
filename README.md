@@ -1,206 +1,122 @@
-# Gerbil Bazel
+# gerbil-bazel
 
-`gerbil-bazel` provides reusable Bazel APIs for discovering a native Gerbil
-installation and building Gerbil projects on Darwin and Linux. It is independent
-of any application framework: the consumer's `build.ss` remains the canonical
-description of module topology and project semantics.
+`gerbil-bazel` is a Bazel library for Gerbil toolchain capabilities and
+content-addressed Gerbil package graphs.
 
-## Bzlmod setup
+The public package input is `gerbil.pkg`. A Gerbil-native evaluator reads the
+manifest, computes a canonical source closure, and emits deterministic JSON.
+Bazel validates that JSON, resolves explicitly pinned dependencies, generates a
+static package graph, and executes the upstream `gxpkg build` lifecycle inside a
+sandbox.
 
-Use one platform-adaptive declaration when Darwin should resolve the native
-Homebrew installation and Linux should import an immutable prebuilt capability:
+`build.ss` remains an opaque upstream Gerbil program. It is part of the hashed
+source closure and is executed only through `gxpkg`; it is not a Bazel
+attribute, a second build DSL, or a manifest field.
 
-```starlark
-gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
-gerbil.auto(
-    name = "local_gerbil",
-    expected_version_prefixes = ["Gerbil 07c8481", "Gerbil v0.18.2"],
-    linux_prebuilt_arch = "x86_64",
-    linux_prebuilt_install_digest = "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
-    linux_prebuilt_sha256 = "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
-    linux_prebuilt_urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
-    ],
-    project_root_marker = "//:gerbil.pkg",
-)
-use_repo(gerbil, "local_gerbil")
-register_toolchains("@local_gerbil//:registered_toolchain")
-```
+## Architecture
 
-The extension resolves `auto` before repository creation and instantiates
-exactly one provider. Darwin uses native host discovery; Linux validates that
-the declared archive architecture matches the runner and instantiates the
-prebuilt provider. Unsupported systems and architecture mismatches fail closed.
-The module extension is declared `os_dependent` and `arch_dependent`, so Bazel
-records separate operating-system and architecture evaluations instead of
-reusing a Darwin-generated provider graph on Linux or a Linux prebuilt graph
-across incompatible architectures through `MODULE.bazel.lock`.
+1. `gerbil.auto`, `gerbil.host`, or `gerbil.prebuilt` provides an immutable
+   Gerbil toolchain capability.
+2. `gerbil.package` selects the root `gerbil.pkg`.
+3. `gerbil.dependency` binds every manifest dependency reference to an immutable
+   archive, revision, and SHA-256 digest.
+4. The repository phase evaluates every reachable manifest and rejects missing
+   locks, extra locks, identity mismatches, duplicate packages, and cycles.
+5. The generated repository exposes static package targets, source closures,
+   graph evidence, and package build receipts.
 
-Use explicit native host discovery when the consumer does not need automatic
-cross-platform selection:
+The package graph never depends on mutable ambient package-manager state.
 
-```starlark
-gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
-gerbil.host(name = "local_gerbil")
-use_repo(gerbil, "local_gerbil")
-register_toolchains("@local_gerbil//:registered_toolchain")
-```
-
-Use the explicit immutable provider for a Linux-only consumer:
-
-```starlark
-gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
-gerbil.prebuilt(
-    install_digest = "ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208",
-    name = "gerbil_linux_x86_64",
-    expected_version_prefixes = ["Gerbil v0.18.2", "Gerbil 07c8481"],
-    sha256 = "741d67f1d1a37e057181bfe8b3348ce2a9cfce06ac3b9c4e914400978f9d5fe7",
-    urls = [
-        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208/gerbil-v0.18.2-07c84815-linux-x86_64-ee5a236818e1b8fd9cc6e886b510795495e95402e790892961e6a1059a5c3208.tar.gz",
-    ],
-)
-use_repo(gerbil, "gerbil_linux_x86_64")
-register_toolchains("@gerbil_linux_x86_64//:registered_toolchain")
-```
-
-The prebuilt provider validates the archive digest, embedded manifest, execution
-platform, runtime version, and native ABI shape. It fails closed and never
-falls back to a source build. See
-[RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
-release, receipt, and performance contracts.
-
-Source production is a separate, explicit operation.  The
-[Source Producer v1 runbook](docs/runbooks/source-producer-v1.org) defines
-default-branch registration, runner selection, cold-build receipt acceptance,
-and the independent promotion boundary.
-
-Both `auto` providers and the explicit `prebuilt` provider support the same
-project-package manifest view as `host`. Declare `project_root_marker` pointing
-at the consumer `gerbil.pkg`; the repository reads its `depend:` declarations,
-strips package revisions, projects ready packages into `lib/<package>`, and
-records every package as `ready` or `missing` in `toolchain.receipt.json`.
-This keeps `gerbil.pkg` as the single package lock and keeps the downstream
-BUILD graph identical on Darwin and Linux while leaving dependency
-installation under the separate `install_dependencies` capability. The
-`project_dependency_packages` attribute remains as an explicit compatibility
-override for non-standard manifests; published consumers should prefer the
-manifest-driven path. Repositories using that override record
-`dependencyPolicy: "project-dependency-override"` instead of the manifest
-policy, so receipts do not confuse the compatibility path with `gerbil.pkg`
-ownership.
-
-Every host and prebuilt repository publishes `//:install_dependencies`. The
-launcher enters the consumer workspace, uses its workspace-local `.gerbil`
-root, and runs the standard `gxpkg deps --install` command through the selected
-provider environment. Gerbil-Bazel does not wrap this command in another
-`gxpkg env` lifecycle and does not duplicate package-manager verification with
-an unconditional `gxpkg list`. A dependency installation can make
-previously missing project packages ready; the next Bazel command then
-re-evaluates the watched project-library view.
+## Bzlmod API
 
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")
-bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_shell", version = "0.8.0")
 
-gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
-gerbil.host(
-    name = "local_gerbil",
-    expected_version_prefixes = ["0.18.2"],
+gerbil = use_extension(
+    "@gerbil_bazel//gerbil:extensions.bzl",
+    "gerbil",
 )
-use_repo(gerbil, "local_gerbil")
+
+gerbil.auto(
+    name = "local_gerbil",
+    expected_version_prefixes = ["Gerbil v0.18.2"],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_install_digest = "<installation digest>",
+    linux_prebuilt_sha256 = "<archive sha256>",
+    linux_prebuilt_urls = ["<immutable archive URL>"],
+)
+
+gerbil.package(
+    manifest = "//:gerbil.pkg",
+    name = "root_package",
+)
+
+gerbil.dependency(
+    graph = "root_package",
+    package = "<resolved package identity>",
+    reference = "<manifest dependency reference>",
+    revision = "<pinned revision>",
+    sha256 = "<archive sha256>",
+    strip_prefix = "<archive root>",
+    urls = ["<immutable archive URL>"],
+)
+
+use_repo(gerbil, "local_gerbil", "root_package")
+
 register_toolchains("@local_gerbil//:registered_toolchain")
 ```
 
-During local development, add a `local_path_override` for `gerbil_bazel` in the
-consumer module. Published consumers should use a registry release instead.
+The dependency `reference` is the name used by the parent manifest. `package`
+is the identity declared by the downloaded dependency's own `gerbil.pkg`. Both
+are validated.
 
-## Project dependency installation
+## Generated targets
 
-Each discovered host repository publishes a workspace-aware dependency target:
+For a graph repository named `root_package`:
 
-```bash
-bazel run @local_gerbil//:install_dependencies
+```text
+@root_package//:build
+@root_package//:build_receipt
+@root_package//:gxpkg_manifest
+@root_package//:package-graph.json
+@root_package//:source_closure
+@root_package//:package_0
 ```
 
-The target enters `BUILD_WORKSPACE_DIRECTORY`, defaults `GERBIL_PATH` to
-`$BUILD_WORKSPACE_DIRECTORY/.gerbil`, runs the standard
-`gxpkg deps --install` workflow through the normalized native tool
-environment. It defaults `GERBIL_BUILD_CORES=1` for the package-manager
-install lifecycle to avoid provider/runtime hangs during dependency builds;
-set `GERBIL_BAZEL_INSTALL_BUILD_CORES` to opt into a different install-time
-parallelism. This is an explicit developer-side effect target, never build
-truth inside a hermetic compile action.
+Additional `package_N` targets are generated for the reachable dependency
+closure. Generated target edges are static and follow the evaluated manifest
+graph.
 
-## Project rules
+## Evidence
 
-```starlark
-load(
-    "@gerbil_bazel//gerbil:defs.bzl",
-    "gerbil_project_compile",
-    "gerbil_project_dev",
-    "gerbil_project_test",
-)
+The evaluator emits `gerbil-bazel.package-manifest.v1`. The generated repository
+emits `gerbil-bazel.package-graph.v1`, and each build emits
+`gerbil-bazel.package-receipt.v1`.
 
-gerbil_project_compile(
-    name = "scheme",
-    build_script = "build.ss",
-    args = ["compile", "--tests"],
-    srcs = glob(["src/**/*.ss"]),
-)
+Evidence includes package identity, locked revision, source and closure digests,
+dependency edges, evaluator and Gerbil versions, native ABI, execution
+environment, resource-guard policy, outputs, log, and duration.
 
-gerbil_project_dev(
-    name = "scheme_dev",
-    build_script = "build.ss",
-    args = ["compile", "--tests"],
-)
+Each package action also emits one upstream-compatible plain Scheme dependency
+manifest. A parent action maps only its direct dependency manifests into its
+private `GERBIL_PATH` before `gxpkg build`; the manifests already contain the
+flattened transitive version closure produced by upstream. No package install,
+link, Git discovery, or network operation runs inside a build action.
 
-gerbil_project_test(
-    name = "scheme_test",
-    project = ":scheme",
-    srcs = glob(["test/**/*.ss"]),
-    tests = ["test/project-test.ss"],
-)
+## Development
+
+The declarative entry points are maintained in `justfile`:
+
+```sh
+just query
+just build
+just test
+just check
+just lock-check
 ```
 
-The compile action stages every declared source in a writable tree before it
-executes `build.ss`. Tests always consume an explicit `GerbilProjectInfo`, so a
-matrix reuses one compile action. Set `receipt_line_prefix` when the build
-script emits canonical JSON. Every action receipt keeps the stable outer
-`gerbil-bazel.project-receipt.v1` schema and its original six required fields.
-The validated producer value is nested under the optional `buildReceipt`
-field. Guarded project actions also expose their Scheme resource-guard evidence
-under the optional `resourceGuard` field. The normative contract is
-`schemas/gerbil-bazel.project-receipt.v1.schema.json`; execution capability
-changes do not create a new project receipt version.
+`just build` executes both the single-package and dependency-closure fixtures.
+`just test` runs the Gerbil library and smoke-test suites.
 
-Host-specific paths, available logical CPUs, physical memory, compiler,
-assembler, linker, SDK, optional Homebrew native libraries, and Gerbil
-executables are discovered dynamically. Override only explicit capabilities
-such as `GERBIL_CC`, `GERBIL_GXI`, or `GERBIL_NATIVE_ABI`. For fully declared
-installations, `gerbil.host(tool_paths = {...})` takes precedence over
-environment overrides and `PATH` discovery.
-
-Gerbil-Bazel leaves the installed `gambuild-C` immutable. Repository discovery
-reads its literal `C_COMPILER` declaration and queries `FLAGS_DYN` and
-`FLAGS_OBJ` without writing the installation. A generated executable-path
-`GERBIL_GSC` launcher uses Gambit's public `-cc`, `-cc-options`, and
-`-ld-options` interfaces. Because a `-cc` override clears Gambit's configured
-mode flags, implicit or explicit dynamic compilation restores the complete
-`FLAGS_DYN` value before adding any platform option, while `-obj` restores the
-complete `FLAGS_OBJ` value. `-c`, `-link`, and `-exe` pass through without a
-wrapper-added compiler override.
-
-On Darwin, dynamic compilation appends `-Wl,-undefined,dynamic_lookup` after
-the installed producer flags, and Gerbil's public `GERBIL_GCC` boundary selects
-the Xcode Clang driver for the final executable link. Linux restores the same
-installed producer mode flags without the Darwin option or a separate final
-link driver. `gambitProducerOptions`, `gambitDynamicLinkOptions`, and
-`gerbilExecutableLinker` are recorded in `toolchain.receipt.json` and
-participate in Bazel action identity.
-
-Package semantics remain upstream-owned. `gerbil.pkg` owns package and
-dependency metadata, `gxpkg` owns package lifecycle, and `build.ss` plus
-`std/make` own compile membership, ordering, and incrementality. Bazel declares
-the source closure and dependency tree artifacts needed by the sandbox; it does
-not expose a second package identity/revision graph.
+The normative design is
+[`docs/rfc/0006-gerbil-package-graph.org`](docs/rfc/0006-gerbil-package-graph.org).

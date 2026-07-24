@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.package-request.v1.schema.json",
+  "title": "Gerbil Bazel Package Request v1",
+  "description": "Declared Bazel-to-Scheme request for one canonical Gerbil package action.",
+  "type": "object",
+  "required": [
+    "schema",
+    "args",
+    "manifest",
+    "dependencyRootMarker",
+    "gxpkgManifest",
+    "log",
+    "packageDependencies",
+    "packageIdentity",
+    "packageReference",
+    "packageRevision",
+    "processGuard",
+    "processGuardTimeoutSeconds",
+    "packageDependencyRoots",
+    "packageLabel",
+    "packageRoot",
+    "receipt",
+    "requireLibraryOutput",
+    "sources",
+    "tools"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gerbil-bazel.package-request.v1"
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "manifest": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "dependencyRootMarker": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "gxpkgManifest": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "log": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "packageDependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+          "required": [
+            "manifest",
+            "reference"
+        ],
+        "properties": {
+          "manifest": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "reference": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "packageIdentity": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "packageReference": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "packageRevision": {
+      "type": "string"
+    },
+    "processGuard": {
+      "type": "boolean"
+    },
+    "processGuardTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "packageDependencyRoots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "uniqueItems": true
+    },
+    "packageLabel": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "packageRoot": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "receipt": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "requireLibraryOutput": {
+      "type": "boolean"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "destination",
+          "source"
+        ],
+        "properties": {
+          "destination": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "source": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tools": {
+      "type": "object",
+      "required": [
+        "as",
+        "cc",
+        "gxc",
+        "gxi",
+        "gxpkg",
+        "ld"
+      ],
+      "properties": {
+        "as": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "cc": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gxc": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gxi": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gxpkg": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ld": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,321 @@
+#+title: RFC 0006: gerbil.pkg to a Canonical Bazel Package Graph
+#+author: gerbil-bazel maintainers
+#+language: en
+
+* Status
+
+- Decision: Accepted
+- Implementation: Complete
+- Compatibility: None
+- Public package input: =gerbil.pkg=
+- Upstream build entry point: =gxpkg build=
+
+* Decision
+
+=gerbil.pkg= and its package root are the only public inputs required from a
+downstream Gerbil package. A downstream user does not declare, modify, or
+interpret =build.ss= to adopt gerbil-bazel.
+
+A Gerbil-native evaluator reads =gerbil.pkg= and emits canonical JSON. A Bazel
+repository rule validates that JSON, resolves an immutable dependency closure,
+and generates a static package graph. Generated build targets execute the
+upstream =gxpkg build= lifecycle in a sandbox.
+
+=build.ss= remains opaque Gerbil source. It is an internal, hashed package input;
+it is neither public metadata nor a Bazel build-language extension.
+
+#+begin_src mermaid
+flowchart LR
+    M["gerbil.pkg<br/>public package input"] --> E["Gerbil-native evaluator"]
+    E --> J["package-manifest.v1<br/>canonical JSON"]
+    J --> R["package graph repository"]
+    L["immutable dependency locks"] --> R
+    R --> G["static Bazel package graph"]
+    R --> S["content-addressed source closure"]
+    G --> A["sandboxed package action"]
+    S --> A
+    A --> X["upstream gxpkg build"]
+    X --> B["opaque build.ss execution"]
+    A --> O["artifacts, log, package receipt"]
+    A --> U["plain upstream dependency manifest"]
+    U --> N["parent package private GERBIL_PATH"]
+#+end_src
+
+* Architectural invariants
+
+1. Gerbil reads Gerbil syntax. Starlark never recreates the =gerbil.pkg=
+   grammar with string scanning.
+2. Repository evaluation owns dependency resolution and graph generation.
+   Ordinary Bazel analysis consumes a finite static graph.
+3. Every non-root package source is immutable and digest-addressed.
+4. The manifest dependency reference and the resolved package identity are
+   distinct values and are both validated.
+5. =gxpkg= owns package lifecycle semantics. Bazel owns inputs, environment,
+   sandboxing, outputs, caching, and evidence.
+6. There is one manifest evaluator and one dependency graph authority.
+7. The public surface contains no builder path or builder callback.
+8. No compatibility alias, wrapper, or second public graph API is retained.
+
+* Upstream ownership
+
+** =gerbil.pkg=
+
+The manifest is one Gerbil datum interpreted as an open property list. The
+evaluator uses Gerbil's native reader and property-list semantics.
+
+The v1 projection recognizes:
+
+- =package:= as the declared package identity;
+- =depend:= as the ordered direct dependency declarations, defaulting to an
+  empty list.
+
+Tagged dependencies preserve the same reference-and-tag split used by upstream
+=gxpkg=. Unknown manifest fields are retained as canonical Scheme data.
+
+** =build.ss=
+
+=build.ss= is an executable Gerbil program. It may use macros, dynamic loading,
+conditional evaluation, and the complete Gerbil metasyntactic tower.
+gerbil-bazel does not parse, lower, or infer a static compilation graph from it.
+
+The evaluator requires a regular root =build.ss= because upstream =gxpkg build=
+invokes it. The file is included in the source closure and closure digest. Its
+path and semantics do not appear in the public manifest JSON.
+
+* Canonical manifest JSON
+
+The evaluator emits =gerbil-bazel.package-manifest.v1= with:
+
+- package identity;
+- normalized dependency references and optional tags;
+- manifest-relative package root;
+- a sorted source-closure file list;
+- per-file SHA-256 values and one closure SHA-256;
+- canonical unknown manifest fields;
+- evaluator identity and version;
+- Gerbil and Gambit versions;
+- schema identity.
+
+It rejects malformed property lists, duplicate recognized keys, invalid package
+identity, absolute or traversing paths, unsupported symlinks, and files outside
+the package root.
+
+It deterministically excludes Bazel metadata, Bazel output symlinks, VCS
+metadata, editor state, and known local caches. JSON keys and source entries use
+stable lexical ordering. The emitted document has no =build= or =build.ss=
+field.
+
+* Dependency lock model
+
+The root manifest names dependency references. Bzlmod binds each reachable
+reference to:
+
+- the graph repository name;
+- the package identity expected from the dependency's own =gerbil.pkg=;
+- an optional upstream revision or tag;
+- one SHA-256 digest;
+- one archive strip prefix;
+- one or more immutable archive URLs.
+
+The repository evaluator downloads and extracts each locked archive, evaluates
+its =gerbil.pkg= with the same Scheme evaluator, and verifies:
+
+- the parent reference exists in the lock map;
+- the declared dependency tag equals the locked revision;
+- the downloaded manifest's package identity equals the lock's package identity;
+- no package identity is duplicated;
+- every supplied lock is reachable;
+- every reachable dependency is locked;
+- the final graph is acyclic.
+
+Dependency acquisition is atomic per archive digest. A change to one dependency
+lock invalidates that package and its reverse dependency closure, not unrelated
+packages.
+
+* Repository-phase lowering
+
+A module extension cannot inspect action-generated JSON and then declare an
+unknown number of repositories. Therefore one repository rule materializes the
+entire reachable closure and generates all package targets.
+
+#+begin_src mermaid
+flowchart TD
+    C["stage-0 Gerbil capability"] --> E["manifest evaluator"]
+    RM["root gerbil.pkg"] --> E
+    DL["pinned dependency archives"] --> E
+    E --> V["schema, identity, digest, edge validation"]
+    V --> T["topological package order"]
+    T --> R["single generated closure repository"]
+    R --> P0["root package target"]
+    R --> PN["dependency package targets"]
+    R --> GR["package-graph.json"]
+    P0 --> BR["package build receipt"]
+    R -. "must not be required to create" .-> C
+#+end_src
+
+Repository evaluation:
+
+1. obtains a physical stage-0 =gxi= from the selected capability repository;
+2. evaluates the root and locked dependency manifests;
+3. validates canonical JSON and every source digest;
+4. constructs a deterministic topological order;
+5. materializes each package beneath one generated repository;
+6. generates static package targets and dependency edges;
+7. exposes the root build, source closure, graph JSON, and graph receipt.
+
+The repository fails closed on evaluator failure, protocol contamination,
+malformed JSON, digest mismatch, missing or extra locks, identity mismatch, or a
+dependency cycle.
+
+* Bootstrap boundary
+
+The evaluator runs before ordinary target analysis, so it requires a physical
+stage-0 Gerbil capability:
+
+- =gerbil.host= resolves an explicit native installation;
+- =gerbil.prebuilt= imports a verified immutable capability archive;
+- =gerbil.auto= selects the supported provider for the current operating system
+  and architecture.
+
+The capability repository is independent of the package graph. The graph may
+consume its source =gxi= wrapper, but the capability may never depend on the
+graph it evaluates.
+
+* Build execution
+
+The generated repository uses the private =gerbil_package= rule to invoke
+=gxpkg build= from each staged package root.
+
+An action declares:
+
+- the complete package source closure;
+- direct dependency package roots and manifests;
+- the selected Gerbil toolchain and native ABI;
+- normalized environment and build mode;
+- process and memory guard policy;
+- output tree, log, and receipt.
+
+The Scheme runner validates the canonical request, stages the package without
+mutating the checkout, executes =gxpkg build=, and emits
+=gerbil-bazel.package-receipt.v1=. Upstream stdout is evidence, not a control
+protocol.
+
+Upstream =gxpkg build= reads direct dependency version manifests from
+=<GERBIL_PATH>/pkg/<reference>.manifest=. Therefore every generated package
+action also emits one plain Scheme datum in the exact upstream manifest format.
+The datum uses the graph reference and locked revision for its first pair and
+preserves the Gerbil, Gambit, and flattened transitive pairs produced by
+upstream. A parent action maps only its direct dependency manifest artifacts
+into its private =GERBIL_PATH= before invoking =gxpkg build=.
+
+This bridge is static action input materialization. It does not run package
+installation, package linking, Git revision discovery, or network access.
+
+* Public Bzlmod API
+
+#+begin_src starlark
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+
+gerbil.auto(
+    name = "local_gerbil",
+    expected_version_prefixes = ["Gerbil v0.18.2"],
+    linux_prebuilt_arch = "x86_64",
+    linux_prebuilt_install_digest = "<installation digest>",
+    linux_prebuilt_sha256 = "<archive sha256>",
+    linux_prebuilt_urls = ["<immutable archive URL>"],
+)
+
+gerbil.package(
+    manifest = "//:gerbil.pkg",
+    name = "root_package",
+)
+
+gerbil.dependency(
+    graph = "root_package",
+    package = "<resolved package identity>",
+    reference = "<manifest dependency reference>",
+    revision = "<pinned revision>",
+    sha256 = "<archive sha256>",
+    strip_prefix = "<archive root>",
+    urls = ["<immutable archive URL>"],
+)
+
+use_repo(gerbil, "local_gerbil", "root_package")
+register_toolchains("@local_gerbil//:registered_toolchain")
+#+end_src
+
+=gerbil.package(manifest=...)= is the only root package declaration.
+=gerbil.dependency(...)= supplies immutable dependency locks. Toolchain
+capabilities and package graphs remain separate declarations.
+
+The generated repository exposes =:build=, =:build_receipt=,
+=:gxpkg_manifest=, =:package-graph.json=, =:source_closure=, and deterministic
+=:package_N= targets. Generated rules carry =GerbilPackageInfo= privately
+between graph-owned targets.
+
+* Evidence contracts
+
+The architecture emits three stable v1 documents:
+
+- =gerbil-bazel.package-manifest.v1=: native manifest projection and source
+  closure;
+- =gerbil-bazel.package-graph.v1=: resolved packages, dependency edges, locks,
+  evaluator identity, and closure roots;
+- =gerbil-bazel.package-receipt.v1=: execution identity, environment, resource
+  policy, output, log, status, and duration.
+
+Schemas are strict. Unknown receipt fields, empty package identities, invalid
+digests, and schema drift fail validation.
+
+* Performance and caching
+
+The repository key includes evaluator bytes, root manifest, watched root source
+tree, toolchain evaluator identity, dependency lock values, and dependency
+archive digests.
+
+The generated analysis graph contains no dynamic package discovery. Bazel may
+reuse:
+
+- unchanged downloaded archives by canonical digest;
+- unchanged manifest evaluations;
+- unchanged source closures;
+- unchanged package build actions;
+- unaffected dependency subgraphs.
+
+Parallelism is selected from the registered host capability and guard policy;
+it is not fixed to one machine.
+
+* Security and reproducibility
+
+- Dependency URLs without a valid SHA-256 are rejected.
+- Package sources may not escape their materialized root.
+- Unsupported symlinks are rejected before action creation.
+- All manifest and graph JSON is schema-validated.
+- The build executes in Bazel's declared action environment.
+- =build.ss= has no authority to add undeclared dependency archives.
+- Mutable ambient =GERBIL_PATH= state is not a dependency resolver.
+
+* No compatibility layer
+
+The package-graph architecture is the only supported package build surface.
+Superseded build surfaces and their fixtures are deleted.
+
+Historical RFCs may document prior decisions, but they are explicitly
+superseded and are not implementation guidance.
+
+* Required validation
+
+The implementation is accepted only when all of these gates pass:
+
+- canonical JSON determinism and strict schema rejection;
+- package, dependency, tag, and unknown-field projection;
+- source-closure changes for =gerbil.pkg=, =build.ss=, and source edits;
+- no graph identity change for excluded metadata and caches;
+- missing or malformed manifest and missing builder rejection;
+- missing, extra, duplicate, mismatched, and cyclic dependency rejection;
+- traversal, unsupported symlink, and out-of-root rejection;
+- single-package and dependency-closure builds through =gxpkg build=;
+- host, prebuilt, and auto capability gates on supported platforms;
+- checked-in Bzlmod lock verification;
+- graph and package receipt schema validation;
+- full Bazel query, build, test, and CI gates.

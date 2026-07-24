@@ -1,5 +1,0 @@
-package: gerbil-bazel-smoke-fixture
-namespace: gerbil-bazel-smoke-fixture
-depend:
-("clan@1111111111111111111111111111111111111111"
- "gslph@2222222222222222222222222222222222222222")

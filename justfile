@@ -10,37 +10,14 @@ query:
 
 build:
     {{ bazel }} build \
-      //tests/smoke:compile \
-      //tests/smoke:receipt_compile
+      @root_package//:build \
+      @root_package_with_dependency//:build
 
 test:
     {{ bazel }} test \
-      //gerbil:run_project_test \
-        //gerbil:project_receipt_schema_test \
-        //gerbil:project_receipt_v1_instances_test \
-        //gerbil:source_producer_admission_schema_test \
-        //gerbil:source_producer_admission_v1_instances_test \
-        //gerbil:resource_guard_test \
-      //gerbil:validate_json_test \
-      //tests/smoke:guarded_project_receipt_test \
-      //tests/smoke:gxpkg_native_package_test \
-      //tests/smoke:install_dependencies_test \
-      //tests/smoke:native_math_receipt_test \
-      //tests/smoke:project_receipt_test \
-      //tests/smoke:project_library_view_test \
-      //tests/smoke:reuse_test_one \
-      //tests/smoke:reuse_test_two \
-      //tests/smoke:source_package_visibility_test \
-      //tests/smoke:source_root_test \
-      //tests/smoke:test \
-      //tests/smoke:toolchain_environment_test \
+      //gerbil/... \
+      //tests/smoke/... \
       --test_output=errors
-
-dev:
-    {{ bazel }} run //tests/smoke:dev
-
-dev-test:
-    {{ bazel }} run //tests/smoke:dev_test
 
 scenario-test:
     tools/bench/run_build_scenarios.py \
@@ -62,7 +39,7 @@ source-identity-test:
 promotion-authorization-test:
     tools/ci/test_authorize_prebuilt_promotion.sh
 
-check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test source-package-test
+check: query build test scenario-runner-test source-identity-test promotion-authorization-test auto-test prebuilt-test
 
 lock-check:
     {{ bazel }} mod deps --lockfile_mode=error
@@ -87,6 +64,3 @@ auto-test:
     tools/ci/test_repository_provider_receipt.sh \
       auto \
       .ci/receipts/repository-provider-auto.json
-
-source-package-test:
-    tools/ci/test_source_package_repository.sh

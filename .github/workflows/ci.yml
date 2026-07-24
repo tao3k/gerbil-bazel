@@ -107,9 +107,6 @@ jobs:
             auto \
             .ci/receipts/repository-provider-auto.json
 
-      - name: Validate fail-closed source package repositories
-        run: tools/ci/test_source_package_repository.sh
-
       - name: Validate source producer admission policy
         run: tools/ci/test_source_producer_admission.sh
 
@@ -138,8 +135,8 @@ jobs:
           jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
 
-      - name: Validate compile action identity boundary
-        run: tools/ci/test_compile_action_boundary.sh
+      - name: Validate package action identity boundary
+        run: tools/ci/test_package_action_boundary.sh
 
       - name: Upload validation receipt
         if: always()
