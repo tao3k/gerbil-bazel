@@ -1,4 +1,4 @@
-"""Lifecycle-safe public test rule for built Gerbil packages."""
+"""Public package-aware executable launcher for Gerbil consumers."""
 
 load(":providers.bzl", "GerbilPackageInfo")
 load(
@@ -11,23 +11,21 @@ load(
 )
 load(":toolchain.bzl", "GERBIL_TOOLCHAIN_TYPE", "resolved_gerbil_toolchain")
 
-def _gerbil_test_impl(ctx):
-    if not ctx.files.tests:
-        fail("{} requires at least one test file".format(ctx.label))
-
+def _gerbil_package_binary_impl(ctx):
     package = ctx.attr.package[GerbilPackageInfo]
     toolchain = resolved_gerbil_toolchain(ctx)
-    executable = ctx.actions.declare_file(ctx.label.name)
     dependency_roots = package.dependency_roots.to_list()
+    launcher = ctx.actions.declare_file(ctx.label.name)
 
     ctx.actions.write(
-        output = executable,
+        output = launcher,
         is_executable = True,
         content = """#!/usr/bin/env bash
 set -euo pipefail
 {runfiles_resolver}
+gxi=$(rlocation {gxi_key})
+script=$(rlocation {script_key})
 package_root=$(rlocation {package_key})
-gxtest=$(rlocation {gxtest_key})
 dependency_root_marker=$(rlocation {dependency_root_key})
 dependency_library_root=$(dirname "$dependency_root_marker")
 loadpath=("$package_root/.gerbil/lib")
@@ -36,37 +34,35 @@ for key in {dependency_keys}; do
   loadpath+=("$dependency_package_root/.gerbil/lib")
 done
 loadpath+=("$dependency_library_root")
-test_files=()
-for key in {test_keys}; do
-  test_files+=("$(rlocation "$key")")
-done
 export GERBIL_PATH="$package_root/.gerbil"
 export GERBIL_LOADPATH="$(IFS=:; printf '%s' "${{loadpath[*]}}")"
 {environment_exports}
 cd "$package_root"
-exec "$gxtest" "$@" "${{test_files[@]}}"
+exec "$gxi" "$script" {declared_args} "$@"
 """.format(
+            declared_args = " ".join([shell_quote(value) for value in ctx.attr.args]),
             dependency_keys = quoted_runfile_keys(ctx, dependency_roots),
             dependency_root_key = shell_quote(
                 runfile_key(ctx, toolchain.dependency_library_root),
             ),
             environment_exports = environment_exports(
                 ctx.attr.environment,
-                "Gerbil test",
+                "Gerbil package binary",
             ),
-            gxtest_key = shell_quote(runfile_key(ctx, toolchain.gxtest.executable)),
+            gxi_key = shell_quote(runfile_key(ctx, toolchain.gxi.executable)),
             package_key = shell_quote(runfile_key(ctx, package.package_root)),
             runfiles_resolver = runfiles_resolver(),
-            test_keys = quoted_runfile_keys(ctx, ctx.files.tests),
+            script_key = shell_quote(runfile_key(ctx, ctx.file.script)),
         ),
     )
 
     runfiles = ctx.runfiles(
         files = [
+            ctx.file.script,
             package.package_root,
             toolchain.dependency_library_root,
-            toolchain.gxtest.executable,
-        ] + ctx.files.tests,
+            toolchain.gxi.executable,
+        ],
         transitive_files = depset(
             transitive = [
                 package.dependency_roots,
@@ -79,19 +75,22 @@ exec "$gxtest" "$@" "${{test_files[@]}}"
         runfiles = runfiles.merge(target[DefaultInfo].data_runfiles)
 
     return [DefaultInfo(
-        executable = executable,
+        executable = launcher,
         runfiles = runfiles,
     )]
 
-gerbil_test = rule(
-    implementation = _gerbil_test_impl,
+gerbil_package_binary = rule(
+    implementation = _gerbil_package_binary_impl,
     attrs = {
         "data": attr.label_list(allow_files = True),
         "environment": attr.string_dict(),
         "package": attr.label(mandatory = True, providers = [GerbilPackageInfo]),
-        "tests": attr.label_list(allow_files = True),
+        "script": attr.label(allow_single_file = True, mandatory = True),
     },
-    doc = "Runs gxtest against one built GerbilPackageInfo capability.",
-    test = True,
+    doc = (
+        "Runs an explicit Scheme entry script against one built " +
+        "GerbilPackageInfo capability."
+    ),
+    executable = True,
     toolchains = [GERBIL_TOOLCHAIN_TYPE],
 )

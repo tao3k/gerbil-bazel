@@ -17,6 +17,31 @@ absolute_tool_path() {
     *) printf '%s/%s\n' "$PWD" "$1" ;;
   esac
 }
+absolute_path_list() {
+  local value=$1
+  local result=
+  local path
+  local -a paths
+  IFS=: read -r -a paths <<<"$value"
+  for path in "${paths[@]}"; do
+    if [[ -n $result ]]; then
+      result+=:
+    fi
+    if [[ -z $path ]]; then
+      path=.
+    fi
+    result+=$(absolute_tool_path "$path")
+  done
+  printf '%s\n' "$result"
+}
+if [[ -n ${GERBIL_PATH:-} ]]; then
+  export GERBIL_PATH
+  GERBIL_PATH=$(absolute_tool_path "$GERBIL_PATH")
+fi
+if [[ -n ${GERBIL_LOADPATH:-} ]]; then
+  export GERBIL_LOADPATH
+  GERBIL_LOADPATH=$(absolute_path_list "$GERBIL_LOADPATH")
+fi
 export CC
 CC=$(absolute_tool_path "$runtime_toolchain_root/gerbil-cc")
 export GERBIL_GCC
@@ -47,7 +72,7 @@ if (( $# != 0 )); then
   argv_nul_hex=$(printf '%s\0' "$@" | hex_stream) || encoding_failed=1
 fi
 environment_nul_hex=$(
-  for name in GERBIL_HOME GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
+  for name in GERBIL_HOME GERBIL_PATH GERBIL_LOADPATH GAMBOPT GERBIL_GSC GERBIL_GCC CC CFLAGS CPPFLAGS LDFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET PATH; do
     if [[ ${!name+x} == x ]]; then
       printf '%s=%s\0' "$name" "${!name}"
     fi

@@ -187,6 +187,7 @@ sh_test(
 
 exports_files([
     "defs.bzl",
+    "binary.bzl",
     "extensions.bzl",
     "gambit_runtime.bzl",
     "host_system.bzl",
@@ -203,6 +204,7 @@ exports_files([
     "repository.bzl",
     "resource_guard.ss",
     "resource_policy.ss",
+    "runfiles.bzl",
     "script.bzl",
     "test.bzl",
     "toolchain.bzl",
