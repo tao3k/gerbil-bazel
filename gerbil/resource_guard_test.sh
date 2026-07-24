@@ -16,6 +16,7 @@ root=${TEST_TMPDIR:?TEST_TMPDIR is required}/resource-guard
 mkdir -p "$root"
 
 host_environment=(
+  GERBIL_BAZEL_GUARD_LOGICAL_CPU_COUNT=8
   GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=6442450944
   GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=4294967296
   GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=805306368
@@ -27,6 +28,36 @@ common_environment=(
   "${host_environment[@]}"
   GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=3221225472
 )
+
+assert_build_cores() {
+  local name=$1
+  local expected=$2
+  shift 2
+  env "${host_environment[@]}" "$@" \
+    /bin/sh -c 'printf "%s\n" "${GERBIL_BUILD_CORES:-unset}"' \
+    >"$root/$name.requested-cores"
+  env "${host_environment[@]}" "$@" \
+    "$gxi" "$guard" "$root/$name.json" "$name" 5 \
+    /bin/sh -c 'printf "%s\n" "$GERBIL_BUILD_CORES" >"$1"' guard-child \
+    "$root/$name.cores"
+  actual=$(cat "$root/$name.cores")
+  if [[ "$actual" != "$expected" ]]; then
+    requested=$(cat "$root/$name.requested-cores")
+    printf '%s: requested GERBIL_BUILD_CORES=%s, expected %s, got %s\n' \
+      "$name" "$requested" "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
+assert_build_cores adaptive-build-cores 4
+assert_build_cores configured-build-cores 3 \
+  GERBIL_BAZEL_REQUESTED_BUILD_CORES=3
+assert_build_cores logical-and-memory-cap 4 \
+  GERBIL_BAZEL_REQUESTED_BUILD_CORES=12
+assert_build_cores explicit-memory-per-core 3 \
+  GERBIL_BAZEL_MEMORY_PER_CORE_BYTES=1073741824
+assert_build_cores runnable-advisory-does-not-throttle 4 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=99
 
 env \
   -u GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES \

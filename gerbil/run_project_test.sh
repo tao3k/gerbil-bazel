@@ -19,6 +19,7 @@ manifest=$root/sources
 validator=$root/validate_json.ss
 resource_guard=$root/resource_guard.ss
 receipt_writer=$root/write_project_receipt.ss
+source_resolution_manifest=$root/source-resolution-receipts
 
 mkdir -p "$source_root/src" "$tools_root" "$dependency_root"
 printf 'build owner\n' >"$source_root/build.ss"
@@ -31,6 +32,7 @@ printf '%s\t%s\n' \
 printf '; fake validator identity\n' >"$validator"
 printf '; fake resource guard identity\n' >"$resource_guard"
 printf '; fake receipt writer identity\n' >"$receipt_writer"
+: >"$source_resolution_manifest"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
@@ -43,7 +45,7 @@ printf '%s\n' \
   'if [[ "$(basename "$script")" == write_project_receipt.ss ]]; then' \
   ' grep -Eq '\''^\{.*\}$'\'' "${8:?}"' \
   ' build_receipt=$(<"${8:?}")' \
-  ' printf '\''{"buildReceipt":%s,"durationSeconds":%s,"libraryOutputRequired":false,"packageIdentity":%s,"packageRevision":%s,"resourceGuard":null,"schema":"gerbil-bazel.project-receipt.v1","status":"%s"}\n'\'' "$build_receipt" "${3:?}" "${5:?}" "${6:?}" "${9:?}" >"${2:?}"' \
+  ' printf '\''{"buildReceipt":%s,"durationSeconds":%s,"libraryOutputRequired":false,"packageIdentity":%s,"packageRevision":%s,"resourceGuard":null,"schema":"gerbil-bazel.project-receipt.v1","status":"%s"}\n'\'' "$build_receipt" "${3:?}" "${5:?}" "${6:?}" "${10:?}" >"${2:?}"' \
   ' exit 0' \
   'fi' \
   'build_script=$script' \
@@ -104,6 +106,7 @@ run_fixture() {
     '//tests/smoke:fixture' \
     '' \
     '' \
+    "$source_resolution_manifest" \
     compile
 }
 
@@ -174,7 +177,8 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$dependency_root/.marker" "$root/unsafe.sources" \
     "$root/unsafe.project" build.ss "$root/unsafe.receipt.json" \
   "$root/unsafe.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:unsafe' '' '' compile
+  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:unsafe' '' '' \
+  "$source_resolution_manifest" compile
 unsafe_status=$?
 set -e
 [[ "$unsafe_status" -eq 64 ]]
@@ -192,7 +196,8 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$dependency_root/.marker" "$root/duplicate.sources" \
     "$root/duplicate.project" build.ss "$root/duplicate.receipt.json" \
   "$root/duplicate.log" '' "$validator" \
-  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:duplicate' '' '' compile
+  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:duplicate' '' '' \
+  "$source_resolution_manifest" compile
 duplicate_status=$?
 set -e
 [[ "$duplicate_status" -eq 64 ]]

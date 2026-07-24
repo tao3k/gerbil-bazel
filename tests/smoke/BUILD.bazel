@@ -111,6 +111,9 @@ gerbil_project_compile(
     name = "receipt_compile",
     build_script = "receipt-build.ss",
     receipt_line_prefix = "PROJECT_RECEIPT ",
+    source_resolution_receipts = [
+        "@clan_sources//:source_resolution_receipt",
+    ],
 )
 
 gerbil_project_test(

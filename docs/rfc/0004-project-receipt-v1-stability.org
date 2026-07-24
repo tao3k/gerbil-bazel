@@ -26,13 +26,17 @@ define a second package graph: =gerbil.pkg= and =gxpkg= own package semantics,
 while repository pins and Bazel content inputs own reproducible source
 identity.
 
-Two optional extension fields are reserved in v1:
+Three optional extension fields are reserved in v1:
 
 - =resourceGuard= contains a typed
   =gerbil-bazel.resource-guard-receipt.v1= value when the action uses the
   Scheme process guard.
 - =buildReceipt= contains the build-script-owned JSON value captured through
   =receipt_line_prefix=.
+- =dependencySourceResolutions= contains the deterministic postorder projection
+  of direct and transitive
+  =gerbil-bazel.dependency-source-resolution-receipt.v1= artifacts declared by
+  the project graph.
 
 No producer-owned receipt replaces the outer Gerbil-Bazel receipt.
 
@@ -48,6 +52,9 @@ flowchart LR
   B --> E["Resource guard receipt"]
   D --> F["Project receipt v1 envelope"]
   E --> F
+  H["Direct and transitive source-resolution receipts"] --> I["Postorder depset"]
+  I --> J["Deterministic receipt manifest"]
+  J --> F
   F --> G["Declared Bazel receipt artifact"]
 #+end_src
 
@@ -58,6 +65,7 @@ flowchart LR
 | Required identity | The original six fields are always present. |
 | Producer JSON | Nested under =buildReceipt=; its schema remains producer-owned. |
 | Resource policy evidence | Nested under =resourceGuard=; absent when no guard runs. |
+| Dependency source evidence | Nested under =dependencySourceResolutions=; absent when the project graph declares no source-resolution receipts. |
 | Unknown top-level fields | Rejected by the normative JSON Schema. |
 | New execution capability | Uses a reserved optional field or requires a separately approved project receipt version. |
 | Existing reader | A reader consuming only the six required fields remains valid. |
@@ -70,6 +78,84 @@ and guard implementation participate in the Bazel action key. Repository pins
 materialize the revisions declared by the consumer's canonical dependency
 manifest. Changing one dependency input invalidates that project and its
 reverse-dependent closure; an independent project remains reusable.
+
+* Exactly-once dependency source projection
+
+=GerbilProjectInfo= carries a postorder depset of source-resolution receipt
+artifacts.  =gerbil_project_compile= merges the direct labels declared by
+=source_resolution_receipts= with every dependency's transitive depset.  Bazel
+artifact identity therefore removes duplicate paths before the action writes
+one deterministic manifest.  The native Scheme receipt writer reads that
+manifest once and adds one ordered =dependencySourceResolutions= array to the
+outer receipt.
+
+Gerbil-Bazel validates the receipt producer's stable structural contract.  It
+does not reinterpret the consumer's canonical dependency policy.  A downstream
+consumer such as POO Flow remains responsible for rejecting a resolution mode,
+URI, revision, digest, worktree state, or logical-package set that disagrees
+with its own contract.
+
+#+begin_src mermaid
+flowchart LR
+  Direct["Direct source-resolution receipts"] --> Merge["Postorder depset"]
+  Dependency["GerbilProjectInfo transitive receipts"] --> Merge
+  Merge --> Manifest["Deterministic manifest"]
+  Manifest --> Writer["Scheme project receipt writer"]
+  Guard["Optional resourceGuard"] --> Writer
+  Producer["Optional buildReceipt"] --> Writer
+  Writer --> Envelope["gerbil-bazel.project-receipt.v1"]
+  Envelope --> Consumer["Consumer-owned contract validator"]
+#+end_src
+
+* Adaptive project-child worker boundary
+
+The Scheme resource guard computes the project child's =GERBIL_BUILD_CORES=
+after =gxi= has started.  This location is deliberate: =gxi= initializes its
+own worker environment, so a Bazel-declared =GERBIL_BUILD_CORES= value is
+preserved first as =GERBIL_BAZEL_REQUESTED_BUILD_CORES=.  The guard then caps
+the requested value by the observed logical CPU count and the RSS-derived
+memory-core limit.  Runnable-process saturation remains an advisory and never
+silently changes the selected worker count.
+
+#+begin_src mermaid
+flowchart LR
+  Env["Bazel-declared worker request"] --> Preserve["Guard-owned preserved request"]
+  CPU["Gerbil logical CPU observation"] --> Budget["Pure worker budget"]
+  Memory["Available memory minus RSS headroom"] --> Budget
+  Preserve --> Budget
+  Runnable["Runnable-process observation"] -->|"advisory only"| Receipt["Resource guard receipt v1"]
+  Budget --> ChildEnv["Project child GERBIL_BUILD_CORES"]
+  ChildEnv --> Make["build.ss / std/make"]
+#+end_src
+
+The deterministic resource-guard scenario verifies adaptive selection, explicit
+selection, logical-CPU and memory caps, explicit memory-per-core policy, and
+the invariant that a runnable-process advisory does not throttle the build.
+The existing RSS, deadline, and process-tree tests remain unchanged.
+
+The real POO Flow downstream acceptance used a fresh Bazel output root and a
+command-line module override.  The complete cold build succeeded in
+=600.187 s= with a =570.29 s= critical path.  Its guarded dependency actions
+reported:
+
+| Action | Guard elapsed | Peak RSS | Max RSS |
+|--------+---------------+----------+---------|
+| =gerbil_utils_package= | =51,801 ms= | =1,748,025,344 bytes= | =15,032,385,536 bytes= |
+| =gerbil_poo_package= | =90,359 ms= | =3,555,540,992 bytes= | =14,001,593,384 bytes= |
+| =gslph_package= | =89,560 ms= | =2,647,064,576 bytes= | =13,657,996,001 bytes= |
+
+The =gslph_package= action is =18.3%= below the previously recorded macOS
+hotspot of =109,604 ms=.  This is not an end-to-end two-minute result: the POO
+root build still consumed =218,861 ms=, with its 379-module runtime stage
+accounting for =213,495,326= elapsed jiffies while already using all 12
+available workers.  The next performance owner is therefore the downstream
+compile/AOT graph and cache partitioning, not another hidden scheduler inside
+Gerbil-Bazel.
+
+The POO receipt contract and deliberate contract-mismatch gates both passed in
+=19.010 s= after the cold build.  They prove that the projected dependency
+array matches the canonical consumer contract and that disagreement remains
+fail-closed.
 
 * Failure semantics
 

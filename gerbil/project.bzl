@@ -10,6 +10,7 @@ GerbilProjectInfo = provider(
         "project_root": "tree artifact containing the isolated built project",
         "receipt": "machine-readable build receipt",
         "source_root_marker": "build script anchoring the declared project source root",
+        "source_resolution_receipts": "postorder depset of dependency source-resolution receipts",
     },
 )
 
@@ -45,14 +46,33 @@ def _gerbil_project_compile_impl(ctx):
         order = "postorder",
         transitive = [dependency.dependency_roots for dependency in project_dependencies],
     )
+    source_resolution_receipts = depset(
+        direct = ctx.files.source_resolution_receipts,
+        order = "postorder",
+        transitive = [
+            dependency.source_resolution_receipts
+            for dependency in project_dependencies
+        ],
+    )
     project_root = ctx.actions.declare_directory(ctx.label.name + ".project")
     receipt = ctx.actions.declare_file(ctx.label.name + ".receipt.json")
     log = ctx.actions.declare_file(ctx.label.name + ".log")
     manifest = ctx.actions.declare_file(ctx.label.name + ".sources")
+    source_resolution_manifest = ctx.actions.declare_file(
+        ctx.label.name + ".source-resolution-receipts",
+    )
     sources = depset(direct = [ctx.file.build_script] + ctx.files.srcs)
     ctx.actions.write(
         output = manifest,
         content = "\n".join(_manifest_entries(sources.to_list())) + "\n",
+    )
+    source_resolution_paths = [
+        receipt.path
+        for receipt in source_resolution_receipts.to_list()
+    ]
+    ctx.actions.write(
+        output = source_resolution_manifest,
+        content = "\n".join(source_resolution_paths) + "\n" if source_resolution_paths else "",
     )
     args = ctx.actions.args()
     args.add(toolchain.gxi.executable.path)
@@ -76,9 +96,15 @@ def _gerbil_project_compile_impl(ctx):
     args.add(str(ctx.label))
     args.add("")
     args.add("")
+    args.add(source_resolution_manifest.path)
     args.add_all(ctx.attr.args)
     environment = dict(toolchain.environment)
     environment.update(ctx.attr.env)
+    if "GERBIL_BUILD_CORES" in environment:
+        # gxi initializes GERBIL_BUILD_CORES for its own runtime. Preserve the
+        # Bazel-declared value under a guard-owned name so the Scheme guard can
+        # apply it to the actual project child after gxi has started.
+        environment["GERBIL_BAZEL_REQUESTED_BUILD_CORES"] = environment["GERBIL_BUILD_CORES"]
     environment["CC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode("")
@@ -98,12 +124,14 @@ def _gerbil_project_compile_impl(ctx):
                 ctx.file._receipt_writer,
                 ctx.file._resource_guard,
                 manifest,
+                source_resolution_manifest,
                 toolchain.dependency_library_root,
                 toolchain.native_abi_fingerprint_file,
             ],
             transitive = [
                 sources,
                 dependency_roots,
+                source_resolution_receipts,
                 toolchain.dependency_libraries,
                 toolchain.runfiles,
             ],
@@ -123,6 +151,7 @@ def _gerbil_project_compile_impl(ctx):
         project_root = project_root,
         receipt = receipt,
         source_root_marker = ctx.file.build_script,
+        source_resolution_receipts = source_resolution_receipts,
     )
     return [
         DefaultInfo(files = depset([project_root, receipt, log])),
@@ -145,6 +174,7 @@ gerbil_project_compile = rule(
         "process_guard_timeout_seconds": attr.int(default = 0),
         "receipt_line_prefix": attr.string(),
         "require_library_output": attr.bool(default = False),
+        "source_resolution_receipts": attr.label_list(allow_files = True),
         "srcs": attr.label_list(allow_files = True),
         "_runner": attr.label(
             cfg = "exec",
