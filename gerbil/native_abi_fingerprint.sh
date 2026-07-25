@@ -12,7 +12,7 @@ hash_stream() {
   fi
 }
 
-if (( $# == 0 || $# % 2 != 0 )); then
+if (( $# % 2 != 0 )); then
   printf 'usage: %s ROLE TOOL [ROLE TOOL ...]\n' "$0" >&2
   exit 2
 fi
