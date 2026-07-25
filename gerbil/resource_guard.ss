@@ -10,6 +10,8 @@
         (only-in :std/text/json json-object->string write-json-sort-keys?))
 
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
+(def +resource-guard-admission-schema+
+  "gerbil-bazel.resource-guard-admission.v1")
 (def +minimum-max-rss-bytes+ (* 768 1024 1024))
 (def +maximum-default-memory-per-core-bytes+ (* 2 1024 1024 1024))
 (def +headroom-share-denominator+ 16)
@@ -139,9 +141,18 @@
     +maximum-default-memory-per-core-bytes+
     (quotient (hash-ref observation "maxRssBytes") logical-cpus))))
 
-(def (adaptive-build-core-count observation)
+(def (runnable-build-core-limit observation)
   (let* ((logical-cpus (hash-ref observation "logicalCpuCount"))
-         (configured-cores
+         (runnable (hash-ref observation "runnableProcessCount"))
+         ;; The runnable-process probe normally observes itself. Preserve that
+         ;; one slot, then fill only CPU capacity not already claimed by other
+         ;; runnable processes.
+         (other-runnable (max 0 (- runnable 1))))
+    (max 1 (- logical-cpus other-runnable))))
+
+(def (build-core-plan observation)
+  (let* ((logical-cpus (hash-ref observation "logicalCpuCount"))
+         (requested-cores
           (required-positive-integer-from-env
            "GERBIL_BAZEL_REQUESTED_BUILD_CORES"
            (positive-integer-from-env
@@ -156,13 +167,26 @@
            1
            (quotient
             (hash-ref observation "maxRssBytes")
-            memory-per-core))))
-    (max 1 (min configured-cores logical-cpus memory-core-limit))))
+            memory-per-core)))
+         (runnable-core-limit (runnable-build-core-limit observation))
+         (effective-cores
+          (max
+           1
+           (min requested-cores
+                logical-cpus
+                memory-core-limit
+                runnable-core-limit))))
+    (hash
+     ("requestedBuildCoreCount" requested-cores)
+     ("effectiveBuildCoreCount" effective-cores)
+     ("memoryCoreLimit" memory-core-limit)
+     ("memoryPerCoreBytes" memory-per-core)
+     ("runnableCoreLimit" runnable-core-limit))))
 
-(def (apply-adaptive-build-core-count! observation)
+(def (apply-build-core-plan! plan)
   (setenv
    "GERBIL_BUILD_CORES"
-   (number->string (adaptive-build-core-count observation))))
+   (number->string (hash-ref plan "effectiveBuildCoreCount"))))
 
 (def (live-process-table-result)
   (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))
@@ -303,7 +327,7 @@
        (signal-process! "-KILL" tree-pid))
      tree-pids)))
 
-(def (guard-receipt label observation outcome exit-code child-exit-code
+(def (guard-receipt label observation plan outcome exit-code child-exit-code
                     peak-rss-bytes elapsed-ms timeout-seconds)
   (hash
    ("kind" +resource-guard-schema+)
@@ -315,6 +339,11 @@
    ("childExitCode" child-exit-code)
    ("logicalCpuCount" (hash-ref observation "logicalCpuCount"))
    ("runnableProcessCount" (hash-ref observation "runnableProcessCount"))
+   ("requestedBuildCoreCount" (hash-ref plan "requestedBuildCoreCount"))
+   ("effectiveBuildCoreCount" (hash-ref plan "effectiveBuildCoreCount"))
+   ("memoryCoreLimit" (hash-ref plan "memoryCoreLimit"))
+   ("memoryPerCoreBytes" (hash-ref plan "memoryPerCoreBytes"))
+   ("runnableCoreLimit" (hash-ref plan "runnableCoreLimit"))
    ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
    ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
    ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
@@ -327,22 +356,49 @@
    ("admissionAdvisories" (hash-ref observation "admissionAdvisories"))
    ("admissionReasons" (hash-ref observation "admissionReasons"))))
 
+(def (admission-receipt label observation plan timeout-seconds)
+  (hash
+   ("kind" +resource-guard-admission-schema+)
+   ("schema" +resource-guard-admission-schema+)
+   ("version" 1)
+   ("label" label)
+   ("admissionOutcome" (hash-ref observation "admissionOutcome"))
+   ("admissionAdvisories" (hash-ref observation "admissionAdvisories"))
+   ("admissionReasons" (hash-ref observation "admissionReasons"))
+   ("logicalCpuCount" (hash-ref observation "logicalCpuCount"))
+   ("runnableProcessCount" (hash-ref observation "runnableProcessCount"))
+   ("requestedBuildCoreCount" (hash-ref plan "requestedBuildCoreCount"))
+   ("effectiveBuildCoreCount" (hash-ref plan "effectiveBuildCoreCount"))
+   ("memoryCoreLimit" (hash-ref plan "memoryCoreLimit"))
+   ("memoryPerCoreBytes" (hash-ref plan "memoryPerCoreBytes"))
+   ("runnableCoreLimit" (hash-ref plan "runnableCoreLimit"))
+   ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
+   ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
+   ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
+   ("maxRssBytes" (hash-ref observation "maxRssBytes"))
+   ("processTreeRssAvailable" (hash-ref observation "processTreeRssAvailable"))
+   ("timeoutMs" (and timeout-seconds (* timeout-seconds 1000)))))
+
 (def (receipt-json receipt)
   (parameterize ((write-json-sort-keys? #t))
     (json-object->string receipt)))
+
+(def (emit-receipt! prefix receipt)
+  (let (payload (receipt-json receipt))
+    (display prefix (current-error-port))
+    (display payload (current-error-port))
+    (newline (current-error-port))
+    (force-output (current-error-port))))
 
 (def (write-receipt! path receipt)
   (let (payload (receipt-json receipt))
     (call-with-output-file path
       (lambda (port)
         (display payload port)
-        (newline port)))
-    (display "GERBIL_BAZEL_RESOURCE_GUARD_RECEIPT " (current-error-port))
-    (display payload (current-error-port))
-    (newline (current-error-port))
-    (force-output (current-error-port))))
+        (newline port))))
+  (emit-receipt! "GERBIL_BAZEL_RESOURCE_GUARD_RECEIPT " receipt))
 
-(def (run-guarded label observation timeout-seconds sample-seconds argv)
+(def (run-guarded label observation plan timeout-seconds sample-seconds argv)
   (let* ((started (now-seconds))
          (child
           (open-process
@@ -385,7 +441,7 @@
            (final-exit (if (eq? outcome 'running) child-exit guard-exit))
            (elapsed-ms
             (inexact->exact (round (* 1000 (- (now-seconds) started))))))
-      (guard-receipt label observation final-outcome final-exit child-exit
+      (guard-receipt label observation plan final-outcome final-exit child-exit
                      peak-rss elapsed-ms timeout-seconds))))
 
 (def (main receipt-path label declared-timeout-text . argv)
@@ -397,6 +453,7 @@
       (error "declared guard timeout must be a non-negative integer"
              declared-timeout-text))
     (let* ((observation (host-observation))
+           (plan (build-core-plan observation))
            (timeout-seconds (optional-timeout declared-timeout))
            (sample-seconds
             (positive-real-from-env
@@ -404,15 +461,20 @@
              +default-sample-seconds+))
            (blocked?
             (not (string=? (hash-ref observation "admissionOutcome") "ready")))
+           (_admission
+            (emit-receipt!
+             "GERBIL_BAZEL_RESOURCE_GUARD_ADMISSION "
+             (admission-receipt label observation plan timeout-seconds)))
            (receipt
             (if blocked?
-                (guard-receipt label observation 'blocked-host-pressure 72 #f 0 0
-                               timeout-seconds)
+                (guard-receipt label observation plan 'blocked-host-pressure
+                               72 #f 0 0 timeout-seconds)
                 (begin
-                  (apply-adaptive-build-core-count! observation)
+                  (apply-build-core-plan! plan)
                   (run-guarded
                    label
                    observation
+                   plan
                    timeout-seconds
                    sample-seconds
                    argv)))))

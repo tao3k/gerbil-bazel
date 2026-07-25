@@ -56,8 +56,19 @@ assert_build_cores logical-and-memory-cap 4 \
   GERBIL_BAZEL_REQUESTED_BUILD_CORES=12
 assert_build_cores explicit-memory-per-core 3 \
   GERBIL_BAZEL_MEMORY_PER_CORE_BYTES=1073741824
-assert_build_cores runnable-advisory-does-not-throttle 4 \
+assert_build_cores runnable-capacity-is-adaptive 5 \
+  GERBIL_BAZEL_MEMORY_PER_CORE_BYTES=536870912 \
+  GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=4
+assert_build_cores runnable-saturation-throttles 1 \
   GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=99
+grep -F '"requestedBuildCoreCount":12' \
+  "$root/runnable-saturation-throttles.json" >/dev/null
+grep -F '"effectiveBuildCoreCount":1' \
+  "$root/runnable-saturation-throttles.json" >/dev/null
+grep -F '"runnableCoreLimit":1' \
+  "$root/runnable-saturation-throttles.json" >/dev/null
+grep -F '"admissionAdvisories":["runnable-saturation"]' \
+  "$root/runnable-saturation-throttles.json" >/dev/null
 
 env \
   -u GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES \
@@ -159,6 +170,35 @@ grep -F '"admissionOutcome":"ready"' "$root/completed.json" >/dev/null
 grep -F '"outcome":"completed"' "$root/completed.json" >/dev/null
 grep -F '"schema":"gerbil-bazel.resource-guard-receipt.v1"' \
   "$root/completed.json" >/dev/null
+
+admission_log="$root/admission-before-child.log"
+env "${common_environment[@]}" \
+  "$gxi" "$guard" "$root/admission-before-child.json" \
+  admission-before-child 5 \
+  /bin/echo GERBIL_BAZEL_RESOURCE_GUARD_CHILD \
+  >"$admission_log" 2>&1
+grep -F '"schema":"gerbil-bazel.resource-guard-admission.v1"' \
+  "$admission_log" >/dev/null
+grep -F '"requestedBuildCoreCount":12' "$admission_log" >/dev/null
+grep -F '"effectiveBuildCoreCount":4' "$admission_log" >/dev/null
+grep -F '"runnableCoreLimit":8' "$admission_log" >/dev/null
+admission_line=$(
+  grep -n -m 1 -F "GERBIL_BAZEL_RESOURCE_GUARD_ADMISSION " \
+    "$admission_log" | cut -d: -f1
+)
+child_line=$(
+  grep -n -m 1 -F "GERBIL_BAZEL_RESOURCE_GUARD_CHILD" \
+    "$admission_log" | cut -d: -f1
+)
+final_line=$(
+  grep -n -m 1 -F "GERBIL_BAZEL_RESOURCE_GUARD_RECEIPT " \
+    "$admission_log" | cut -d: -f1
+)
+if ! (( admission_line < child_line && child_line < final_line )); then
+  printf 'resource guard event order is not admission -> child -> final\n' >&2
+  cat "$admission_log" >&2
+  exit 1
+fi
 
 set +e
 env \
