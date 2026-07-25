@@ -1,0 +1,116 @@
+#+title: RFC 0008 - macOS Cold-Build Performance Ownership
+#+author: gerbil-bazel maintainers
+#+date: 2026-07-25
+#+startup: overview
+
+* Status
+
+Accepted.
+
+* Decision
+
+gerbil-bazel owns hermetic tool discovery, upstream-compatible Gerbil project
+execution, Bazel action caching, resource admission, and typed receipts.  It
+does not own project-specific Gerbil module decomposition, macro expansion
+cost, or a replacement for the upstream =build.ss= and =std/make= execution
+model.
+
+On macOS:
+
+- the Gerbil compiler's =__available-cores= value is the single source of
+  build CPU capacity;
+- memory may reduce that capacity before admission;
+- sampled runnable-process pressure is advisory only;
+- the producer-compatible GCC 16 object compiler remains selected;
+- Apple Clang remains eligible as the platform linker, but is rejected as the
+  Gerbil object compiler for this toolchain;
+- gerbil-bazel must not split a downstream package into Bazel module actions
+  to compensate for that package's frontend or dependency graph.
+
+* Evidence
+
+The audit used the exact tool identities and environment projected by the
+downstream Bazel =GerbilProjectCompile= action.  The representative generated
+input had SHA-256
+=65ab6115ca12a0e9f854596ff2b571a03f9e8f81a301502f797f2c283264816e=.
+
+| Scenario | Elapsed | Peak RSS | Outcome |
+|----------+---------+----------+---------|
+| GCC 16, one object | 9,124 ms | 455,147,520 bytes | completed |
+| Apple Clang, one object | 17,856 ms | 442,269,696 bytes | completed with unsupported producer-option warnings |
+| GCC 16, four concurrent objects | 9,573 ms | 1,790,885,888 bytes | completed |
+| GCC 16, eight concurrent objects | 12,088 ms | 2,388,836,352 bytes | completed |
+| GCC 16, twelve concurrent objects | 11,466 ms | 4,614,832,128 bytes | completed |
+| Load =:clan/building= | 3,715 ms | 168,542,208 bytes | completed |
+| =gxc proto.ss object.ss= | 17,244 ms | 755,990,528 bytes | completed |
+| =gxc -O proto.ss object.ss= | 17,067 ms | 759,480,320 bytes | completed |
+| =gxc= full sixteen-module set | 94,252 ms | 1,645,756,416 bytes | stopped by the 90-second guard |
+
+The object-compiler comparison rejects a Darwin compiler substitution:
+Apple Clang was approximately 95.7 percent slower for the same generated
+input.  The concurrency comparison rejects a lower fixed core cap: twelve
+concurrent GCC object compilations completed close to the single-object wall
+time and stayed within the admitted memory budget.
+
+The complete module-set probe removed Bazel staging and =build.ss= orchestration
+from the measured path, yet still exceeded the performance gate.  The remaining
+cold-build hotspot is therefore Gerbil frontend work over the downstream
+module and macro graph, not gerbil-bazel action scheduling or C compiler
+parallelism.
+
+* Ownership and control flow
+
+#+begin_src mermaid
+flowchart TD
+  Bazel["Bazel action and cache key"] --> Guard["Scheme resource guard"]
+  Guard --> Upstream["Upstream build.ss and std/make"]
+  Upstream --> Frontend["Gerbil frontend and macro expansion"]
+  Frontend --> Pending["Pending Gambit object jobs"]
+  Pending --> GCC["Producer-compatible GCC 16"]
+  GCC --> Linker["Apple Clang linker capability"]
+
+  Guard -. "__available-cores plus memory admission" .-> Upstream
+  Bazel -. "cache complete project artifact" .-> Pending
+  Frontend -. "owned by downstream module and macro graph" .-> Project["Gerbil project owner"]
+#+end_src
+
+* Rejected changes
+
+** Replace GCC 16 with Apple Clang
+
+Rejected by the same-input measurement and by producer-option compatibility
+warnings.  A compiler substitution must not be added as a speculative Darwin
+fast path.
+
+** Reduce all macOS builds to a fixed core count
+
+Rejected.  The twelve-way object workload scaled without crossing the memory
+budget.  Fixed values would also violate the machine-adaptive capacity
+contract.
+
+** Split downstream modules inside gerbil-bazel
+
+Rejected.  This would require gerbil-bazel to interpret project-specific
+Scheme semantics and would make the library compete with Gerbil's native
+package and build system.
+
+* Required downstream gate
+
+A downstream integration may advance only when all of the following hold:
+
+1. =//gerbil:resource_guard_test= passes.
+2. The downstream utility package does not regress by more than five percent
+   from its accepted 42,364 ms resource-guard baseline.
+3. The downstream POO package completes inside the 90-second cold-action gate,
+   or stops with a typed timeout receipt.
+4. The complete external-module consumer produces one valid
+   =gerbil-bazel.project-receipt.v1= JSON value.
+5. Validation-only local overrides are removed before a commit is pinned.
+
+* Next owner
+
+Further cold-build reduction belongs to the downstream Gerbil project:
+measure and reduce its module dependency depth, repeated macro expansion, and
+cross-module optimization workload.  gerbil-bazel should consume the resulting
+upstream-compatible =gerbil.pkg= and =build.ss= interface without introducing
+a second package or module build language.
