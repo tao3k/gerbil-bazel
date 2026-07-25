@@ -7,6 +7,12 @@ first=$root/first
 second=$root/second
 mkdir -p "$first" "$second"
 
+host_fingerprint=$("$fingerprint")
+if [[ ! "$host_fingerprint" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'zero-argument host fingerprint is not a SHA-1 value\n' >&2
+  exit 1
+fi
+
 printf 'same tool bytes\n' >"$first/tool"
 cp "$first/tool" "$second/tool"
 
