@@ -22,7 +22,19 @@ process_guard_timeout_seconds=${18}
 project_label=${19}
 package_identity=${20}
 package_revision=${21}
-shift 21
+source_resolution_manifest=${22}
+shift 22
+
+action_exec_root=$PWD
+action_exec_root_placeholder=__GERBIL_BAZEL_ACTION_EXEC_ROOT__
+for name in GAMBOPT GERBIL_GCC GERBIL_GSC GERBIL_HOME PATH; do
+  if [[ ${!name+x} == x ]]; then
+    value=${!name}
+    printf -v "$name" '%s' \
+      "${value//$action_exec_root_placeholder/$action_exec_root}"
+    export "$name"
+  fi
+done
 
 case "$gxi" in /*) ;; *) gxi="$PWD/$gxi" ;; esac
 case "$gxc" in /*) ;; *) gxc="$PWD/$gxc" ;; esac
@@ -36,6 +48,10 @@ case "$project_root" in /*) ;; *) project_root="$PWD/$project_root" ;; esac
 case "$receipt" in /*) ;; *) receipt="$PWD/$receipt" ;; esac
 case "$log" in /*) ;; *) log="$PWD/$log" ;; esac
 case "$json_validator" in /*) ;; *) json_validator="$PWD/$json_validator" ;; esac
+case "$source_resolution_manifest" in
+  /*) ;;
+  *) source_resolution_manifest="$PWD/$source_resolution_manifest" ;;
+esac
 
 case "$resource_guard" in
   /*) ;;
@@ -253,7 +269,7 @@ if [[ "$process_guard" == 1 ]]; then
   resource_guard_path=$guard_receipt
 fi
 
-if [[ "$process_guard" == 1 || "$build_receipt_path" != - ]]; then
+if [[ "$process_guard" == 1 || "$build_receipt_path" != - || -s "$source_resolution_manifest" ]]; then
   set +e
   "$gxi" "$receipt_writer" \
     "$receipt" \
@@ -263,6 +279,7 @@ if [[ "$process_guard" == 1 || "$build_receipt_path" != - ]]; then
     "${GERBIL_BAZEL_PACKAGE_REVISION_JSON:-\"\"}" \
     "$resource_guard_path" \
     "$build_receipt_path" \
+    "$source_resolution_manifest" \
     ok \
     >>"$log" 2>&1
   receipt_writer_status=$?

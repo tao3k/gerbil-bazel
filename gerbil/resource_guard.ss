@@ -11,6 +11,7 @@
 
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
 (def +minimum-max-rss-bytes+ (* 768 1024 1024))
+(def +maximum-default-memory-per-core-bytes+ (* 2 1024 1024 1024))
 (def +headroom-share-denominator+ 16)
 (def +runnable-limit-per-cpu+ 2)
 (def +default-sample-seconds+ 0.25)
@@ -56,6 +57,14 @@
   (let* ((raw (getenv name #f))
          (value (and raw (string->number raw))))
     (if (and (real? value) (> value 0)) value fallback)))
+
+(def (required-positive-integer-from-env name fallback)
+  (let* ((raw (getenv name #f))
+         (value (and raw (string->number raw))))
+    (cond
+     ((not raw) fallback)
+     ((and (exact-integer? value) (> value 0)) value)
+     (else (error (string-append name " must be a positive integer") raw)))))
 
 (def (optional-timeout declared-timeout)
   (let* ((raw (getenv "GERBIL_BAZEL_GUARD_TIMEOUT_SECONDS" #f))
@@ -122,6 +131,38 @@
 (def (default-headroom-bytes total-memory)
   (max +minimum-max-rss-bytes+
        (quotient total-memory +headroom-share-denominator+)))
+
+(def (adaptive-memory-per-core-bytes observation logical-cpus)
+  (max
+   +minimum-max-rss-bytes+
+   (min
+    +maximum-default-memory-per-core-bytes+
+    (quotient (hash-ref observation "maxRssBytes") logical-cpus))))
+
+(def (adaptive-build-core-count observation)
+  (let* ((logical-cpus (hash-ref observation "logicalCpuCount"))
+         (configured-cores
+          (required-positive-integer-from-env
+           "GERBIL_BAZEL_REQUESTED_BUILD_CORES"
+           (positive-integer-from-env
+            "GERBIL_BUILD_CORES"
+            logical-cpus)))
+         (memory-per-core
+          (required-positive-integer-from-env
+           "GERBIL_BAZEL_MEMORY_PER_CORE_BYTES"
+           (adaptive-memory-per-core-bytes observation logical-cpus)))
+         (memory-core-limit
+          (max
+           1
+           (quotient
+            (hash-ref observation "maxRssBytes")
+            memory-per-core))))
+    (max 1 (min configured-cores logical-cpus memory-core-limit))))
+
+(def (apply-adaptive-build-core-count! observation)
+  (setenv
+   "GERBIL_BUILD_CORES"
+   (number->string (adaptive-build-core-count observation))))
 
 (def (live-process-table-result)
   (run-captured (list "ps" "-axo" "pid=,ppid=,rss=")))
@@ -367,6 +408,13 @@
             (if blocked?
                 (guard-receipt label observation 'blocked-host-pressure 72 #f 0 0
                                timeout-seconds)
-                (run-guarded label observation timeout-seconds sample-seconds argv))))
+                (begin
+                  (apply-adaptive-build-core-count! observation)
+                  (run-guarded
+                   label
+                   observation
+                   timeout-seconds
+                   sample-seconds
+                   argv)))))
       (write-receipt! receipt-path receipt)
       (exit (hash-ref receipt "exitCode")))))

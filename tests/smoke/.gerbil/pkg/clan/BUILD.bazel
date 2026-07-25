@@ -1,0 +1,5 @@
+# Intentionally empty source candidate.
+#
+# The dependency-source resolver must skip this existing checkout candidate
+# because BUILD metadata alone is not a source snapshot, then select the one
+# source-bearing project-library candidate.

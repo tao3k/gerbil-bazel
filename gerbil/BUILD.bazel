@@ -10,6 +10,13 @@ sh_binary(
     srcs = ["native_abi_fingerprint.sh"],
 )
 
+sh_test(
+    name = "native_abi_fingerprint_test",
+    srcs = ["native_abi_fingerprint_test.sh"],
+    args = ["$(location :native_abi_fingerprint)"],
+    data = [":native_abi_fingerprint"],
+)
+
 sh_binary(
     name = "run_project",
     srcs = ["run_project.sh"],

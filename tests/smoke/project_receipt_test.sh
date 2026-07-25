@@ -19,6 +19,11 @@ grep -Eq '"durationSeconds":[0-9]+' "$receipt"
 grep -F '"libraryOutputRequired":false' "$receipt" >/dev/null
 grep -F '"packageIdentity":""' "$receipt" >/dev/null
 grep -F '"packageRevision":""' "$receipt" >/dev/null
+grep -F '"dependencySourceResolutions":[{"canonicalPackagePath":"' \
+  "$receipt" >/dev/null
+grep -F '"logicalPackage":"clan"' "$receipt" >/dev/null
+grep -F '"resolutionMode":"legacy-unique-source"' "$receipt" >/dev/null
+grep -F '"outcome":"resolved"' "$receipt" >/dev/null
 grep -F '"buildReceipt":{"outcome":"passed","schema":"gerbil-bazel.receipt-prefix-smoke.v1"}' \
   "$receipt" >/dev/null
 if grep -F '"resourceGuard"' "$receipt" >/dev/null; then

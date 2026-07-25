@@ -46,8 +46,10 @@ local_path_override(module_name = "gerbil_bazel", path = "$repo_root")
 
 gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
 gerbil.source_package(
+    canonical_uri = "https://example.invalid/fixture",
     name = "fixture_sources",
     package = "fixture",
+    revision = "fixture-v1",
     sha256 = "$digest",
     urls = ["file://$archive"],
 )

@@ -37,10 +37,77 @@
     "resourceGuard": {
       "$ref": "#/$defs/resourceGuardReceiptV1"
     },
+    "dependencySourceResolutions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dependencySourceResolutionReceiptV1"
+      }
+    },
     "buildReceipt": {}
   },
   "additionalProperties": false,
   "$defs": {
+    "dependencySourceResolutionReceiptV1": {
+      "type": "object",
+      "required": [
+        "schema",
+        "logicalPackage",
+        "canonicalPackagePath",
+        "canonicalUri",
+        "expectedRevision",
+        "observedRevision",
+        "resolutionMode",
+        "sourceSnapshotDigest",
+        "sourceFileCount",
+        "worktreeDirty",
+        "outcome"
+      ],
+      "properties": {
+        "schema": {
+          "const": "gerbil-bazel.dependency-source-resolution-receipt.v1"
+        },
+        "logicalPackage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalPackagePath": {
+          "type": "string"
+        },
+        "canonicalUri": {
+          "type": "string"
+        },
+        "expectedRevision": {
+          "type": "string"
+        },
+        "observedRevision": {
+          "type": "string"
+        },
+        "resolutionMode": {
+          "enum": [
+            "hermetic-archive",
+            "identified-revision",
+            "legacy-unique-source"
+          ]
+        },
+        "sourceSnapshotDigest": {
+          "type": "string",
+          "pattern": "^(|[0-9a-f]{40}|sha256:[0-9a-f]{64})$"
+        },
+        "sourceFileCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "worktreeDirty": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "const": "resolved"
+        }
+      },
+      "additionalProperties": false
+    },
     "resourceGuardReceiptV1": {
       "type": "object",
       "required": [
