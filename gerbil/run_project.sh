@@ -25,6 +25,17 @@ package_revision=${21}
 source_resolution_manifest=${22}
 shift 22
 
+action_exec_root=$PWD
+action_exec_root_placeholder=__GERBIL_BAZEL_ACTION_EXEC_ROOT__
+for name in GAMBOPT GERBIL_GCC GERBIL_GSC GERBIL_HOME PATH; do
+  if [[ ${!name+x} == x ]]; then
+    value=${!name}
+    printf -v "$name" '%s' \
+      "${value//$action_exec_root_placeholder/$action_exec_root}"
+    export "$name"
+  fi
+done
+
 case "$gxi" in /*) ;; *) gxi="$PWD/$gxi" ;; esac
 case "$gxc" in /*) ;; *) gxc="$PWD/$gxc" ;; esac
 case "$gxpkg" in /*) ;; *) gxpkg="$PWD/$gxpkg" ;; esac

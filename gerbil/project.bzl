@@ -2,6 +2,8 @@
 
 load(":toolchain.bzl", "GERBIL_TOOLCHAIN_TYPE", "resolved_gerbil_toolchain")
 
+_ACTION_EXEC_ROOT_PLACEHOLDER = "__GERBIL_BAZEL_ACTION_EXEC_ROOT__"
+
 GerbilProjectInfo = provider(
     doc = "Outputs of a Gerbil project build.",
     fields = {
@@ -37,6 +39,25 @@ def _manifest_entries(files):
         "{}\t{}".format(sources_by_destination[destination], destination)
         for destination in sorted(sources_by_destination.keys())
     ]
+
+def _stable_action_environment(environment, gerbil_gsc):
+    absolute_gsc = environment.get("GERBIL_GSC", "")
+    relative_gsc = gerbil_gsc.path
+    if not absolute_gsc.endswith(relative_gsc):
+        fail("GERBIL_GSC does not end with its exec-root path: {} != {}".format(
+            absolute_gsc,
+            relative_gsc,
+        ))
+    output_base_prefix = absolute_gsc[:-len(relative_gsc)]
+    if not output_base_prefix:
+        return dict(environment)
+    return {
+        name: value.replace(
+            output_base_prefix,
+            _ACTION_EXEC_ROOT_PLACEHOLDER + "/",
+        )
+        for name, value in environment.items()
+    }
 
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
@@ -98,7 +119,10 @@ def _gerbil_project_compile_impl(ctx):
     args.add("")
     args.add(source_resolution_manifest.path)
     args.add_all(ctx.attr.args)
-    environment = dict(toolchain.environment)
+    environment = _stable_action_environment(
+        toolchain.environment,
+        toolchain.gerbil_gsc,
+    )
     environment.update(ctx.attr.env)
     if "GERBIL_BUILD_CORES" in environment:
         # gxi initializes GERBIL_BUILD_CORES for its own runtime. Preserve the

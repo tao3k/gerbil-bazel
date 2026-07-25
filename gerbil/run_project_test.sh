@@ -56,6 +56,11 @@ printf '%s\n' \
   'command -v as >/dev/null' \
   'command -v ld >/dev/null' \
   '[[ -n "${GERBIL_BAZEL_NATIVE_ABI:-}" ]]' \
+  '[[ "$GAMBOPT" == "~~="/*/fixture/gerbil-home ]]' \
+  '[[ "$GERBIL_GCC" == /*/fixture/gerbil-gcc ]]' \
+  '[[ "$GERBIL_GSC" == /*/fixture/gerbil-gsc ]]' \
+  '[[ "$GERBIL_HOME" == /*/fixture/gerbil-home ]]' \
+  '[[ "$PATH" == /*/fixture/bin:* ]]' \
   '[[ "$GERBIL_LOADPATH" == "$GERBIL_PATH/lib:"* ]]' \
   'project_root=$(cd "$(dirname "$build_script")" && pwd -P)' \
   '[[ "$PWD" == "$project_root" ]]' \
@@ -83,6 +88,11 @@ run_fixture() {
   local name=$1
   local prefix=$2
   local output_root=$root/$name.project
+  GAMBOPT='~~=__GERBIL_BAZEL_ACTION_EXEC_ROOT__/fixture/gerbil-home' \
+  GERBIL_GCC='__GERBIL_BAZEL_ACTION_EXEC_ROOT__/fixture/gerbil-gcc' \
+  GERBIL_GSC='__GERBIL_BAZEL_ACTION_EXEC_ROOT__/fixture/gerbil-gsc' \
+  GERBIL_HOME='__GERBIL_BAZEL_ACTION_EXEC_ROOT__/fixture/gerbil-home' \
+  PATH="__GERBIL_BAZEL_ACTION_EXEC_ROOT__/fixture/bin:$PATH" \
   GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
     "$runner" \
       "$tools_root/gxi" \
