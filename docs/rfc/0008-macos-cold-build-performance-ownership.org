@@ -20,7 +20,13 @@ On macOS:
 - the Gerbil compiler's =__available-cores= value is the single source of
   build CPU capacity;
 - memory may reduce that capacity before admission;
-- sampled runnable-process pressure is advisory only;
+- the Scheme guard obtains a fresh runnable-process observation for every
+  admission by invoking =ps -axo state== directly and parsing the state column
+  in Scheme, without a shell pipeline;
+- an explicit runnable count is a higher-priority CI override, while an
+  observation failure is preserved as =runnableProcessCountAvailable=false=;
+- observed runnable-process pressure is advisory only and never replaces
+  Gerbil's CPU-capacity source;
 - the producer-compatible GCC 16 object compiler remains selected;
 - Apple Clang remains eligible as the platform linker, but is rejected as the
   Gerbil object compiler for this toolchain;
@@ -58,18 +64,33 @@ cold-build hotspot is therefore Gerbil frontend work over the downstream
 module and macro graph, not gerbil-bazel action scheduling or C compiler
 parallelism.
 
+The focused resource-guard gate also verifies deterministic state snapshots,
+a successful zero-runnable observation, an explicit unavailable observation
+that overrides a deterministic CI count, and the live =ps= fallback.  The
+=//gerbil:resource_guard_test= target passed 1 of 1 tests in 55.9 seconds on
+2026-07-26.  Test snapshots control observation input only; expected limits
+continue to derive from Gerbil's current =__available-cores= value.
+
 * Ownership and control flow
 
 #+begin_src mermaid
 flowchart TD
   Bazel["Bazel action and cache key"] --> Guard["Scheme resource guard"]
+  Cores["Gerbil __available-cores"] --> Capacity["CPU capacity"]
+  Memory["Host memory observation"] --> Capacity
+  PS["Direct ps state observation"] --> Parser["Scheme state parser"]
+  Override["Explicit CI count override"] -. "higher priority" .-> Parser
+  Parser --> Pressure["Runnable pressure advisory"]
+  Parser --> Observable["Observation availability in receipt"]
+  Capacity --> Guard
+  Pressure -. "advisory only" .-> Guard
+  Observable --> Guard
   Guard --> Upstream["Upstream build.ss and std/make"]
   Upstream --> Frontend["Gerbil frontend and macro expansion"]
   Frontend --> Pending["Pending Gambit object jobs"]
   Pending --> GCC["Producer-compatible GCC 16"]
   GCC --> Linker["Apple Clang linker capability"]
 
-  Guard -. "__available-cores plus memory admission" .-> Upstream
   Bazel -. "cache complete project artifact" .-> Pending
   Frontend -. "owned by downstream module and macro graph" .-> Project["Gerbil project owner"]
 #+end_src
@@ -106,6 +127,9 @@ A downstream integration may advance only when all of the following hold:
 4. The complete external-module consumer produces one valid
    =gerbil-bazel.project-receipt.v1= JSON value.
 5. Validation-only local overrides are removed before a commit is pinned.
+6. A performance comparison that uses runnable pressure rejects a sample when
+   =runnableProcessCountAvailable=false=; ordinary builds may continue because
+   runnable pressure remains advisory.
 
 * Next owner
 

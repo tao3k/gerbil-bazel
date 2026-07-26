@@ -88,13 +88,49 @@
   ;; ##cpu-count or the host again would create a second source of truth.
   (max 1 __available-cores))
 
-(def (runnable-process-count)
-  ;; Runnable-process pressure is not a portable measure of build capacity.
-  ;; Accept it only as optional external observability; never spawn a shell to
-  ;; infer CPU availability that Gerbil already exposes through ##cpu-count.
-  (positive-integer-from-env
-   "GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES"
-   0))
+(def (runnable-state-line? line)
+  (string-prefix? "R" (string-trim-both line)))
+
+(def (runnable-process-count-from-state-output output)
+  (let loop ((states (string-split output #\newline))
+             (count 0))
+    (if (null? states)
+      count
+      (loop
+       (cdr states)
+       (if (runnable-state-line? (car states))
+         (+ count 1)
+         count)))))
+
+(def (live-runnable-state-result)
+  (run-captured (list "ps" "-axo" "state=")))
+
+(def (runnable-state-result)
+  (cond
+   ((getenv "GERBIL_BAZEL_GUARD_RUNNABLE_STATE_SNAPSHOT" #f)
+    => (lambda (snapshot) (cons 0 snapshot)))
+   (else
+    (live-runnable-state-result))))
+
+(def (runnable-process-observation)
+  ;; CPU capacity comes from Gerbil.  Runnable pressure is a fresh observation:
+  ;; invoke ps directly and parse its state column in Scheme, never through a
+  ;; shell pipeline.  Apart from deterministic failure injection, an explicit
+  ;; count remains the highest-priority CI observation.
+  (if (getenv "GERBIL_BAZEL_GUARD_FORCE_RUNNABLE_UNAVAILABLE" #f)
+    (cons #f 0)
+    (let* ((explicit-raw
+            (getenv "GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES" #f))
+           (explicit-count
+            (and explicit-raw (string->number explicit-raw))))
+      (if (and (exact-integer? explicit-count) (>= explicit-count 0))
+        (cons #t explicit-count)
+        (let (result (runnable-state-result))
+          (if (= (car result) 0)
+            (cons
+             #t
+             (runnable-process-count-from-state-output (cdr result)))
+            (cons #f 0)))))))
 
 (def (system-memory-bytes)
   (or (positive-integer-from-env
@@ -284,8 +320,9 @@
               (min explicit-max-rss available-max-rss)
               available-max-rss))
          (logical-cpus (available-core-count))
-         (runnable (runnable-process-count))
-         (runnable-available? (> runnable 0))
+         (runnable-observation (runnable-process-observation))
+         (runnable (cdr runnable-observation))
+         (runnable-available? (car runnable-observation))
          (process-table-probe (process-table-result))
          (process-tree-rss-available? (= (car process-table-probe) 0))
          (advisories

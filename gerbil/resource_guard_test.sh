@@ -82,6 +82,8 @@ spawner_poll_seconds=0.05
 descendant_poll_attempts=20
 spawner_deadline_seconds=3
 process_table_snapshot="1 0 0"
+runnable_state_snapshot=$'R\nR+\nS\nI'
+runnable_state_snapshot_count=2
 forced_child_failure_exit_code=99
 invalid_max_rss_bytes=1
 completed_exit_code=0
@@ -106,13 +108,18 @@ runnable_core_limit() {
 
 runnable_overload_limit=$(runnable_core_limit "$runnable_overload_processes")
 runnable_saturation_limit=$(runnable_core_limit "$runnable_saturation_processes")
+runnable_state_snapshot_limit=$(runnable_core_limit "$runnable_state_snapshot_count")
 
-host_environment=(
+base_host_environment=(
   "GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=$fixture_system_memory_bytes"
   "GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=$fixture_available_memory_bytes"
   "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=$fixture_headroom_bytes"
   "GERBIL_BAZEL_GUARD_SAMPLE_SECONDS=$default_sample_seconds"
   "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=$process_table_snapshot"
+)
+host_environment=(
+  "${base_host_environment[@]}"
+  "GERBIL_BAZEL_GUARD_RUNNABLE_STATE_SNAPSHOT=$runnable_state_snapshot"
 )
 common_environment=(
   "${host_environment[@]}"
@@ -141,8 +148,32 @@ assert_build_cores() {
 }
 
 assert_build_cores adaptive-build-cores "$adaptive_expected"
-grep -F '"runnableProcessCountAvailable":false' \
+grep -F '"runnableProcessCountAvailable":true' \
   "$root/adaptive-build-cores.json" >/dev/null
+grep -F "\"runnableProcessCount\":$runnable_state_snapshot_count" \
+  "$root/adaptive-build-cores.json" >/dev/null
+assert_build_cores runnable-observation-unavailable "$adaptive_expected" \
+  "GERBIL_BAZEL_GUARD_FORCE_RUNNABLE_UNAVAILABLE=1" \
+  "GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES=1"
+grep -F '"runnableProcessCountAvailable":false' \
+  "$root/runnable-observation-unavailable.json" >/dev/null
+grep -F '"runnableProcessCount":0' \
+  "$root/runnable-observation-unavailable.json" >/dev/null
+assert_build_cores runnable-observation-zero "$adaptive_expected" \
+  "GERBIL_BAZEL_GUARD_RUNNABLE_STATE_SNAPSHOT=S"
+grep -F '"runnableProcessCountAvailable":true' \
+  "$root/runnable-observation-zero.json" >/dev/null
+grep -F '"runnableProcessCount":0' \
+  "$root/runnable-observation-zero.json" >/dev/null
+
+env "${base_host_environment[@]}" \
+  "GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=$fixture_max_rss_bytes" \
+  "$gxi" "$guard" "$root/live-runnable-observation.json" \
+  live-runnable-observation "$short_guard_timeout_seconds" \
+  /bin/sh -c 'exit 0'
+grep -F '"runnableProcessCountAvailable":true' \
+  "$root/live-runnable-observation.json" >/dev/null
+
 assert_build_cores configured-build-cores "$configured_expected" \
   "GERBIL_BAZEL_REQUESTED_BUILD_CORES=$configured_requested_cores"
 assert_build_cores logical-and-memory-cap "$adaptive_expected" \
@@ -291,7 +322,7 @@ grep -F "\"requestedBuildCoreCount\":$available_core_count" \
   "$admission_log" >/dev/null
 grep -F "\"effectiveBuildCoreCount\":$adaptive_expected" \
   "$admission_log" >/dev/null
-grep -F "\"runnableCoreLimit\":$available_core_count" \
+grep -F "\"runnableCoreLimit\":$runnable_state_snapshot_limit" \
   "$admission_log" >/dev/null
 admission_line=$(
   grep -n -m 1 -F "GERBIL_BAZEL_RESOURCE_GUARD_ADMISSION " \
