@@ -286,6 +286,7 @@ exec "$native_env" env GERBIL_PATH="$GERBIL_PATH" GERBIL_LOADPATH="$GERBIL_LOADP
 set -euo pipefail
 {runfiles_init}
 workspace=${{BUILD_WORKSPACE_DIRECTORY:?run this target with bazel run}}
+cd "$workspace"
 gxi=$(rlocation {gxi_key})
 native_env=$(rlocation {native_env_key})
 dependency_root_marker=$(rlocation {dependency_root_key})
