@@ -1,0 +1,69 @@
+{
+  "compilerComparison": {
+    "appleClang": {
+      "elapsedMs": 17856,
+      "outcome": "completed-with-producer-option-warnings",
+      "peakRssBytes": 442269696
+    },
+    "gcc16": {
+      "elapsedMs": 9124,
+      "outcome": "completed",
+      "peakRssBytes": 455147520
+    },
+    "inputSha256": "65ab6115ca12a0e9f854596ff2b571a03f9e8f81a301502f797f2c283264816e"
+  },
+  "concurrency": [
+    {
+      "elapsedMs": 9573,
+      "jobs": 4,
+      "outcome": "completed",
+      "peakRssBytes": 1790885888
+    },
+    {
+      "elapsedMs": 12088,
+      "jobs": 8,
+      "outcome": "completed",
+      "peakRssBytes": 2388836352
+    },
+    {
+      "elapsedMs": 11466,
+      "jobs": 12,
+      "outcome": "completed",
+      "peakRssBytes": 4614832128
+    }
+  ],
+  "frontend": {
+    "fullModuleSet": {
+      "elapsedMs": 94252,
+      "exitCode": 71,
+      "outcome": "timeout",
+      "peakRssBytes": 1645756416,
+      "timeoutMs": 90000
+    },
+    "importClanBuilding": {
+      "elapsedMs": 3715,
+      "outcome": "completed",
+      "peakRssBytes": 168542208
+    },
+    "protoObject": {
+      "elapsedMs": 17244,
+      "outcome": "completed",
+      "peakRssBytes": 755990528
+    },
+    "protoObjectOptimized": {
+      "elapsedMs": 17067,
+      "outcome": "completed",
+      "peakRssBytes": 759480320
+    }
+  },
+  "kind": "gerbil-bazel.macos-cold-build-performance-receipt.v1",
+  "platform": "darwin-arm64",
+  "schema": "gerbil-bazel.macos-cold-build-performance-receipt.v1",
+  "toolchain": {
+    "gambitObjectCompiler": "gcc-16 (Homebrew GCC 16.1.0) 16.1.0",
+    "gerbilRevision": "07c84815",
+    "gerbilVersion": "0.18.2",
+    "linker": "Apple Clang from XcodeDefault.xctoolchain"
+  },
+  "version": 1
+}

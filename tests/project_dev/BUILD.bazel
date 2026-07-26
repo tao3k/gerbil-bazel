@@ -1,0 +1,14 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//gerbil:project.bzl", "gerbil_project_dev")
+
+gerbil_project_dev(
+    name = "workspace_fixture",
+    build_script = "workspace_fixture.ss",
+)
+
+sh_test(
+    name = "dev_launcher_workspace_test",
+    srcs = ["dev_launcher_workspace_test.sh"],
+    args = ["$(rlocationpath :workspace_fixture)"],
+    data = [":workspace_fixture"],
+)

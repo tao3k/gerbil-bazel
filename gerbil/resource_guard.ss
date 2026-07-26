@@ -5,8 +5,12 @@
 (export main)
 
 (import :gerbil/gambit
+        (only-in :gerbil/compiler/base __available-cores)
         (only-in :std/misc/process run-process)
-        (only-in :std/srfi/13 string-trim-both string-tokenize)
+        (only-in :std/srfi/13
+                 string-prefix?
+                 string-trim-both
+                 string-tokenize)
         (only-in :std/text/json json-object->string write-json-sort-keys?))
 
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
@@ -78,19 +82,55 @@
      ((> declared-timeout 0) declared-timeout)
      (else #f))))
 
-(def (logical-cpu-count)
-  (positive-integer-from-env
-   "GERBIL_BAZEL_GUARD_LOGICAL_CPU_COUNT"
-   (max 1 (##cpu-count))))
+(def (available-core-count)
+  ;; Gerbil owns the build-capacity contract.  `__available-cores` is already
+  ;; initialized from GERBIL_BUILD_CORES by the compiler runtime, so probing
+  ;; ##cpu-count or the host again would create a second source of truth.
+  (max 1 __available-cores))
 
-(def (runnable-process-count)
-  (or (positive-integer-from-env
-       "GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES"
-       #f)
-      (command-positive-integer
-       (list "sh" "-c"
-             "ps -axo state= 2>/dev/null | awk '$1 ~ /^R/ {n++} END {print n+0}'"))
-      1))
+(def (runnable-state-line? line)
+  (string-prefix? "R" (string-trim-both line)))
+
+(def (runnable-process-count-from-state-output output)
+  (let loop ((states (string-split output #\newline))
+             (count 0))
+    (if (null? states)
+      count
+      (loop
+       (cdr states)
+       (if (runnable-state-line? (car states))
+         (+ count 1)
+         count)))))
+
+(def (live-runnable-state-result)
+  (run-captured (list "ps" "-axo" "state=")))
+
+(def (runnable-state-result)
+  (cond
+   ((getenv "GERBIL_BAZEL_GUARD_RUNNABLE_STATE_SNAPSHOT" #f)
+    => (lambda (snapshot) (cons 0 snapshot)))
+   (else
+    (live-runnable-state-result))))
+
+(def (runnable-process-observation)
+  ;; CPU capacity comes from Gerbil.  Runnable pressure is a fresh observation:
+  ;; invoke ps directly and parse its state column in Scheme, never through a
+  ;; shell pipeline.  Apart from deterministic failure injection, an explicit
+  ;; count remains the highest-priority CI observation.
+  (if (getenv "GERBIL_BAZEL_GUARD_FORCE_RUNNABLE_UNAVAILABLE" #f)
+    (cons #f 0)
+    (let* ((explicit-raw
+            (getenv "GERBIL_BAZEL_GUARD_RUNNABLE_PROCESSES" #f))
+           (explicit-count
+            (and explicit-raw (string->number explicit-raw))))
+      (if (and (exact-integer? explicit-count) (>= explicit-count 0))
+        (cons #t explicit-count)
+        (let (result (runnable-state-result))
+          (if (= (car result) 0)
+            (cons
+             #t
+             (runnable-process-count-from-state-output (cdr result)))
+            (cons #f 0)))))))
 
 (def (system-memory-bytes)
   (or (positive-integer-from-env
@@ -106,14 +146,71 @@
       (* 8 +minimum-max-rss-bytes+)))
 
 (def (linux-available-memory-bytes)
-  (command-positive-integer
-   (list "sh" "-c"
-         "if test -r /proc/meminfo; then awk '/^MemAvailable:/ {printf \"%.0f\\n\", $2 * 1024; exit}' /proc/meminfo; fi")))
+  (with-catch
+   (lambda (_error) #f)
+   (lambda ()
+     (and
+      (file-exists? "/proc/meminfo")
+      (call-with-input-file
+       "/proc/meminfo"
+       (lambda (port)
+         (let loop ()
+           (let (line (read-line port))
+             (cond
+              ((eof-object? line) #f)
+              ((string-prefix? "MemAvailable:" line)
+               (let* ((tokens (string-tokenize line))
+                      (kilobytes
+                       (and (pair? tokens)
+                            (pair? (cdr tokens))
+                            (string->number (cadr tokens)))))
+                 (and (exact-integer? kilobytes)
+                      (> kilobytes 0)
+                      (* kilobytes 1024))))
+              (else (loop)))))))))))
+
+(def (last-token tokens)
+  (and
+   (pair? tokens)
+   (let loop ((rest tokens))
+     (if (pair? (cdr rest))
+       (loop (cdr rest))
+       (car rest)))))
+
+(def (find-output-line output prefix)
+  (let (port (open-input-string output))
+    (unwind-protect
+      (let loop ()
+        (let (line (read-line port))
+          (cond
+           ((eof-object? line) #f)
+           ((string-prefix? prefix line) line)
+           (else (loop)))))
+      (close-input-port port))))
 
 (def (darwin-available-memory-percent)
-  (command-positive-integer
-   (list "sh" "-c"
-         "if command -v memory_pressure >/dev/null 2>&1; then memory_pressure -Q 2>/dev/null | awk '/System-wide memory free percentage:/ {gsub(/%/, \"\", $NF); print $NF; exit}'; fi")))
+  (let* ((result (run-captured (list "memory_pressure" "-Q")))
+         (line
+          (and
+           (= (car result) 0)
+           (find-output-line
+            (cdr result)
+            "System-wide memory free percentage:")))
+         (percent-token
+          (and line (last-token (string-tokenize line))))
+         (percent
+          (and
+           percent-token
+           (> (string-length percent-token) 1)
+           (string->number
+            (substring
+             percent-token
+             0
+             (- (string-length percent-token) 1))))))
+    (and (exact-integer? percent)
+         (> percent 0)
+         (<= percent 100)
+         percent)))
 
 (def (available-memory-bytes total-memory)
   (or (positive-integer-from-env
@@ -148,16 +245,18 @@
          ;; one slot, then fill only CPU capacity not already claimed by other
          ;; runnable processes.
          (other-runnable (max 0 (- runnable 1))))
-    (max 1 (- logical-cpus other-runnable))))
+    (if (< other-runnable logical-cpus)
+      (max 1 (- logical-cpus other-runnable))
+      (max 1
+           (quotient (* logical-cpus logical-cpus)
+                     other-runnable)))))
 
 (def (build-core-plan observation)
   (let* ((logical-cpus (hash-ref observation "logicalCpuCount"))
          (requested-cores
           (required-positive-integer-from-env
            "GERBIL_BAZEL_REQUESTED_BUILD_CORES"
-           (positive-integer-from-env
-            "GERBIL_BUILD_CORES"
-            logical-cpus)))
+           (max 1 __available-cores)))
          (memory-per-core
           (required-positive-integer-from-env
            "GERBIL_BAZEL_MEMORY_PER_CORE_BYTES"
@@ -174,14 +273,17 @@
            1
            (min requested-cores
                 logical-cpus
-                memory-core-limit
-                runnable-core-limit))))
+                memory-core-limit))))
     (hash
      ("requestedBuildCoreCount" requested-cores)
      ("effectiveBuildCoreCount" effective-cores)
      ("memoryCoreLimit" memory-core-limit)
      ("memoryPerCoreBytes" memory-per-core)
-     ("runnableCoreLimit" runnable-core-limit))))
+     ;; Keep the v1 diagnostic projection stable, but do not use a transient
+     ;; host-wide runnable sample as Gerbil build capacity.  Upstream std/make
+     ;; models safe parallelism from CPU count and memory per compilation core.
+     ("runnableCoreLimit" runnable-core-limit)
+     ("runnableCoreLimitApplied" #f))))
 
 (def (apply-build-core-plan! plan)
   (setenv
@@ -217,12 +319,15 @@
           (if explicit-max-rss
               (min explicit-max-rss available-max-rss)
               available-max-rss))
-         (logical-cpus (logical-cpu-count))
-         (runnable (runnable-process-count))
+         (logical-cpus (available-core-count))
+         (runnable-observation (runnable-process-observation))
+         (runnable (cdr runnable-observation))
+         (runnable-available? (car runnable-observation))
          (process-table-probe (process-table-result))
          (process-tree-rss-available? (= (car process-table-probe) 0))
          (advisories
-          (if (> runnable (* logical-cpus +runnable-limit-per-cpu+))
+          (if (and runnable-available?
+                   (> runnable (* logical-cpus +runnable-limit-per-cpu+)))
               '(runnable-saturation)
               '()))
          (reasons
@@ -240,6 +345,7 @@
     (hash
      ("logicalCpuCount" logical-cpus)
      ("runnableProcessCount" runnable)
+     ("runnableProcessCountAvailable" runnable-available?)
      ("systemMemoryBytes" total-memory)
      ("availableMemoryBytes" available-memory)
      ("rssHeadroomBytes" headroom)
@@ -339,11 +445,14 @@
    ("childExitCode" child-exit-code)
    ("logicalCpuCount" (hash-ref observation "logicalCpuCount"))
    ("runnableProcessCount" (hash-ref observation "runnableProcessCount"))
+   ("runnableProcessCountAvailable"
+    (hash-ref observation "runnableProcessCountAvailable"))
    ("requestedBuildCoreCount" (hash-ref plan "requestedBuildCoreCount"))
    ("effectiveBuildCoreCount" (hash-ref plan "effectiveBuildCoreCount"))
    ("memoryCoreLimit" (hash-ref plan "memoryCoreLimit"))
    ("memoryPerCoreBytes" (hash-ref plan "memoryPerCoreBytes"))
    ("runnableCoreLimit" (hash-ref plan "runnableCoreLimit"))
+   ("runnableCoreLimitApplied" (hash-ref plan "runnableCoreLimitApplied"))
    ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
    ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
    ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
@@ -367,11 +476,14 @@
    ("admissionReasons" (hash-ref observation "admissionReasons"))
    ("logicalCpuCount" (hash-ref observation "logicalCpuCount"))
    ("runnableProcessCount" (hash-ref observation "runnableProcessCount"))
+   ("runnableProcessCountAvailable"
+    (hash-ref observation "runnableProcessCountAvailable"))
    ("requestedBuildCoreCount" (hash-ref plan "requestedBuildCoreCount"))
    ("effectiveBuildCoreCount" (hash-ref plan "effectiveBuildCoreCount"))
    ("memoryCoreLimit" (hash-ref plan "memoryCoreLimit"))
    ("memoryPerCoreBytes" (hash-ref plan "memoryPerCoreBytes"))
    ("runnableCoreLimit" (hash-ref plan "runnableCoreLimit"))
+   ("runnableCoreLimitApplied" (hash-ref plan "runnableCoreLimitApplied"))
    ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
    ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
    ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
