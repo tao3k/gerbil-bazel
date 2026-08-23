@@ -74,6 +74,7 @@ source_resolution_replay = use_extension(
 )
 use_repo(
     source_resolution_replay,
+    "source_resolution_git_worktree",
     "source_resolution_replay_a",
     "source_resolution_replay_b",
 )

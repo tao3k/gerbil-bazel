@@ -301,6 +301,24 @@ sh_test(
     ],
 )
 
+sh_test(
+    name = "source_resolution_git_worktree_test",
+    srcs = ["source_resolution_git_worktree_test.sh"],
+    args = [
+        "$(rlocationpath @source_resolution_git_worktree//:source-resolution-receipt.json)",
+        "$(rlocationpath @source_resolution_git_worktree//:root.ss)",
+        "$(rlocationpath @source_resolution_git_worktree//:vendor/tracked.ss)",
+        "$(rlocationpath @source_resolution_git_worktree//:vendor/untracked.ss)",
+    ],
+    data = [
+        "@source_resolution_git_worktree//:root.ss",
+        "@source_resolution_git_worktree//:source-resolution-receipt.json",
+        "@source_resolution_git_worktree//:sources",
+        "@source_resolution_git_worktree//:vendor/tracked.ss",
+        "@source_resolution_git_worktree//:vendor/untracked.ss",
+    ],
+)
+
 sh_binary(
     name = "source_resolution_negative_cases",
     srcs = ["source_resolution_negative_cases.sh"],
