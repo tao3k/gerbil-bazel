@@ -191,7 +191,7 @@
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "NpLQrEMl3JJmQfmun+2znNbrMxffrVt95hJPTGAI8PQ=",
+        "bzlTransitiveDigest": "syK1vkgy74JTqVFQ+OZjMzo0XraQ682l5TBodh1nX9g=",
         "usagesDigest": "TMzRb0esOnhF6K83PYxBaWzsMAHDCWBHtj0Kfu5GNCQ=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -272,7 +272,7 @@
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "NpLQrEMl3JJmQfmun+2znNbrMxffrVt95hJPTGAI8PQ=",
+        "bzlTransitiveDigest": "syK1vkgy74JTqVFQ+OZjMzo0XraQ682l5TBodh1nX9g=",
         "usagesDigest": "TMzRb0esOnhF6K83PYxBaWzsMAHDCWBHtj0Kfu5GNCQ=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -345,7 +345,7 @@
     },
     "//tests/smoke:source_resolution_replay_extension.bzl%source_resolution_replay": {
       "general": {
-        "bzlTransitiveDigest": "vCK6zEjK2aEQgq5vfiTjAY9qkPIFOMj2/h+HHke0ZOM=",
+        "bzlTransitiveDigest": "AkoKIqABPl5ixu34eJxtEHwHMmPa2VTyDkpWc6W6zCs=",
         "usagesDigest": "jD6ULsEF1jrSzq/NdXzDP1PGRDwo1F3QP1GOKJW6ecg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -373,6 +373,18 @@
               "canonical_package_path": ".gerbil/pkg/clan",
               "canonical_uri": "https://example.invalid/gerbil-bazel-source-resolution-fixture",
               "expected_revision": "eaf43dc92bfeeb9abeb348137a7cca449843936f"
+            }
+          },
+          "source_resolution_git_worktree_fixture": {
+            "repoRuleId": "@@//tests/smoke:source_resolution_replay_extension.bzl%git_worktree_fixture_repository",
+            "attributes": {}
+          },
+          "source_resolution_git_worktree": {
+            "repoRuleId": "@@//gerbil:project_dependency_sources_repository.bzl%project_dependency_sources_repository",
+            "attributes": {
+              "package": "git-worktree",
+              "project_library_relative_path": "project-library",
+              "project_root_marker": "@@+source_resolution_replay+source_resolution_git_worktree_fixture//:project-root.marker"
             }
           }
         }

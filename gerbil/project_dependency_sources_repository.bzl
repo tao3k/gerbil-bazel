@@ -9,7 +9,15 @@ def _safe_relative_path(value, field):
             fail("{} must be a safe relative path, got {}".format(field, value))
     return value
 
-def _source_files(repository_ctx, root):
+def _ignored_source_path(relative):
+    for part in relative.split("/"):
+        if part in [".git", ".gerbil", ".cache", ".data", ".run", "node_modules", "target"]:
+            return True
+        if part.startswith("bazel-"):
+            return True
+    return False
+
+def _filesystem_source_files(repository_ctx, root, prefix = ""):
     result = repository_ctx.execute([
         "find",
         str(root),
@@ -18,21 +26,89 @@ def _source_files(repository_ctx, root):
     ], quiet = True)
     if result.return_code != 0:
         fail("failed to enumerate project dependency sources: {}".format(result.stderr))
-
     root_prefix = str(root) + "/"
     files = []
     for line in result.stdout.splitlines():
-        if not line.startswith(root_prefix):
-            continue
-        relative = line[len(root_prefix):]
+        if line.startswith(root_prefix):
+            relative = line[len(root_prefix):]
+            files.append(prefix + "/" + relative if prefix else relative)
+    return files
+
+def _source_files(repository_ctx, root):
+    git_root = repository_ctx.execute([
+        "git",
+        "-C",
+        str(root),
+        "rev-parse",
+        "--show-toplevel",
+    ], quiet = True)
+    if git_root.return_code == 0 and git_root.stdout.strip() == str(root):
+        result = repository_ctx.execute([
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ], quiet = True)
+        if result.return_code != 0:
+            fail("failed to enumerate git project dependency sources: {}".format(result.stderr))
+        stage_result = repository_ctx.execute([
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "--stage",
+        ], quiet = True)
+        if stage_result.return_code != 0:
+            fail("failed to enumerate git project dependency source modes: {}".format(stage_result.stderr))
+        gitlinks = {}
+        for entry in stage_result.stdout.splitlines():
+            separator = entry.find("\t")
+            if separator != -1 and entry.startswith("160000 "):
+                gitlinks[entry[separator + 1:]] = True
+
+        relative_files = []
+        for relative in result.stdout.splitlines():
+            source_path = repository_ctx.path(str(root) + "/" + relative)
+            if not source_path.exists:
+                continue
+            if relative in gitlinks:
+                relative_files.extend(_filesystem_source_files(
+                    repository_ctx,
+                    source_path,
+                    relative,
+                ))
+            else:
+                relative_files.append(relative)
+    else:
+        relative_files = _filesystem_source_files(repository_ctx, root)
+
+    files = []
+    for relative in relative_files:
         if relative in ["BUILD", "BUILD.bazel"]:
             continue
         if relative.endswith("/BUILD") or relative.endswith("/BUILD.bazel"):
             continue
-        if relative.startswith(".git/") or "/.git/" in relative:
+        if _ignored_source_path(relative):
             continue
         files.append(relative)
     return sorted(files)
+
+def _watch_source_root(repository_ctx, root):
+    # The project package root may be a local-development symlink. Watching the
+    # whole resolved tree would also follow package-local .gerbil and bazel-*
+    # links, which can point back into the project and create a digest cycle.
+    repository_ctx.watch(root)
+    for entry in root.readdir(watch = "yes"):
+        name = entry.basename
+        if _ignored_source_path(name):
+            continue
+        if entry.is_dir:
+            repository_ctx.watch_tree(entry)
+        else:
+            repository_ctx.watch(entry)
 
 def _quote(value):
     return json.encode(value)
@@ -256,12 +332,13 @@ def _legacy_source_candidate(repository_ctx, package_checkout_root, library_root
     ]:
         for candidate in candidates:
             candidate_root = repository_ctx.path(root + "/" + candidate)
+            if not candidate_root.exists:
+                continue
+            candidate_root = candidate_root.realpath
             candidate_key = str(candidate_root)
             if candidate_key in seen:
                 continue
             seen[candidate_key] = True
-            if not candidate_root.exists:
-                continue
             label = "{}:{}".format(root_kind, candidate)
             existing.append(label)
             source_files = _source_files(repository_ctx, candidate_root)
@@ -508,7 +585,7 @@ def _project_dependency_sources_repository_impl(repository_ctx):
         library_root,
         package,
     )
-    repository_ctx.watch_tree(match.root)
+    _watch_source_root(repository_ctx, match.root)
     _write_repository(
         repository_ctx,
         package,
