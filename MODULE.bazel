@@ -71,6 +71,7 @@ register_toolchains(
 source_resolution_replay = use_extension(
     "//tests/smoke:source_resolution_replay_extension.bzl",
     "source_resolution_replay",
+    dev_dependency = True,
 )
 use_repo(
     source_resolution_replay,
