@@ -255,7 +255,7 @@
   (let* ((logical-cpus (hash-ref observation "logicalCpuCount"))
          (requested-cores
           (required-positive-integer-from-env
-           "GERBIL_BAZEL_REQUESTED_BUILD_CORES"
+           "GERBIL_BUILD_CORES"
            (max 1 __available-cores)))
          (memory-per-core
           (required-positive-integer-from-env

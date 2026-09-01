@@ -34,7 +34,6 @@ def gerbil_project_execution_policy(
         max_rss_bytes = _DEFAULT_PROJECT_MAX_RSS_BYTES,
         rss_headroom_bytes = 0,
         memory_per_core_bytes = 0,
-        requested_build_cores = 0,
         sample_milliseconds = 0):
     """Declares adaptive execution supervision for a Gerbil project action.
 
@@ -49,10 +48,6 @@ def gerbil_project_execution_policy(
             memory_per_core_bytes,
         ),
         max_rss_bytes = _non_negative("max_rss_bytes", max_rss_bytes),
-        requested_build_cores = _non_negative(
-            "requested_build_cores",
-            requested_build_cores,
-        ),
         rss_headroom_bytes = _non_negative(
             "rss_headroom_bytes",
             rss_headroom_bytes,
@@ -84,7 +79,6 @@ def gerbil_project_compile(
         "process_guard",
         "process_guard_max_rss_bytes",
         "process_guard_memory_per_core_bytes",
-        "process_guard_requested_build_cores",
         "process_guard_rss_headroom_bytes",
         "process_guard_sample_milliseconds",
         "process_guard_timeout_seconds",
@@ -98,7 +92,6 @@ def gerbil_project_compile(
         process_guard = True,
         process_guard_max_rss_bytes = str(execution_policy.max_rss_bytes),
         process_guard_memory_per_core_bytes = str(execution_policy.memory_per_core_bytes),
-        process_guard_requested_build_cores = execution_policy.requested_build_cores,
         process_guard_rss_headroom_bytes = str(execution_policy.rss_headroom_bytes),
         process_guard_sample_milliseconds = execution_policy.sample_milliseconds,
         process_guard_timeout_seconds = execution_policy.timeout_seconds,

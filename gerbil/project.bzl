@@ -146,11 +146,6 @@ def _gerbil_project_compile_impl(ctx):
         toolchain.gerbil_gsc,
     )
     environment.update(ctx.attr.env)
-    if "GERBIL_BUILD_CORES" in environment:
-        # gxi initializes GERBIL_BUILD_CORES for its own runtime. Preserve the
-        # Bazel-declared value under a guard-owned name so the Scheme guard can
-        # apply it to the actual project child after gxi has started.
-        environment["GERBIL_BAZEL_REQUESTED_BUILD_CORES"] = environment["GERBIL_BUILD_CORES"]
     environment["CC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode("")
@@ -174,11 +169,6 @@ def _gerbil_project_compile_impl(ctx):
         environment,
         "GERBIL_BAZEL_MEMORY_PER_CORE_BYTES",
         ctx.attr.process_guard_memory_per_core_bytes,
-    )
-    _set_positive_guard_environment(
-        environment,
-        "GERBIL_BAZEL_REQUESTED_BUILD_CORES",
-        ctx.attr.process_guard_requested_build_cores,
     )
     sample_seconds = _sample_seconds(ctx.attr.process_guard_sample_milliseconds)
     if sample_seconds:
@@ -242,7 +232,6 @@ gerbil_project_compile = rule(
         "process_guard": attr.bool(default = False),
         "process_guard_max_rss_bytes": attr.string(default = "0"),
         "process_guard_memory_per_core_bytes": attr.string(default = "0"),
-        "process_guard_requested_build_cores": attr.int(default = 0),
         "process_guard_rss_headroom_bytes": attr.string(default = "0"),
         "process_guard_sample_milliseconds": attr.int(default = 0),
         "process_guard_timeout_seconds": attr.int(default = 0),
