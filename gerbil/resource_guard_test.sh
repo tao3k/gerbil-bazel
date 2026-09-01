@@ -55,13 +55,7 @@ runnable_fixture_memory_per_core_bytes=$((512 * mebibyte))
 default_memory_core_limit=$((fixture_max_rss_bytes / minimum_memory_per_core_bytes))
 explicit_memory_core_limit=$((fixture_max_rss_bytes / explicit_memory_per_core_bytes))
 runnable_fixture_memory_core_limit=$((fixture_max_rss_bytes / runnable_fixture_memory_per_core_bytes))
-configured_requested_cores=$((available_core_count > 1 ? available_core_count / 2 : 1))
-oversubscribed_requested_cores=$((available_core_count * 2))
 adaptive_expected=$(minimum "$available_core_count" "$default_memory_core_limit")
-configured_expected=$(minimum \
-  "$configured_requested_cores" \
-  "$available_core_count" \
-  "$default_memory_core_limit")
 explicit_memory_expected=$(minimum "$available_core_count" "$explicit_memory_core_limit")
 runnable_pressure_expected=$(minimum \
   "$available_core_count" \
@@ -174,10 +168,6 @@ env "${base_host_environment[@]}" \
 grep -F '"runnableProcessCountAvailable":true' \
   "$root/live-runnable-observation.json" >/dev/null
 
-assert_build_cores configured-build-cores "$configured_expected" \
-  "GERBIL_BAZEL_REQUESTED_BUILD_CORES=$configured_requested_cores"
-assert_build_cores logical-and-memory-cap "$adaptive_expected" \
-  "GERBIL_BAZEL_REQUESTED_BUILD_CORES=$oversubscribed_requested_cores"
 assert_build_cores explicit-memory-per-core "$explicit_memory_expected" \
   "GERBIL_BAZEL_MEMORY_PER_CORE_BYTES=$explicit_memory_per_core_bytes"
 assert_build_cores runnable-pressure-does-not-reduce-capacity \

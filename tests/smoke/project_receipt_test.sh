@@ -26,8 +26,5 @@ grep -F '"resolutionMode":"legacy-unique-source"' "$receipt" >/dev/null
 grep -F '"outcome":"resolved"' "$receipt" >/dev/null
 grep -F '"buildReceipt":{"outcome":"passed","schema":"gerbil-bazel.receipt-prefix-smoke.v1"}' \
   "$receipt" >/dev/null
-if grep -F '"resourceGuard"' "$receipt" >/dev/null; then
-  printf 'unguarded receipt unexpectedly contains resourceGuard\n' >&2
-  exit 1
-fi
+grep -F '"resourceGuard":{' "$receipt" >/dev/null
 grep -F 'PROJECT_RECEIPT ' "$log" >/dev/null

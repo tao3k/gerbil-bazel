@@ -111,8 +111,8 @@ flowchart LR
 
 The Scheme resource guard computes the project child's =GERBIL_BUILD_CORES=
 after =gxi= has started.  This location is deliberate: =gxi= initializes its
-own worker environment, so a Bazel-declared =GERBIL_BUILD_CORES= value is
-preserved first as =GERBIL_BAZEL_REQUESTED_BUILD_CORES=.  The guard then caps
+own worker environment.  The guard reads the Bazel-declared
+=GERBIL_BUILD_CORES= value directly, then caps
 the requested value by the observed logical CPU count and the RSS-derived
 memory-core limit.  Runnable-process saturation remains an advisory and never
 silently changes the selected worker count.

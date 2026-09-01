@@ -59,6 +59,28 @@ def _stable_action_environment(environment, gerbil_gsc):
         for name, value in environment.items()
     }
 
+def _set_positive_guard_environment(environment, name, value):
+    if value > 0:
+        environment[name] = str(value)
+
+def _set_guard_decimal_environment(environment, name, value):
+    if value != "0":
+        environment[name] = value
+
+def _sample_seconds(milliseconds):
+    if milliseconds <= 0:
+        return ""
+    seconds = milliseconds // 1000
+    remainder = milliseconds % 1000
+    if remainder == 0:
+        return str(seconds)
+    fraction = str(remainder)
+    if remainder < 10:
+        fraction = "00" + fraction
+    elif remainder < 100:
+        fraction = "0" + fraction
+    return "{}.{}".format(seconds, fraction)
+
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
     project_dependencies = [dep[GerbilProjectInfo] for dep in ctx.attr.deps]
@@ -124,11 +146,6 @@ def _gerbil_project_compile_impl(ctx):
         toolchain.gerbil_gsc,
     )
     environment.update(ctx.attr.env)
-    if "GERBIL_BUILD_CORES" in environment:
-        # gxi initializes GERBIL_BUILD_CORES for its own runtime. Preserve the
-        # Bazel-declared value under a guard-owned name so the Scheme guard can
-        # apply it to the actual project child after gxi has started.
-        environment["GERBIL_BAZEL_REQUESTED_BUILD_CORES"] = environment["GERBIL_BUILD_CORES"]
     environment["CC"] = toolchain.gerbil_cc
     environment["GERBIL_BAZEL_NATIVE_ABI"] = toolchain.native_abi_fingerprint
     environment["GERBIL_BAZEL_PACKAGE_IDENTITY_JSON"] = json.encode("")
@@ -138,6 +155,24 @@ def _gerbil_project_compile_impl(ctx):
         root.path
         for root in dependency_roots.to_list()
     ])
+    _set_guard_decimal_environment(
+        environment,
+        "GERBIL_BAZEL_GUARD_MAX_RSS_BYTES",
+        ctx.attr.process_guard_max_rss_bytes,
+    )
+    _set_guard_decimal_environment(
+        environment,
+        "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES",
+        ctx.attr.process_guard_rss_headroom_bytes,
+    )
+    _set_guard_decimal_environment(
+        environment,
+        "GERBIL_BAZEL_MEMORY_PER_CORE_BYTES",
+        ctx.attr.process_guard_memory_per_core_bytes,
+    )
+    sample_seconds = _sample_seconds(ctx.attr.process_guard_sample_milliseconds)
+    if sample_seconds:
+        environment["GERBIL_BAZEL_GUARD_SAMPLE_SECONDS"] = sample_seconds
     ctx.actions.run(
         arguments = [args],
         env = environment,
@@ -195,6 +230,10 @@ gerbil_project_compile = rule(
         "deps": attr.label_list(providers = [GerbilProjectInfo]),
         "env": attr.string_dict(),
         "process_guard": attr.bool(default = False),
+        "process_guard_max_rss_bytes": attr.string(default = "0"),
+        "process_guard_memory_per_core_bytes": attr.string(default = "0"),
+        "process_guard_rss_headroom_bytes": attr.string(default = "0"),
+        "process_guard_sample_milliseconds": attr.int(default = 0),
         "process_guard_timeout_seconds": attr.int(default = 0),
         "receipt_line_prefix": attr.string(),
         "require_library_output": attr.bool(default = False),

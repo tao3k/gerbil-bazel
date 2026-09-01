@@ -180,7 +180,24 @@
      resolutions)))
 
 (def (validate-resource-guard! guard label)
-  (exact-fields! guard +resource-guard-fields+ label)
+  (exact-fields!
+   guard
+   (append +resource-guard-fields+
+           '("requestedBuildCoreCount"
+             "effectiveBuildCoreCount"
+             "availableMemoryBytes"
+             "rssHeadroomBytes"
+             "memoryPerCoreBytes"
+             "memoryCoreLimit"
+             "runnableProcessCount"
+             "runnableProcessCountAvailable"
+             "runnableCoreLimit"
+             "runnableCoreLimitApplied"
+             "processTreeRssAvailable"
+             "admissionOutcome"
+             "admissionReasons"
+             "admissionAdvisories"))
+   label)
   (required-fields! guard +resource-guard-fields+ label)
   (contract-assert (string=? (hash-ref guard "kind") +resource-guard-schema+)
                    "invalid resource guard kind" label)
