@@ -1,6 +1,6 @@
 #!/usr/bin/env gxi
 ;;; -*- Gerbil -*-
-;;; Scheme-owned host admission, process-tree RSS, and deadline guard.
+;;; Scheme-owned host admission, process-tree memory, and deadline guard.
 
 (export main)
 
@@ -132,7 +132,7 @@
              (runnable-process-count-from-state-output (cdr result)))
             (cons #f 0)))))))
 
-(def (system-memory-bytes)
+(def (host-system-memory-bytes)
   (or (positive-integer-from-env
        "GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES"
        #f)
@@ -144,6 +144,66 @@
             (page-size (command-positive-integer (list "getconf" "PAGE_SIZE"))))
         (and pages page-size (* pages page-size)))
       (* 8 +minimum-max-rss-bytes+)))
+
+(def (read-first-line path)
+  (with-catch
+   (lambda (_error) #f)
+   (lambda ()
+     (and (file-exists? path)
+          (call-with-input-file path read-line)))))
+
+(def (linux-cgroup-v2-relative-path)
+  (or
+   (getenv "GERBIL_BAZEL_GUARD_CGROUP_RELATIVE_PATH" #f)
+   (with-catch
+    (lambda (_error) #f)
+    (lambda ()
+      (and
+       (file-exists? "/proc/self/cgroup")
+       (call-with-input-file
+        "/proc/self/cgroup"
+        (lambda (port)
+          (let loop ()
+            (let (line (read-line port))
+              (cond
+               ((eof-object? line) #f)
+               ((string-prefix? "0::" line)
+                (substring line 3 (string-length line)))
+               (else (loop))))))))))))
+
+(def (linux-cgroup-v2-file relative-path name)
+  (let (root
+        (or (getenv "GERBIL_BAZEL_GUARD_CGROUP_ROOT" #f)
+            "/sys/fs/cgroup"))
+    (string-append
+     root
+     (if (string=? relative-path "/") "" relative-path)
+     "/"
+     name)))
+
+(def (linux-cgroup-memory-observation)
+  (let (relative-path (linux-cgroup-v2-relative-path))
+    (if relative-path
+      (let* ((limit-raw
+              (read-first-line
+               (linux-cgroup-v2-file relative-path "memory.max")))
+             (current-raw
+              (read-first-line
+               (linux-cgroup-v2-file relative-path "memory.current")))
+             (limit (and limit-raw (string->number (string-trim-both limit-raw))))
+             (current
+              (and current-raw
+                   (string->number (string-trim-both current-raw)))))
+        (if (and (exact-integer? limit)
+                 (> limit 0)
+                 (exact-integer? current)
+                 (>= current 0))
+          (hash
+           ("limitBytes" limit)
+           ("currentBytes" current)
+           ("availableBytes" (max 0 (- limit current))))
+          #f))
+      #f)))
 
 (def (linux-available-memory-bytes)
   (with-catch
@@ -212,7 +272,7 @@
          (<= percent 100)
          percent)))
 
-(def (available-memory-bytes total-memory)
+(def (host-available-memory-bytes total-memory)
   (or (positive-integer-from-env
        "GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES"
        #f)
@@ -303,8 +363,27 @@
     (live-process-table-result))))
 
 (def (host-observation)
-  (let* ((total-memory (system-memory-bytes))
-         (available-memory (available-memory-bytes total-memory))
+  (let* ((host-total-memory (host-system-memory-bytes))
+         (cgroup-memory (linux-cgroup-memory-observation))
+         (cgroup-limit
+          (if cgroup-memory (hash-ref cgroup-memory "limitBytes") 0))
+         (cgroup-current
+          (if cgroup-memory (hash-ref cgroup-memory "currentBytes") 0))
+         (cgroup-available
+          (if cgroup-memory (hash-ref cgroup-memory "availableBytes") 0))
+         (total-memory
+          (if cgroup-memory
+            (min host-total-memory cgroup-limit)
+            host-total-memory))
+         (host-available-memory
+          (host-available-memory-bytes host-total-memory))
+         (available-memory
+          (cond
+           ((and (> host-available-memory 0) cgroup-memory)
+            (min host-available-memory cgroup-available))
+           ((> host-available-memory 0) host-available-memory)
+           (cgroup-memory cgroup-available)
+           (else 0)))
          (headroom
           (positive-integer-from-env
            "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES"
@@ -325,6 +404,7 @@
          (runnable-available? (car runnable-observation))
          (process-table-probe (process-table-result))
          (process-tree-rss-available? (= (car process-table-probe) 0))
+         (process-tree-memory-metric (process-tree-memory-metric))
          (advisories
           (if (and runnable-available?
                    (> runnable (* logical-cpus +runnable-limit-per-cpu+)))
@@ -348,9 +428,13 @@
      ("runnableProcessCountAvailable" runnable-available?)
      ("systemMemoryBytes" total-memory)
      ("availableMemoryBytes" available-memory)
+     ("cgroupMemoryLimitBytes" cgroup-limit)
+     ("cgroupMemoryCurrentBytes" cgroup-current)
+     ("cgroupMemoryAvailableBytes" cgroup-available)
      ("rssHeadroomBytes" headroom)
      ("maxRssBytes" max-rss)
      ("processTreeRssAvailable" process-tree-rss-available?)
+     ("processTreeMemoryMetric" process-tree-memory-metric)
      ("admissionOutcome" (if (null? reasons) "ready" "blocked-host-pressure"))
      ("admissionAdvisories" (map symbol->string advisories))
      ("admissionReasons" (map symbol->string reasons)))))
@@ -375,6 +459,41 @@
       (filter-map process-row (string-split (cdr result) #\newline))
       '())))
 
+(def (linux-process-pss-bytes pid)
+  ;; Linux RSS counts the same shared compiler/runtime pages once per process.
+  ;; smaps_rollup PSS assigns every shared page proportionally, so summing PSS
+  ;; across the action process tree measures its non-duplicated memory share.
+  (with-catch
+   (lambda (_error) #f)
+   (lambda ()
+     (let (path
+           (string-append
+            "/proc/"
+            (if (string? pid) pid (number->string pid))
+            "/smaps_rollup"))
+       (and
+        (file-exists? path)
+        (call-with-input-file
+         path
+         (lambda (port)
+           (let loop ()
+             (let (line (read-line port))
+               (cond
+                ((eof-object? line) #f)
+                ((string-prefix? "Pss:" line)
+                 (let* ((tokens (string-tokenize line))
+                        (kilobytes
+                         (and (pair? tokens)
+                              (pair? (cdr tokens))
+                              (string->number (cadr tokens)))))
+                   (and (exact-integer? kilobytes)
+                        (>= kilobytes 0)
+                        (* kilobytes 1024))))
+                (else (loop))))))))))))
+
+(def (process-tree-memory-metric)
+  (if (linux-process-pss-bytes "self") "linux-pss" "rss"))
+
 (def (process-tree-pids root-pid rows)
   (let expand ((known (list root-pid)))
     (let lp ((rest rows) (next known) (changed? #f))
@@ -395,6 +514,21 @@
        (if (member (car row) tree-pids) (+ total (caddr row)) total))
      0
      rows)))
+
+(def (process-tree-pss-bytes pid)
+  (let* ((rows (process-table))
+         (tree-pids (process-tree-pids pid rows)))
+    (foldl
+     (lambda (tree-pid total)
+       (let (pss (linux-process-pss-bytes tree-pid))
+         (+ total (or pss 0))))
+     0
+     tree-pids)))
+
+(def (process-tree-memory-bytes pid metric)
+  (if (string=? metric "linux-pss")
+    (process-tree-pss-bytes pid)
+    (process-tree-rss-bytes pid)))
 
 (def (signal-process! signal pid)
   (= (car (run-captured
@@ -455,9 +589,14 @@
    ("runnableCoreLimitApplied" (hash-ref plan "runnableCoreLimitApplied"))
    ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
    ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
+   ("cgroupMemoryLimitBytes" (hash-ref observation "cgroupMemoryLimitBytes"))
+   ("cgroupMemoryCurrentBytes" (hash-ref observation "cgroupMemoryCurrentBytes"))
+   ("cgroupMemoryAvailableBytes"
+    (hash-ref observation "cgroupMemoryAvailableBytes"))
    ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
    ("maxRssBytes" (hash-ref observation "maxRssBytes"))
    ("processTreeRssAvailable" (hash-ref observation "processTreeRssAvailable"))
+   ("processTreeMemoryMetric" (hash-ref observation "processTreeMemoryMetric"))
    ("peakRssBytes" peak-rss-bytes)
    ("elapsedMs" elapsed-ms)
    ("timeoutMs" (and timeout-seconds (* timeout-seconds 1000)))
@@ -486,9 +625,14 @@
    ("runnableCoreLimitApplied" (hash-ref plan "runnableCoreLimitApplied"))
    ("systemMemoryBytes" (hash-ref observation "systemMemoryBytes"))
    ("availableMemoryBytes" (hash-ref observation "availableMemoryBytes"))
+   ("cgroupMemoryLimitBytes" (hash-ref observation "cgroupMemoryLimitBytes"))
+   ("cgroupMemoryCurrentBytes" (hash-ref observation "cgroupMemoryCurrentBytes"))
+   ("cgroupMemoryAvailableBytes"
+    (hash-ref observation "cgroupMemoryAvailableBytes"))
    ("rssHeadroomBytes" (hash-ref observation "rssHeadroomBytes"))
    ("maxRssBytes" (hash-ref observation "maxRssBytes"))
    ("processTreeRssAvailable" (hash-ref observation "processTreeRssAvailable"))
+   ("processTreeMemoryMetric" (hash-ref observation "processTreeMemoryMetric"))
    ("timeoutMs" (and timeout-seconds (* timeout-seconds 1000)))))
 
 (def (receipt-json receipt)
@@ -512,6 +656,7 @@
 
 (def (run-guarded label observation plan timeout-seconds sample-seconds argv)
   (let* ((started (now-seconds))
+         (memory-metric (hash-ref observation "processTreeMemoryMetric"))
          (child
           (open-process
            (list path: (car argv)
@@ -531,7 +676,7 @@
          (guard-exit 0))
     (let loop ()
       (unless (vector-ref state 0)
-        (let* ((rss (process-tree-rss-bytes pid))
+        (let* ((rss (process-tree-memory-bytes pid memory-metric))
                (elapsed (- (now-seconds) started)))
           (set! peak-rss (max peak-rss rss))
           (cond

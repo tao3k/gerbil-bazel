@@ -21,9 +21,6 @@ gerbil_project_dev = _gerbil_project_dev
 gerbil_project_test = _gerbil_project_test
 resolved_gerbil_toolchain = _resolved_gerbil_toolchain
 
-_GIBIBYTE = 1024 * 1024 * 1024
-_DEFAULT_PROJECT_MAX_RSS_BYTES = 5 * _GIBIBYTE
-
 def _non_negative(name, value):
     if type(value) != "int" or value < 0:
         fail("{} must be a non-negative integer, got {}".format(name, value))
@@ -31,15 +28,15 @@ def _non_negative(name, value):
 
 def gerbil_project_execution_policy(
         timeout_seconds = 0,
-        max_rss_bytes = _DEFAULT_PROJECT_MAX_RSS_BYTES,
+        max_rss_bytes = 0,
         rss_headroom_bytes = 0,
         memory_per_core_bytes = 0,
         sample_milliseconds = 0):
     """Declares adaptive execution supervision for a Gerbil project action.
 
-    The default five-GiB requested RSS ceiling is a safety maximum, not an
-    entitlement: the Scheme guard lowers it against live available memory and
-    headroom. Zero explicitly requests the guard's fully host-adaptive ceiling.
+    Zero requests the Scheme guard's host-adaptive memory ceiling. The guard
+    derives the action budget from live available memory and preserves host
+    headroom, so the same declaration is valid on small and large workers.
     Zero core values remain adaptive and never encode a fixed machine profile.
     """
     return struct(
