@@ -174,6 +174,15 @@ under the optional `resourceGuard` field. The normative contract is
 `schemas/gerbil-bazel.project-receipt.v1.schema.json`; execution capability
 changes do not create a new project receipt version.
 
+The default execution policy is machine-adaptive: `max_rss_bytes = 0` asks the
+Scheme guard to retain host headroom from live available memory, and it never
+means unlimited memory. Linux admission also caps host observations by cgroup
+v2 `memory.max` and `memory.current`, so containers and remote executors retain
+their own headroom. Linux enforcement sums process-tree PSS so shared
+compiler/runtime pages are not charged once per worker; other platforms use
+process-tree RSS. A positive `max_rss_bytes` remains an optional upper bound and
+is always capped by the adaptive executor budget.
+
 Host-specific paths, available logical CPUs, physical memory, compiler,
 assembler, linker, SDK, optional Homebrew native libraries, and Gerbil
 executables are discovered dynamically. Override only explicit capabilities

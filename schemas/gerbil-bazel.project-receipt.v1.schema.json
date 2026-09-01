@@ -185,6 +185,18 @@
           "type": "integer",
           "minimum": 1
         },
+        "cgroupMemoryLimitBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cgroupMemoryCurrentBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cgroupMemoryAvailableBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
         "rssHeadroomBytes": {
           "type": "integer",
           "minimum": 1
@@ -199,6 +211,12 @@
         },
         "processTreeRssAvailable": {
           "type": "boolean"
+        },
+        "processTreeMemoryMetric": {
+          "enum": [
+            "linux-pss",
+            "rss"
+          ]
         },
         "elapsedMs": {
           "type": "integer",

@@ -186,6 +186,9 @@
            '("requestedBuildCoreCount"
              "effectiveBuildCoreCount"
              "availableMemoryBytes"
+             "cgroupMemoryLimitBytes"
+             "cgroupMemoryCurrentBytes"
+             "cgroupMemoryAvailableBytes"
              "rssHeadroomBytes"
              "memoryPerCoreBytes"
              "memoryCoreLimit"
@@ -194,6 +197,7 @@
              "runnableCoreLimit"
              "runnableCoreLimitApplied"
              "processTreeRssAvailable"
+             "processTreeMemoryMetric"
              "admissionOutcome"
              "admissionReasons"
              "admissionAdvisories"))
@@ -231,8 +235,21 @@
      (contract-assert (non-negative-integer? (hash-ref guard key))
                       "invalid non-negative resource guard field" label key))
    '("peakRssBytes" "elapsedMs"))
+  (for-each
+   (lambda (key)
+     (when (hash-key? guard key)
+       (contract-assert (non-negative-integer? (hash-ref guard key))
+                        "invalid cgroup memory field" label key)))
+   '("cgroupMemoryLimitBytes"
+     "cgroupMemoryCurrentBytes"
+     "cgroupMemoryAvailableBytes"))
   (contract-assert (boolean? (hash-ref guard "processTreeRssAvailable"))
                    "invalid process tree observability field" label)
+  (when (hash-key? guard "processTreeMemoryMetric")
+    (contract-assert
+     (member (hash-ref guard "processTreeMemoryMetric") '("linux-pss" "rss"))
+     "invalid process tree memory metric"
+     label))
   (contract-assert
    (false-or-non-negative-integer? (hash-ref guard "timeoutMs"))
    "invalid resource guard timeout" label)

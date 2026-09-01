@@ -1,0 +1,97 @@
+#+title: RFC 0009: Adaptive Process Memory Accounting
+#+status: Proposed
+#+version: 1
+#+date: 2026-09-02
+
+* Decision
+
+=gerbil_project_execution_policy= MUST default =max_rss_bytes= to zero.  Zero is
+the existing request for a host-adaptive ceiling; it is not unlimited memory.
+The Scheme guard computes the effective ceiling from live available memory
+minus adaptive host headroom.  On Linux, the effective total and available
+memory are additionally capped by cgroup v2 =memory.max= and
+=memory.max - memory.current=.  This prevents a container or remote executor
+from inheriting the larger host view exposed through =/proc/meminfo=.  Public
+Gerbil project declarations therefore do not encode a runner size.
+
+On Linux, live process-tree enforcement MUST sum proportional set size (PSS)
+from =/proc/PID/smaps_rollup=.  Summed RSS is not an action-memory measurement:
+it charges the same Gerbil and Gambit shared pages once for every compiler
+process and can terminate a healthy parallel build.  Platforms without the
+Linux PSS interface retain process-tree RSS enforcement.
+
+* Failure evidence
+
+The POO Flow downstream CI exposed both defects in one run.  The public policy
+projected an exact =5,368,709,120= byte ceiling even though the Linux worker
+reported =16,766,414,848= system bytes and approximately =14.7 GiB= available.
+The guard then summed child RSS and terminated two healthy four-core actions at
+=5,940,273,152= and =5,489,696,768= bytes.  The host did not report an OOM;
+exit 70 came from the guard's own fixed ceiling and duplicated RSS accounting.
+
+Raising the fixed ceiling, forcing one build core, or adding a CI-only override
+would preserve the contract defect.  This RFC changes the reusable library
+algorithm instead.
+
+* Admission and enforcement
+
+#+begin_src mermaid
+flowchart TD
+  Policy["gerbil_project_execution_policy"] --> Zero{"Explicit positive ceiling?"}
+  Zero -->|"no: default 0"| Available["Live available memory"]
+  Zero -->|"yes"| Explicit["Explicit requested ceiling"]
+  Total["Observed system memory"] --> Headroom["max of 768 MiB and 1/16 total"]
+  Cgroup["Linux cgroup memory.max and memory.current"] --> Effective["min of host and cgroup availability"]
+  Available --> Effective
+  Effective --> Adaptive
+  Adaptive["effective available memory minus headroom"]
+  Headroom --> Adaptive
+  Explicit --> Minimum["min of explicit and adaptive"]
+  Adaptive --> Minimum
+  Minimum --> CoreBudget["memory-aware GERBIL_BUILD_CORES"]
+  CoreBudget --> Native["native build.ss and std/make"]
+  Native --> Platform{"Linux smaps_rollup available?"}
+  Platform -->|"yes"| PSS["sum process-tree PSS"]
+  Platform -->|"no"| RSS["sum process-tree RSS"]
+  PSS --> Guard["enforce effective ceiling"]
+  RSS --> Guard
+  Guard --> Receipt["resource guard receipt v1"]
+#+end_src
+
+This keeps Gerbil's native scheduler authoritative.  The guard only selects the
+concrete core budget, observes the resulting process tree, and terminates it
+when the host-adaptive budget or declared deadline is exceeded.
+
+* Receipt v1 stability
+
+The receipt remains =gerbil-bazel.resource-guard-receipt.v1=.  Historical
+=maxRssBytes=, =peakRssBytes=, =processTreeRssAvailable=, and
+=rss-limit-exceeded= names remain present for v1 readers.  The optional additive
+=processTreeMemoryMetric= field disambiguates their enforcement semantics:
+
+| Value | Meaning |
+|-------+---------|
+| =linux-pss= | Non-duplicated proportional memory for the Linux action tree |
+| =rss= | Resident-set fallback on platforms without Linux PSS |
+
+The optional additive =cgroupMemoryLimitBytes=,
+=cgroupMemoryCurrentBytes=, and =cgroupMemoryAvailableBytes= fields are zero
+when no finite cgroup v2 limit is observable.  =systemMemoryBytes= and
+=availableMemoryBytes= remain the effective values used by admission.
+
+Existing v1 receipts without the optional field remain valid.  The Scheme
+validator and JSON Schema accept the additive field without requiring it.
+
+* Acceptance
+
+The change is accepted only when:
+
+1. the focused resource-guard and project-receipt tests pass on Darwin;
+2. Linux CI records =processTreeMemoryMetric=linux-pss=;
+3. a deterministic cgroup fixture proves that both total and available memory
+   are capped before headroom and worker selection;
+4. the POO Flow downstream build uses the public default without a memory-size
+   override and completes with its logical-core capacity still adaptive;
+5. the original exit-70 and timeout termination scenarios remain green;
+6. the POO Flow jobs that previously failed at exactly 5 GiB complete without
+   increasing a fixed cap.

@@ -85,6 +85,13 @@ rss_limit_exit_code=70
 timeout_exit_code=71
 admission_blocked_exit_code=72
 
+if [[ -r /proc/self/smaps_rollup ]] && \
+   grep -q '^Pss:[[:space:]]*[0-9]' /proc/self/smaps_rollup; then
+  expected_process_tree_memory_metric=linux-pss
+else
+  expected_process_tree_memory_metric=rss
+fi
+
 runnable_core_limit() {
   local runnable_processes=$1
   local other_runnable=$((runnable_processes - 1))
@@ -110,6 +117,8 @@ base_host_environment=(
   "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=$fixture_headroom_bytes"
   "GERBIL_BAZEL_GUARD_SAMPLE_SECONDS=$default_sample_seconds"
   "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=$process_table_snapshot"
+  "GERBIL_BAZEL_GUARD_CGROUP_ROOT=$root/cgroup-unavailable"
+  "GERBIL_BAZEL_GUARD_CGROUP_RELATIVE_PATH=/"
 )
 host_environment=(
   "${base_host_environment[@]}"
@@ -205,6 +214,8 @@ env \
   "GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=$normalized_available_memory_bytes" \
   "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=$normalized_headroom_bytes" \
   "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=$process_table_snapshot" \
+  "GERBIL_BAZEL_GUARD_CGROUP_ROOT=$root/cgroup-unavailable" \
+  GERBIL_BAZEL_GUARD_CGROUP_RELATIVE_PATH=/ \
   "$gxi" "$guard" "$root/normalized-system-memory.json" \
   normalized-system-memory "$short_guard_timeout_seconds" \
   /bin/sh -c 'exit 0'
@@ -230,6 +241,8 @@ env \
   GERBIL_BAZEL_GUARD_FORCE_AVAILABLE_MEMORY_UNAVAILABLE=1 \
   "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=$normalized_headroom_bytes" \
   "GERBIL_BAZEL_GUARD_PROCESS_TABLE_SNAPSHOT=$process_table_snapshot" \
+  "GERBIL_BAZEL_GUARD_CGROUP_ROOT=$root/cgroup-unavailable" \
+  GERBIL_BAZEL_GUARD_CGROUP_RELATIVE_PATH=/ \
   "$gxi" "$guard" "$root/available-memory-unavailable.json" \
   available-memory-unavailable "$short_guard_timeout_seconds" \
   /bin/sh -c 'touch "$1"; exit "$2"' guard-child \
@@ -268,6 +281,32 @@ env -u GERBIL_BAZEL_GUARD_MAX_RSS_BYTES "${host_environment[@]}" \
 grep -F "\"maxRssBytes\":$fixture_available_max_rss_bytes" \
   "$root/adaptive-omitted.json" >/dev/null
 
+cgroup_root="$root/cgroup-v2"
+cgroup_limit_bytes=$((3 * gibibyte))
+cgroup_current_bytes=$gibibyte
+cgroup_available_bytes=$((cgroup_limit_bytes - cgroup_current_bytes))
+cgroup_max_rss_bytes=$((cgroup_available_bytes - fixture_headroom_bytes))
+mkdir -p "$cgroup_root"
+printf '%s\n' "$cgroup_limit_bytes" >"$cgroup_root/memory.max"
+printf '%s\n' "$cgroup_current_bytes" >"$cgroup_root/memory.current"
+env -u GERBIL_BAZEL_GUARD_MAX_RSS_BYTES "${host_environment[@]}" \
+  "GERBIL_BAZEL_GUARD_CGROUP_ROOT=$cgroup_root" \
+  "$gxi" "$guard" "$root/cgroup-capped.json" cgroup-capped \
+  "$short_guard_timeout_seconds" \
+  /bin/sh -c 'exit 0'
+grep -F "\"systemMemoryBytes\":$cgroup_limit_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+grep -F "\"availableMemoryBytes\":$cgroup_available_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+grep -F "\"cgroupMemoryLimitBytes\":$cgroup_limit_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+grep -F "\"cgroupMemoryCurrentBytes\":$cgroup_current_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+grep -F "\"cgroupMemoryAvailableBytes\":$cgroup_available_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+grep -F "\"maxRssBytes\":$cgroup_max_rss_bytes" \
+  "$root/cgroup-capped.json" >/dev/null
+
 env "${host_environment[@]}" \
   GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=0 \
   "$gxi" "$guard" "$root/adaptive-zero.json" adaptive-zero \
@@ -298,6 +337,8 @@ env "${common_environment[@]}" \
 grep -F '"admissionOutcome":"ready"' "$root/completed.json" >/dev/null
 grep -F '"outcome":"completed"' "$root/completed.json" >/dev/null
 grep -F '"schema":"gerbil-bazel.resource-guard-receipt.v1"' \
+  "$root/completed.json" >/dev/null
+grep -F "\"processTreeMemoryMetric\":\"$expected_process_tree_memory_metric\"" \
   "$root/completed.json" >/dev/null
 
 admission_log="$root/admission-before-child.log"
