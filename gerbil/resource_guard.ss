@@ -21,6 +21,7 @@
 (def +headroom-share-denominator+ 16)
 (def +runnable-limit-per-cpu+ 2)
 (def +default-sample-seconds+ 0.25)
+(def +darwin-footprint-confirmation-seconds+ 10)
 
 (def (now-seconds)
   (time->seconds (current-time)))
@@ -491,8 +492,54 @@
                         (* kilobytes 1024))))
                 (else (loop))))))))))))
 
+(def (token-after marker tokens)
+  (cond
+   ((null? tokens) #f)
+   ((and (string=? marker (car tokens)) (pair? (cdr tokens)))
+    (cadr tokens))
+   (else (token-after marker (cdr tokens)))))
+
+(def (darwin-footprint-bytes-from-output output)
+  (let loop ((lines (string-split output #\newline)) (observed #f))
+    (if (null? lines)
+      observed
+      (let* ((value-text
+              (token-after "Footprint:" (string-tokenize (car lines))))
+             (value (and value-text (string->number value-text))))
+        (loop (cdr lines)
+              (if (and (exact-integer? value) (>= value 0))
+                value
+                observed))))))
+
+(def (darwin-footprint-result tree-pids)
+  (cond
+   ((getenv "GERBIL_BAZEL_GUARD_DARWIN_FOOTPRINT_SNAPSHOT" #f)
+    => (lambda (snapshot) (cons 0 snapshot)))
+   (else
+    (run-captured
+     (append
+      (list "/usr/bin/footprint" "-f" "bytes" "--noCategories")
+      (foldr
+       (lambda (tree-pid arguments)
+         (cons "-p" (cons (number->string tree-pid) arguments)))
+       '()
+       tree-pids))))))
+
+(def (darwin-process-tree-footprint-bytes pid)
+  (let* ((rows (process-table))
+         (tree-pids (process-tree-pids pid rows))
+         (result (darwin-footprint-result tree-pids)))
+    (and (= (car result) 0)
+         (darwin-footprint-bytes-from-output (cdr result)))))
+
 (def (process-tree-memory-metric)
-  (if (linux-process-pss-bytes "self") "linux-pss" "rss"))
+  (cond
+   ((getenv "GERBIL_BAZEL_GUARD_DARWIN_FOOTPRINT_SNAPSHOT" #f)
+    "darwin-phys-footprint")
+   ((linux-process-pss-bytes "self") "linux-pss")
+   ((file-exists? "/usr/bin/footprint")
+    "darwin-phys-footprint")
+   (else "rss")))
 
 (def (process-tree-pids root-pid rows)
   (let expand ((known (list root-pid)))
@@ -529,6 +576,15 @@
   (if (string=? metric "linux-pss")
     (process-tree-pss-bytes pid)
     (process-tree-rss-bytes pid)))
+
+(def (confirmed-process-tree-memory-bytes pid metric raw-memory max-memory)
+  ;; Darwin RSS sums shared compiler/runtime pages once per process.  Preserve
+  ;; the cheap RSS upper bound below the policy limit, but confirm a crossing
+  ;; with the kernel-owned physical-footprint view before rejecting the build.
+  (if (and (string=? metric "darwin-phys-footprint")
+           (> raw-memory max-memory))
+    (or (darwin-process-tree-footprint-bytes pid) raw-memory)
+    raw-memory))
 
 (def (signal-process! signal pid)
   (= (car (run-captured
@@ -672,15 +728,34 @@
              (vector-set! state 1 (normalized-exit-code (process-status child)))
              (vector-set! state 0 #t))))
          (peak-rss 0)
+         (last-confirmed-memory 0)
+         (next-footprint-confirmation 0)
          (outcome 'running)
          (guard-exit 0))
     (let loop ()
       (unless (vector-ref state 0)
-        (let* ((rss (process-tree-memory-bytes pid memory-metric))
-               (elapsed (- (now-seconds) started)))
-          (set! peak-rss (max peak-rss rss))
+        (let* ((max-memory (hash-ref observation "maxRssBytes"))
+               (raw-memory (process-tree-memory-bytes pid memory-metric))
+               (elapsed (- (now-seconds) started))
+               (confirm-darwin?
+                (and (string=? memory-metric "darwin-phys-footprint")
+                     (> raw-memory max-memory)))
+               (memory
+                (cond
+                 ((and confirm-darwin?
+                       (>= elapsed next-footprint-confirmation))
+                  (let (confirmed
+                        (confirmed-process-tree-memory-bytes
+                         pid memory-metric raw-memory max-memory))
+                    (set! last-confirmed-memory confirmed)
+                    (set! next-footprint-confirmation
+                          (+ elapsed +darwin-footprint-confirmation-seconds+))
+                    confirmed))
+                 (confirm-darwin? last-confirmed-memory)
+                 (else raw-memory))))
+          (set! peak-rss (max peak-rss memory))
           (cond
-           ((> peak-rss (hash-ref observation "maxRssBytes"))
+           ((> peak-rss max-memory)
             (set! outcome 'rss-limit-exceeded)
             (set! guard-exit 70)
             (terminate-process-tree! pid))

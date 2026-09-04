@@ -88,6 +88,8 @@ admission_blocked_exit_code=72
 if [[ -r /proc/self/smaps_rollup ]] && \
    grep -q '^Pss:[[:space:]]*[0-9]' /proc/self/smaps_rollup; then
   expected_process_tree_memory_metric=linux-pss
+elif [[ -x /usr/bin/footprint ]]; then
+  expected_process_tree_memory_metric=darwin-phys-footprint
 else
   expected_process_tree_memory_metric=rss
 fi
@@ -127,6 +129,15 @@ host_environment=(
 common_environment=(
   "${host_environment[@]}"
   "GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=$fixture_max_rss_bytes"
+)
+live_process_environment=(
+  "GERBIL_BAZEL_GUARD_SYSTEM_MEMORY_BYTES=$fixture_system_memory_bytes"
+  "GERBIL_BAZEL_GUARD_AVAILABLE_MEMORY_BYTES=$fixture_available_memory_bytes"
+  "GERBIL_BAZEL_GUARD_RSS_HEADROOM_BYTES=$fixture_headroom_bytes"
+  "GERBIL_BAZEL_GUARD_SAMPLE_SECONDS=$default_sample_seconds"
+  "GERBIL_BAZEL_GUARD_CGROUP_ROOT=$root/cgroup-unavailable"
+  "GERBIL_BAZEL_GUARD_CGROUP_RELATIVE_PATH=/"
+  "GERBIL_BAZEL_GUARD_RUNNABLE_STATE_SNAPSHOT=$runnable_state_snapshot"
 )
 
 assert_build_cores() {
@@ -340,6 +351,31 @@ grep -F '"schema":"gerbil-bazel.resource-guard-receipt.v1"' \
   "$root/completed.json" >/dev/null
 grep -F "\"processTreeMemoryMetric\":\"$expected_process_tree_memory_metric\"" \
   "$root/completed.json" >/dev/null
+
+env \
+  "${live_process_environment[@]}" \
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=1 \
+  'GERBIL_BAZEL_GUARD_DARWIN_FOOTPRINT_SNAPSHOT=Summary Footprint: 0 B' \
+  "$gxi" "$guard" "$root/darwin-shared-rss.json" darwin-shared-rss \
+  "$short_guard_timeout_seconds" \
+  /bin/sleep 1
+grep -F '"processTreeMemoryMetric":"darwin-phys-footprint"' \
+  "$root/darwin-shared-rss.json" >/dev/null
+grep -F '"outcome":"completed"' "$root/darwin-shared-rss.json" >/dev/null
+
+set +e
+env \
+  "${live_process_environment[@]}" \
+  GERBIL_BAZEL_GUARD_MAX_RSS_BYTES=1 \
+  'GERBIL_BAZEL_GUARD_DARWIN_FOOTPRINT_SNAPSHOT=Summary Footprint: 4096 B' \
+  "$gxi" "$guard" "$root/darwin-physical-limit.json" \
+  darwin-physical-limit 0 \
+  /bin/sleep "$short_guard_timeout_seconds"
+darwin_physical_limit_status=$?
+set -e
+[[ "$darwin_physical_limit_status" -eq "$rss_limit_exit_code" ]]
+grep -F '"outcome":"rss-limit-exceeded"' \
+  "$root/darwin-physical-limit.json" >/dev/null
 
 admission_log="$root/admission-before-child.log"
 env "${common_environment[@]}" \
