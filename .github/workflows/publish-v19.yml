@@ -143,9 +143,18 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-bounded ]]; then
+            export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
             export CC="$cc" CXX="$cxx" GERBIL_GCC="$cc"
+            link_probe="$RUNNER_TEMP/gerbil-gcc-link-probe"
+            printf '%s\n' \
+              '#include <stdio.h>' \
+              'int main(void) { FILE *f = fopen("gerbil-gcc-link-probe.out", "w"); return ferror(f) || fclose(f); }' \
+              > "$link_probe.c"
+            "$cc" -march=native "$link_probe.c" -o "$link_probe"
+            "$link_probe"
+            linker="$(xcrun --find ld) $(xcrun ld -v 2>&1)"
             configure_args=(
               "--prefix=$GERBIL_PREFIX"
               --enable-march=native
@@ -162,6 +171,7 @@ jobs:
           else
             cc="${CC:-$(command -v cc)}"
             cxx="${CXX:-$(command -v c++)}"
+            linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
           ./configure "${configure_args[@]}"
@@ -174,9 +184,10 @@ jobs:
             --arg profile "$GERBIL_BUILD_PROFILE" \
             --arg compiler "$cc $("$cc" -dumpfullversion)" \
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
+            --arg linker "$linker" \
             --argjson cores "$GERBIL_BUILD_CORES" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
-              cxxCompiler: $cxxCompiler, cores: $cores,
+              cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
             > "$GERBIL_PREFIX/gerbil-build-receipt.json"
