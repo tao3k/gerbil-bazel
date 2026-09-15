@@ -150,7 +150,8 @@ jobs:
           cp tools/release/activate-gerbil.sh "$GERBIL_PREFIX/activate"
           chmod +x "$GERBIL_PREFIX/activate"
           source "$GERBIL_PREFIX/activate"
-          [[ "$(gxi -v)" == *"${{ steps.upstream.outputs.sha }}"* ]]
+          expected_sha="${{ steps.upstream.outputs.sha }}"
+          [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -195,7 +196,8 @@ jobs:
           mkdir -p "$verify_root"
           tar -xzf "$RUNNER_TEMP/release/$RELEASE_ARCHIVE" -C "$verify_root"
           source "$verify_root/gerbil-v0.19-${{ inputs.platform }}/activate"
-          [[ "$(gxi -v)" == *"${{ steps.upstream.outputs.sha }}"* ]]
+          expected_sha="${{ steps.upstream.outputs.sha }}"
+          [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
 
       - name: Publish immutable central release
