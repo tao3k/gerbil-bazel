@@ -118,9 +118,7 @@ def _dependency_package_name(repository_ctx, project_root, dependency):
             return package
     return repository
 
-def _project_dependency_packages(repository_ctx):
-    if repository_ctx.attr.project_dependency_packages:
-        return repository_ctx.attr.project_dependency_packages
+def _manifest_dependency_packages(repository_ctx):
     if repository_ctx.attr.project_root_marker == None:
         return []
 
@@ -144,8 +142,6 @@ def _project_dependency_packages(repository_ctx):
 def _project_dependency_policy(repository_ctx, dependency_state):
     if not dependency_state:
         return "declared-roots"
-    if repository_ctx.attr.project_dependency_packages:
-        return "project-dependency-override"
     return "project-package-manifest"
 
 def _hex_digest(value, length, description):
@@ -286,7 +282,7 @@ def _link_dependency_roots(repository_ctx, manifest):
     return relative_roots
 
 def _link_project_dependencies(repository_ctx):
-    packages = _project_dependency_packages(repository_ctx)
+    packages = _manifest_dependency_packages(repository_ctx)
     if not packages:
         return {}
     if not repository_ctx.attr.project_root_marker:
@@ -522,7 +518,6 @@ prebuilt_gerbil_repository = repository_rule(
         "expected_version_prefixes": attr.string_list(),
         "install_digest": attr.string(mandatory = True),
         "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
-        "project_dependency_packages": attr.string_list(),
         "project_library_relative_path": attr.string(default = ".gerbil/lib"),
         "project_root_marker": attr.label(allow_single_file = True),
         "sha256": attr.string(mandatory = True),

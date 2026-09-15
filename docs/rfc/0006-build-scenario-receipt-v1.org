@@ -8,9 +8,9 @@
 Proposed.
 
 This RFC defines the scenario evidence required before changing Gerbil Bazel
-cache keys, dependency boundaries, project action configuration identity, or native
-source provisioning. It complements RFC 0005's upstream-native ownership
-contract. The receipt schema remains
+cache keys, dependency boundaries, project action configuration identity, or
+immutable toolchain materialization. It complements RFC 0002's release-only
+consumer contract. The receipt schema remains
 =gerbil-bazel.build-scenario-receipt.v1= for the complete v1 lifetime.
 
 * Problem
@@ -18,7 +18,7 @@ contract. The receipt schema remains
 A lower or higher wall-clock total does not identify an optimization owner.
 The same observation can be caused by a cold Bazel output root, an invalid
 action key, an over-broad dependency edge, a changed native toolchain, an
-upstream Gerbil source build, or host pressure. Optimizing before separating
+release materialization, or host pressure. Optimizing before separating
 these cases risks replacing upstream behavior or improving the wrong layer.
 
 * Scenario graph
@@ -36,7 +36,7 @@ flowchart LR
   C -->|"0 Gerbil actions"| F["Structural reuse ready"]
   D -->|"Only dependency plus aggregate"| F
   E -->|"All affected project actions"| F
-  F --> G["Measure exact upstream source provisioning"]
+  F --> G["Measure exact immutable release materialization"]
 #+end_src
 
 * Normative scenarios
@@ -83,7 +83,7 @@ flowchart TD
   E -->|"identical-rerun"| F["Action cache reuse"]
   E -->|"dependency-delta"| G["Dependency invalidation"]
   E -->|"configuration-delta"| H["Project action configuration identity"]
-  E -->|"none"| I["Upstream source provisioning"]
+  E -->|"none"| I["Immutable release materialization"]
 #+end_src
 
 - The Gerbil version MUST be read from the Bazel-selected
@@ -125,19 +125,16 @@ BAZEL=/absolute/path/to/bazel just scenario-test
 The default receipt is written to
 =.ci/receipts/build-scenarios.json=. The =.ci= tree is ignored by Git.
 
-* Follow-up source scenarios
+* Follow-up materialization scenarios
 
-The project scenarios deliberately do not claim that a Gerbil source bootstrap
-is fast. Once all four structural assertions pass, the next suite MUST bind to
-the exact required Gerbil revision and distinguish:
+Once all four structural assertions pass, the next suite MUST bind the exact
+release URL and digest and distinguish:
 
-1. empty installation plus empty compiler cache;
-2. empty installation plus warm compiler cache;
-3. exact installation artifact cache hit;
-4. source revision change;
-5. build-configuration change.
+1. empty Bazel repository cache;
+2. exact repository-cache hit;
+3. release URL change;
+4. archive digest change;
+5. invalid or unavailable Release asset.
 
-Those source scenarios must retain upstream =configure=, =make -jN=, and
-=make install= ownership. They must first add phase receipts around those
-public boundaries; they must not invoke private upstream stage scripts as a
-replacement scheduler.
+The empty-cache case must download the immutable Release asset. It must never
+measure or invoke a Gerbil source bootstrap from this consumer repository.

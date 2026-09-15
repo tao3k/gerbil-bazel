@@ -176,9 +176,7 @@ def _dependency_package_name(repository_ctx, project_root, dependency):
             return package
     return repository
 
-def _project_dependency_packages(repository_ctx):
-    if repository_ctx.attr.project_dependency_packages:
-        return repository_ctx.attr.project_dependency_packages
+def _manifest_dependency_packages(repository_ctx):
     if repository_ctx.attr.project_root_marker == None:
         return []
 
@@ -201,8 +199,6 @@ def _project_dependency_packages(repository_ctx):
 
 def _project_dependency_policy(repository_ctx, dependency_state):
     if dependency_state:
-        if repository_ctx.attr.project_dependency_packages:
-            return "project-dependency-override"
         return "project-package-manifest"
     if repository_ctx.attr.dependency_roots:
         return "declared-roots"
@@ -217,7 +213,7 @@ def _link_dependency_roots(repository_ctx):
         repository_ctx.symlink(path, "lib/dependency-{}".format(index))
 
 def _link_project_dependencies(repository_ctx):
-    packages = _project_dependency_packages(repository_ctx)
+    packages = _manifest_dependency_packages(repository_ctx)
     if not packages:
         return {}
     if repository_ctx.attr.project_root_marker == None:
@@ -389,7 +385,6 @@ local_gerbil_repository = repository_rule(
         "dependency_roots": attr.string_list(),
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
-        "project_dependency_packages": attr.string_list(),
         "project_library_relative_path": attr.string(default = ".gerbil/lib"),
         "project_root_marker": attr.label(allow_single_file = True),
         "tool_paths": attr.string_dict(),

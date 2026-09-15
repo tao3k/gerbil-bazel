@@ -247,7 +247,8 @@
                    "invalid process tree observability field" label)
   (when (hash-key? guard "processTreeMemoryMetric")
     (contract-assert
-     (member (hash-ref guard "processTreeMemoryMetric") '("linux-pss" "rss"))
+     (member (hash-ref guard "processTreeMemoryMetric")
+             '("darwin-phys-footprint" "linux-pss" "rss"))
      "invalid process tree memory metric"
      label))
   (contract-assert

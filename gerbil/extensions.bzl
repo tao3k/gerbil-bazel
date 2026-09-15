@@ -15,7 +15,6 @@ _host = tag_class(attrs = {
     "environment": attr.string_dict(),
     "expected_version_prefixes": attr.string_list(),
     "name": attr.string(default = "local_gerbil"),
-    "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
     "project_dependency_source_paths": attr.string_dict(),
     "project_dependency_source_revisions": attr.string_dict(),
@@ -36,7 +35,6 @@ _prebuilt = tag_class(attrs = {
     "install_digest": attr.string(mandatory = True),
     "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
     "name": attr.string(mandatory = True),
-    "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
     "project_dependency_source_paths": attr.string_dict(),
     "project_dependency_source_revisions": attr.string_dict(),
@@ -64,7 +62,6 @@ _auto = tag_class(attrs = {
     "linux_prebuilt_strip_prefix": attr.string(),
     "linux_prebuilt_urls": attr.string_list(mandatory = True),
     "name": attr.string(default = "local_gerbil"),
-    "project_dependency_packages": attr.string_list(),
     "project_dependency_source_packages": attr.string_list(),
     "project_dependency_source_paths": attr.string_dict(),
     "project_dependency_source_revisions": attr.string_dict(),
@@ -121,7 +118,7 @@ def _source_repo_name(package):
 def _instantiate_project_dependency_sources(names, tag, kind):
     if not tag.project_root_marker:
         return
-    for package in (getattr(tag, "project_dependency_source_packages", []) or tag.project_dependency_packages):
+    for package in tag.project_dependency_source_packages:
         repo_name = _source_repo_name(package)
         _claim_name(names, repo_name, kind + ".dependency_source")
         project_dependency_sources_repository(
@@ -143,7 +140,6 @@ def _instantiate_auto(module_ctx, auto):
             dependency_roots = auto.dependency_roots,
             environment = auto.environment,
             expected_version_prefixes = auto.expected_version_prefixes,
-            project_dependency_packages = auto.project_dependency_packages,
             project_library_relative_path = auto.project_library_relative_path,
             project_root_marker = auto.project_root_marker,
             tool_paths = auto.tool_paths,
@@ -167,7 +163,6 @@ def _instantiate_auto(module_ctx, auto):
         expected_version_prefixes = auto.expected_version_prefixes,
         install_digest = auto.linux_prebuilt_install_digest,
         manifest_path = auto.linux_prebuilt_manifest_path,
-        project_dependency_packages = auto.project_dependency_packages,
         project_library_relative_path = auto.project_library_relative_path,
         project_root_marker = auto.project_root_marker,
         sha256 = auto.linux_prebuilt_sha256,
@@ -190,7 +185,6 @@ def _gerbil_extension_impl(module_ctx):
                 dependency_roots = host.dependency_roots,
                 environment = host.environment,
                 expected_version_prefixes = host.expected_version_prefixes,
-                project_dependency_packages = host.project_dependency_packages,
                 project_library_relative_path = host.project_library_relative_path,
                 project_root_marker = host.project_root_marker,
                 tool_paths = host.tool_paths,
@@ -205,7 +199,6 @@ def _gerbil_extension_impl(module_ctx):
                 expected_version_prefixes = prebuilt.expected_version_prefixes,
                 install_digest = prebuilt.install_digest,
                 manifest_path = prebuilt.manifest_path,
-                project_dependency_packages = prebuilt.project_dependency_packages,
                 project_library_relative_path = prebuilt.project_library_relative_path,
                 project_root_marker = prebuilt.project_root_marker,
                 sha256 = prebuilt.sha256,

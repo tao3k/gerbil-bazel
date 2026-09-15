@@ -69,10 +69,10 @@ falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
 
-Source production is a separate, explicit operation.  The
-[Source Producer v1 runbook](docs/runbooks/source-producer-v1.org) defines
-default-branch registration, runner selection, cold-build receipt acceptance,
-and the independent promotion boundary.
+Gerbil-Bazel is a release consumer, not a Gerbil distribution builder. Cache
+misses resolve immutable Release archives or Homebrew bottles; they never
+trigger a Gerbil source build inside consumer CI. Toolchain production and
+publication remain owned by the distribution release pipeline.
 
 Both `auto` providers and the explicit `prebuilt` provider support the same
 project-package manifest view as `host`. Declare `project_root_marker` pointing
@@ -81,13 +81,9 @@ strips package revisions, projects ready packages into `lib/<package>`, and
 records every package as `ready` or `missing` in `toolchain.receipt.json`.
 This keeps `gerbil.pkg` as the single package lock and keeps the downstream
 BUILD graph identical on Darwin and Linux while leaving dependency
-installation under the separate `install_dependencies` capability. The
-`project_dependency_packages` attribute remains as an explicit compatibility
-override for non-standard manifests; published consumers should prefer the
-manifest-driven path. Repositories using that override record
-`dependencyPolicy: "project-dependency-override"` instead of the manifest
-policy, so receipts do not confuse the compatibility path with `gerbil.pkg`
-ownership.
+installation under the separate `install_dependencies` capability. There is
+no second package-list override: non-standard projects must expose a canonical
+`gerbil.pkg` instead of duplicating dependency scope in Bazel configuration.
 
 Every host and prebuilt repository publishes `//:install_dependencies`. The
 launcher enters the consumer workspace, uses its workspace-local `.gerbil`

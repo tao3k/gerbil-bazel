@@ -329,7 +329,7 @@ def optimization_decision(scenarios: Iterable[dict[str, Any]]) -> dict[str, Any]
             "Repair the first failing structural boundary before timing optimization."
             if failed
             else "Project cache reuse and invalidation frontiers are structurally correct; "
-            "measure the exact upstream source bootstrap next."
+            "measure the immutable release materialization path next."
         ),
     }
 
