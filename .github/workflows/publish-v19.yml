@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: 3964ba4eafae414201e408742a847c404ba755ef
+        default: 94b87422fb6dd055f9667d86527254bd1ebaf4bb
         required: true
         type: string
       platform:
@@ -72,6 +72,11 @@ jobs:
             echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-v19"
             echo "RELEASE_TAG=$release_tag"
             echo "RELEASE_ARCHIVE=$archive"
+            if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]; then
+              echo "GERBIL_BUILD_PROFILE=gcc16-native-bounded"
+            else
+              echo "GERBIL_BUILD_PROFILE=portable"
+            fi
           } >> "$GITHUB_ENV"
 
       - name: Restore exact release toolchain
@@ -79,7 +84,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
@@ -101,7 +106,14 @@ jobs:
 
       - name: Install Darwin native dependencies
         if: runner.os == 'macOS'
-        run: brew install pkg-config openssl@3 sqlite zlib
+        shell: bash
+        run: |
+          set -euo pipefail
+          dependencies=(pkg-config openssl@3 sqlite zlib)
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-bounded ]]; then
+            dependencies+=(gcc)
+          fi
+          brew install "${dependencies[@]}"
 
       - name: Resolve native build capacity
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
@@ -130,18 +142,51 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./configure --prefix="$GERBIL_PREFIX"
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-bounded ]]; then
+            cc="$(command -v gcc-16)"
+            cxx="$(command -v g++-16)"
+            export CC="$cc" CXX="$cxx" GERBIL_GCC="$cc"
+            configure_args=(
+              "--prefix=$GERBIL_PREFIX"
+              --enable-march=native
+              --enable-smp
+              --enable-single-host=30000
+              --enable-optimized-module-limit=20000
+              --enable-c-opt=no
+              --enable-c-opt-rts=yes
+              --enable-inline-jumps
+              --enable-dynamic-clib
+              --enable-trust-c-tco
+              --enable-default-runtime-options=tE8,f8,-8
+            )
+          else
+            cc="${CC:-$(command -v cc)}"
+            cxx="${CXX:-$(command -v c++)}"
+            configure_args=("--prefix=$GERBIL_PREFIX")
+          fi
+          ./configure "${configure_args[@]}"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib; do
             GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" ./build.sh "$target"
           done
           ./install.sh
+          jq -n \
+            --arg schema gerbil-bazel.build-receipt.v1 \
+            --arg profile "$GERBIL_BUILD_PROFILE" \
+            --arg compiler "$cc $("$cc" -dumpfullversion)" \
+            --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
+            --argjson cores "$GERBIL_BUILD_CORES" \
+            '{schema: $schema, profile: $profile, compiler: $compiler,
+              cxxCompiler: $cxxCompiler, cores: $cores,
+              configureArguments: $ARGS.positional}' \
+            --args -- "${configure_args[@]}" \
+            > "$GERBIL_PREFIX/gerbil-build-receipt.json"
 
       - name: Save exact release toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -152,6 +197,12 @@ jobs:
           source "$GERBIL_PREFIX/activate"
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
+          jq -e \
+            --arg profile "$GERBIL_BUILD_PROFILE" \
+            '.schema == "gerbil-bazel.build-receipt.v1" and
+             .profile == $profile and
+             (.configureArguments | type == "array")' \
+            "$GERBIL_PREFIX/gerbil-build-receipt.json"
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -173,9 +224,11 @@ jobs:
             --arg upstreamRevision "${{ steps.upstream.outputs.sha }}" \
             --arg os "${{ steps.upstream.outputs.os }}" \
             --arg arch "${{ steps.upstream.outputs.arch }}" \
+            --arg buildProfile "$GERBIL_BUILD_PROFILE" \
             '{schema: $schema, version: $version,
               upstreamRevision: $upstreamRevision,
               platform: {os: $os, arch: $arch},
+              buildProfile: $buildProfile,
               activation: "source ./activate"}' \
             > "$capability/gerbil-toolchain-release.json"
           tar -czf "$release_root/$RELEASE_ARCHIVE" -C "$release_root" "$capability_name"
@@ -198,6 +251,10 @@ jobs:
           source "$verify_root/gerbil-v0.19-${{ inputs.platform }}/activate"
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
+          jq -e \
+            --arg profile "$GERBIL_BUILD_PROFILE" \
+            '.profile == $profile' \
+            "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
 
       - name: Publish immutable central release
@@ -215,4 +272,4 @@ jobs:
             "$RUNNER_TEMP/release/$RELEASE_ARCHIVE.sha256" \
             --target "${{ github.sha }}" \
             --title "$RELEASE_TAG" \
-            --notes "Central Gerbil v0.19 ${{ inputs.platform }} capability at ${{ steps.upstream.outputs.sha }}. Source the bundled activate file after extraction."
+            --notes "Central Gerbil v0.19 ${{ inputs.platform }} capability at ${{ steps.upstream.outputs.sha }} using profile $GERBIL_BUILD_PROFILE. Source the bundled activate file after extraction; inspect gerbil-build-receipt.json for the exact compiler and configure arguments."
