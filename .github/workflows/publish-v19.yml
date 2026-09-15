@@ -1,4 +1,4 @@
-name: Publish Gerbil v0.19 Darwin capability
+name: Publish Gerbil v0.19 capability
 
 on:
   workflow_dispatch:
@@ -8,17 +8,26 @@ on:
         default: 3964ba4eafae414201e408742a847c404ba755ef
         required: true
         type: string
+      platform:
+        description: Platform capability to publish
+        default: linux-x86_64
+        required: true
+        type: choice
+        options:
+          - linux-x86_64
+          - darwin-aarch64
 
 permissions:
   contents: write
 
 concurrency:
-  group: gerbil-v19-darwin-${{ inputs.upstream_ref }}
+  group: gerbil-v19-${{ inputs.platform }}-${{ inputs.upstream_ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    runs-on: macos-26
+    name: Publish (${{ inputs.platform }})
+    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-26' }}
     timeout-minutes: 180
     steps:
       - name: Check out gerbil-bazel
@@ -27,6 +36,7 @@ jobs:
       - name: Resolve exact upstream revision
         id: upstream
         env:
+          TARGET_PLATFORM: ${{ inputs.platform }}
           UPSTREAM_REF: ${{ inputs.upstream_ref }}
         shell: bash
         run: |
@@ -35,10 +45,26 @@ jobs:
           git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
           git -C upstream-gerbil fetch --depth=1 origin "$UPSTREAM_REF"
           upstream_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
-          release_tag="gerbil-v0.19-$upstream_sha-darwin-aarch64"
+          case "$TARGET_PLATFORM" in
+            linux-x86_64)
+              release_os=linux
+              release_arch=x86_64
+              ;;
+            darwin-aarch64)
+              release_os=darwin
+              release_arch=aarch64
+              ;;
+            *)
+              echo "unsupported release platform: $TARGET_PLATFORM" >&2
+              exit 64
+              ;;
+          esac
+          release_tag="gerbil-v0.19-$upstream_sha-$TARGET_PLATFORM"
           archive="$release_tag.tar.gz"
           {
             echo "sha=$upstream_sha"
+            echo "os=$release_os"
+            echo "arch=$release_arch"
             echo "release_tag=$release_tag"
             echo "archive=$archive"
           } >> "$GITHUB_OUTPUT"
@@ -53,16 +79,40 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-${{ runner.os }}-${{ runner.arch }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ steps.upstream.outputs.sha }}
 
-      - name: Install native dependencies
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            coreutils \
+            git \
+            jq \
+            libsqlite3-dev \
+            libssl-dev \
+            openssl \
+            pkg-config \
+            sqlite3 \
+            zlib1g-dev
+
+      - name: Install Darwin native dependencies
+        if: runner.os == 'macOS'
         run: brew install pkg-config openssl@3 sqlite zlib
 
       - name: Resolve native build capacity
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          cores="$(sysctl -n hw.logicalcpu)"
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == macOS ]]; then
+            cores="$(sysctl -n hw.logicalcpu)"
+          else
+            cores="$(getconf _NPROCESSORS_ONLN)"
+          fi
           [[ "$cores" =~ ^[1-9][0-9]*$ ]]
           echo "GERBIL_BUILD_CORES=$cores" >> "$GITHUB_ENV"
 
@@ -91,7 +141,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-${{ runner.os }}-${{ runner.arch }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-${{ inputs.platform }}-${{ steps.upstream.outputs.sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -108,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
           release_root="$RUNNER_TEMP/release"
-          capability_name="gerbil-v0.19-darwin-aarch64"
+          capability_name="gerbil-v0.19-${{ inputs.platform }}"
           capability="$release_root/$capability_name"
           mkdir -p "$capability"
           cp -a "$GERBIL_PREFIX/." "$capability/"
@@ -120,15 +170,21 @@ jobs:
             --arg schema gerbil-bazel.toolchain-release.v1 \
             --arg version "$version" \
             --arg upstreamRevision "${{ steps.upstream.outputs.sha }}" \
+            --arg os "${{ steps.upstream.outputs.os }}" \
+            --arg arch "${{ steps.upstream.outputs.arch }}" \
             '{schema: $schema, version: $version,
               upstreamRevision: $upstreamRevision,
-              platform: {os: "darwin", arch: "aarch64"},
+              platform: {os: $os, arch: $arch},
               activation: "source ./activate"}' \
             > "$capability/gerbil-toolchain-release.json"
           tar -czf "$release_root/$RELEASE_ARCHIVE" -C "$release_root" "$capability_name"
           (
             cd "$release_root"
-            shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
+            else
+              shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
+            fi
           )
 
       - name: Verify relocated release bytes
@@ -138,7 +194,7 @@ jobs:
           verify_root="$RUNNER_TEMP/relocated-release"
           mkdir -p "$verify_root"
           tar -xzf "$RUNNER_TEMP/release/$RELEASE_ARCHIVE" -C "$verify_root"
-          source "$verify_root/gerbil-v0.19-darwin-aarch64/activate"
+          source "$verify_root/gerbil-v0.19-${{ inputs.platform }}/activate"
           [[ "$(gxi -v)" == *"${{ steps.upstream.outputs.sha }}"* ]]
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
 
@@ -157,4 +213,4 @@ jobs:
             "$RUNNER_TEMP/release/$RELEASE_ARCHIVE.sha256" \
             --target "${{ github.sha }}" \
             --title "$RELEASE_TAG" \
-            --notes "Central Gerbil v0.19 Darwin capability at ${{ steps.upstream.outputs.sha }}. Source the bundled activate file after extraction."
+            --notes "Central Gerbil v0.19 ${{ inputs.platform }} capability at ${{ steps.upstream.outputs.sha }}. Source the bundled activate file after extraction."
