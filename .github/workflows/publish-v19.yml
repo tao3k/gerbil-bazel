@@ -161,7 +161,7 @@ jobs:
               --enable-smp
               --enable-single-host=30000
               --enable-optimized-module-limit=20000
-              --enable-c-opt=no
+              --enable-c-opt=-O1
               --enable-c-opt-rts=yes
               --enable-inline-jumps
               --enable-dynamic-clib
