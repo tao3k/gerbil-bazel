@@ -225,6 +225,7 @@ jobs:
           chmod +x "$GERBIL_PREFIX/activate"
           source "$GERBIL_PREFIX/activate"
           timeout_command="$(command -v gtimeout || command -v timeout)"
+          date_command="$(command -v gdate || command -v date)"
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           jq -e \
@@ -241,11 +242,11 @@ jobs:
           fi
           gsc -v
           for attempt in 1 2 3 4 5; do
-            attempt_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=source-import attempt=$attempt state=start timeoutSeconds=30"
-            "$timeout_command" 30 \
+            attempt_started_ms="$($date_command +%s%3N)"
+            echo "[gerbil-v19] phase=source-import attempt=$attempt state=start budgetMs=2000"
+            "$timeout_command" 2 \
               gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
-            echo "[gerbil-v19] phase=source-import attempt=$attempt state=complete elapsedSeconds=$((SECONDS - attempt_started_at))"
+            echo "[gerbil-v19] phase=source-import attempt=$attempt state=complete elapsedMs=$(($($date_command +%s%3N) - attempt_started_ms))"
           done
 
       - name: Package relocatable capability
@@ -293,6 +294,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/release/$RELEASE_ARCHIVE" -C "$verify_root"
           source "$verify_root/gerbil-v0.19-${{ inputs.platform }}/activate"
           timeout_command="$(command -v gtimeout || command -v timeout)"
+          date_command="$(command -v gdate || command -v date)"
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           jq -e \
@@ -309,11 +311,11 @@ jobs:
           fi
           gsc -v
           for attempt in 1 2 3 4 5; do
-            attempt_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=relocated-import attempt=$attempt state=start timeoutSeconds=30"
-            "$timeout_command" 30 \
+            attempt_started_ms="$($date_command +%s%3N)"
+            echo "[gerbil-v19] phase=relocated-import attempt=$attempt state=start budgetMs=2000"
+            "$timeout_command" 2 \
               gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
-            echo "[gerbil-v19] phase=relocated-import attempt=$attempt state=complete elapsedSeconds=$((SECONDS - attempt_started_at))"
+            echo "[gerbil-v19] phase=relocated-import attempt=$attempt state=complete elapsedMs=$(($($date_command +%s%3N) - attempt_started_ms))"
           done
 
       - name: Publish immutable central release
