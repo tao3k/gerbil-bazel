@@ -214,7 +214,7 @@ jobs:
             GERBIL_BUILD_FLAGS="-j$target_cores" \
               ./build.sh "$target"
             if [[ "$target" == gambit ]]; then
-              for bootstrap_tool in build/bin/gsi build/bin/gsc; do
+              for bootstrap_tool in bootstrap/bin/gsi build/bin/gsc src/gambit/gsc-boot; do
                 if [[ ! -x "$bootstrap_tool" ]]; then
                   echo "[gerbil-v19] phase=gambit state=failed missingExecutable=$bootstrap_tool" >&2
                   exit 1
