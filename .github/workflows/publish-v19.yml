@@ -54,7 +54,7 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-native-unlimited
+              build_profile=gcc16-native-smp-unlimited
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -157,6 +157,7 @@ jobs:
               "--prefix=$GERBIL_PREFIX"
               --enable-march=native
               --enable-smp
+              --enable-multiple-threaded-vms
               --enable-single-host=0
               --enable-optimized-module-limit=0
               --enable-c-opt=-O1
@@ -212,6 +213,8 @@ jobs:
              .profile == $profile and
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
+          grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
+          grep -Fx '#define ___MAX_PROCESSORS 64' "$GERBIL_PREFIX/include/gambit.h"
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -264,6 +267,10 @@ jobs:
             --arg profile "$GERBIL_BUILD_PROFILE" \
             '.profile == $profile' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
+          grep -Fx '#define ___MULTIPLE_THREADED_VMS' \
+            "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
+          grep -Fx '#define ___MAX_PROCESSORS 64' \
+            "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
 
       - name: Publish immutable central release
