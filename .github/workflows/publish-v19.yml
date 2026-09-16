@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v3-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
@@ -145,10 +145,15 @@ jobs:
           gambit_bootstrap_cores=1
           gambit_bootstrap_profile=platform-default
           gambit_vm_profile=platform-default
+          target_runtime_processors=1
+          gerbil_stage_processes="$GERBIL_BUILD_CORES"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             default_runtime_options=p100%,tE8,f8,-8
             gambit_bootstrap_profile=smp-single-threaded-host
             gambit_vm_profile=smp-multi-threaded-vm
+            target_runtime_processors="$GERBIL_BUILD_CORES"
+            gerbil_stage_processes=$((GERBIL_BUILD_CORES / target_runtime_processors))
+            (( gerbil_stage_processes > 0 ))
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
@@ -263,8 +268,8 @@ jobs:
           fi
           for target in boot-gxi stage0 stage1 stdlib libgerbil; do
             target_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=$target state=start cores=$GERBIL_BUILD_CORES"
-            GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" ./build.sh "$target"
+            echo "[gerbil-v19] phase=$target state=start processes=$gerbil_stage_processes runtimeProcessors=$target_runtime_processors availableCores=$GERBIL_BUILD_CORES"
+            GERBIL_BUILD_FLAGS="-j$gerbil_stage_processes" ./build.sh "$target"
             echo "[gerbil-v19] phase=$target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
             build_stages+=("$target")
           done
@@ -282,11 +287,15 @@ jobs:
             --argjson hostConfigureArguments "$(printf '%s\n' "${host_configure_args[@]}" | jq -Rsc 'split("\n")[:-1]')" \
             --argjson buildStages "$(printf '%s\n' "${build_stages[@]}" | jq -Rsc 'split("\n")[:-1]')" \
             --argjson gerbilBuildCores "$GERBIL_BUILD_CORES" \
+            --argjson gerbilStageProcesses "$gerbil_stage_processes" \
             --argjson gambitBootstrapCores "$gambit_bootstrap_cores" \
+            --argjson targetRuntimeProcessors "$target_runtime_processors" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker,
               cores: $gerbilBuildCores, gerbilBuildCores: $gerbilBuildCores,
+              gerbilStageProcesses: $gerbilStageProcesses,
               gambitBootstrapCores: $gambitBootstrapCores,
+              targetRuntimeProcessors: $targetRuntimeProcessors,
               gambitBootstrapProfile: $gambitBootstrapProfile,
               gambitVmProfile: $gambitVmProfile,
               hostConfigureArguments: $hostConfigureArguments,
@@ -302,7 +311,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v3-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -332,6 +341,9 @@ jobs:
                  "--enable-gcc-opts",
                  "--enable-default-runtime-options=p1,tE8,f8,-8"] - .hostConfigureArguments | length == 0) and
                (.hostConfigureArguments | index("--enable-multiple-threaded-vms") | not) and
+               (.targetRuntimeProcessors == .gerbilBuildCores) and
+               (.gerbilStageProcesses > 0) and
+               (.gerbilStageProcesses * .targetRuntimeProcessors <= .gerbilBuildCores) and
                (["prepare", "gambit", "gambit-target", "boot-gxi", "stage0", "stage1", "stdlib", "libgerbil"] - .buildStages | length == 0)' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
             grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
