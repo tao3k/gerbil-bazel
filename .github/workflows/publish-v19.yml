@@ -174,8 +174,11 @@ jobs:
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
           ./configure "${configure_args[@]}"
+          bootstrap_gambopt=p1
           for target in prepare gambit boot-gxi stage0 stage1 stdlib; do
-            GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" ./build.sh "$target"
+            GAMBOPT="$bootstrap_gambopt" \
+              GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" \
+              ./build.sh "$target"
           done
           ./install.sh
           jq -n \
@@ -184,9 +187,11 @@ jobs:
             --arg compiler "$cc $("$cc" -dumpfullversion)" \
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
+            --arg bootstrapRuntimeOptions "$bootstrap_gambopt" \
             --argjson cores "$GERBIL_BUILD_CORES" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
+              bootstrapRuntimeOptions: $bootstrapRuntimeOptions,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
             > "$GERBIL_PREFIX/gerbil-build-receipt.json"
