@@ -27,7 +27,7 @@ concurrency:
 jobs:
   publish:
     name: Publish (${{ inputs.platform }})
-    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-15' }}
+    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-latest' }}
     timeout-minutes: 180
     steps:
       - name: Check out gerbil-bazel
