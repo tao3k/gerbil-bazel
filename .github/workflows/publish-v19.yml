@@ -235,7 +235,7 @@ jobs:
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             ! grep -Fq '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
             grep -Fx '#define ___SINGLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
-            [[ "$(gxi -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
+            [[ "$(gsc -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
             [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
           fi
           gsc -v
@@ -298,7 +298,7 @@ jobs:
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
             grep -Fx '#define ___SINGLE_THREADED_VMS' \
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
-            [[ "$(gxi -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
+            [[ "$(gsc -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
             [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
           fi
           gsc -v
