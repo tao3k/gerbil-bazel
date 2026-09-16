@@ -54,7 +54,7 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-native-smp-unlimited
+              build_profile=gcc16-native-stable
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -142,12 +142,10 @@ jobs:
           set -euo pipefail
           default_runtime_options=platform-default
           gambit_bootstrap_cores=1
-          gambit_host_profile=platform-default
-          gambit_target_profile=platform-default
+          gambit_vm_profile=platform-default
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             default_runtime_options=p1,tE8,f8,-8
-            gambit_host_profile=smp-aware-single-threaded-vm
-            gambit_target_profile=multiple-threaded-vms
+            gambit_vm_profile=smp-aware-single-threaded-vm
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
@@ -179,10 +177,8 @@ jobs:
             linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
-          # The v4.9.8 release compiler cannot directly bootstrap the current
-          # multiple-threaded VM. First build a current SMP-aware host compiler.
           ./configure "${configure_args[@]}"
-          for target in prepare gambit; do
+          for target in prepare gambit boot-gxi stage0 stage1 stdlib; do
             target_cores="$GERBIL_BUILD_CORES"
             if [[ "$target" == gambit ]]; then
               target_cores="$gambit_bootstrap_cores"
@@ -190,55 +186,6 @@ jobs:
             target_started_at="$SECONDS"
             echo "[gerbil-v19] phase=$target state=start cores=$target_cores"
             GERBIL_BUILD_FLAGS="-j$target_cores" \
-              ./build.sh "$target"
-            echo "[gerbil-v19] phase=$target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
-          done
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            test -x build/bin/gsc
-            test -x src/gambit/gsc-boot
-            host_gsc="$RUNNER_TEMP/gerbil-v19-host-gsc"
-            cp build/bin/gsc "$host_gsc"
-            target_prefix="$(pwd -P)/build"
-
-            target_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=gambit-target-configure state=start cores=1"
-            (
-              cd src/gambit
-              CFLAGS=-foptimize-sibling-calls LDFLAGS= ./configure \
-                "--prefix=$target_prefix" \
-                --enable-march=native \
-                --disable-shared \
-                --enable-targets= \
-                --enable-smp \
-                --enable-multiple-threaded-vms \
-                --enable-single-host=0 \
-                --enable-optimized-module-limit=0 \
-                --enable-c-opt=-O1 \
-                --enable-c-opt-rts=yes \
-                --enable-inline-jumps \
-                --enable-dynamic-clib \
-                --enable-trust-c-tco \
-                "--enable-default-runtime-options=$default_runtime_options" \
-                "CC=$cc" "CXX=$cxx"
-            )
-            echo "[gerbil-v19] phase=gambit-target-configure state=complete elapsedSeconds=$((SECONDS - target_started_at))"
-
-            target_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=gambit-target-runtime state=start cores=$gambit_bootstrap_cores"
-            make -C src/gambit bootclean
-            make -C src/gambit -j"$gambit_bootstrap_cores" core
-            make -C src/gambit -j"$gambit_bootstrap_cores" install
-            grep -Fx '#define ___MULTIPLE_THREADED_VMS' build/include/gambit.h
-            grep -Fx '#define ___MAX_PROCESSORS 64' build/include/gambit.h
-            # gsc is a host build tool. Keep the SMP-aware single-threaded host
-            # compiler while gsi/gxi and generated programs use the target VM.
-            cp "$host_gsc" build/bin/gsc
-            echo "[gerbil-v19] phase=gambit-target-runtime state=complete elapsedSeconds=$((SECONDS - target_started_at))"
-          fi
-          for target in boot-gxi stage0 stage1 stdlib; do
-            target_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=$target state=start cores=$GERBIL_BUILD_CORES"
-            GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" \
               ./build.sh "$target"
             echo "[gerbil-v19] phase=$target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
           done
@@ -250,16 +197,14 @@ jobs:
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
             --arg defaultRuntimeOptions "$default_runtime_options" \
-            --arg gambitHostProfile "$gambit_host_profile" \
-            --arg gambitTargetProfile "$gambit_target_profile" \
+            --arg gambitVmProfile "$gambit_vm_profile" \
             --argjson gerbilBuildCores "$GERBIL_BUILD_CORES" \
             --argjson gambitBootstrapCores "$gambit_bootstrap_cores" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker,
               cores: $gerbilBuildCores, gerbilBuildCores: $gerbilBuildCores,
               gambitBootstrapCores: $gambitBootstrapCores,
-              gambitHostProfile: $gambitHostProfile,
-              gambitTargetProfile: $gambitTargetProfile,
+              gambitVmProfile: $gambitVmProfile,
               defaultRuntimeOptions: $defaultRuntimeOptions,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
@@ -288,14 +233,15 @@ jobs:
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
-            grep -Fx '#define ___MAX_PROCESSORS 64' "$GERBIL_PREFIX/include/gambit.h"
-            default_processor_count="$(gxi -e '(write (##current-vm-processor-count))')"
-            [[ "$default_processor_count" == 1 ]]
-            smp_processor_count="$(gxi -:p2 -e '(write (##current-vm-processor-count))')"
-            [[ "$smp_processor_count" == 2 ]]
+            ! grep -Fq '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
+            grep -Fx '#define ___SINGLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
+            [[ "$(gxi -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
+            [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
           fi
-          gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
+          gsc -v
+          for attempt in 1 2 3 4 5; do
+            gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
+          done
 
       - name: Package relocatable capability
         shell: bash
@@ -348,14 +294,17 @@ jobs:
             '.profile == $profile' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            grep -Fx '#define ___MULTIPLE_THREADED_VMS' \
+            ! grep -Fq '#define ___MULTIPLE_THREADED_VMS' \
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
-            grep -Fx '#define ___MAX_PROCESSORS 64' \
+            grep -Fx '#define ___SINGLE_THREADED_VMS' \
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
+            [[ "$(gxi -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
             [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
-            [[ "$(gxi -:p2 -e '(write (##current-vm-processor-count))')" == 2 ]]
           fi
-          gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
+          gsc -v
+          for attempt in 1 2 3 4 5; do
+            gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
+          done
 
       - name: Publish immutable central release
         env:
