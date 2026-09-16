@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v5-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
@@ -145,12 +145,14 @@ jobs:
           gambit_bootstrap_cores=1
           gambit_bootstrap_profile=platform-default
           gambit_vm_profile=platform-default
+          build_compiler_runtime_options=platform-default
           target_runtime_processors=1
           gerbil_stage_processes="$GERBIL_BUILD_CORES"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             default_runtime_options=p100%,tE8,f8,-8
             gambit_bootstrap_profile=smp-single-threaded-host
             gambit_vm_profile=smp-multi-threaded-vm
+            build_compiler_runtime_options=p1
             target_runtime_processors="$GERBIL_BUILD_CORES"
             gerbil_stage_processes=$((GERBIL_BUILD_CORES / target_runtime_processors))
             (( gerbil_stage_processes > 0 ))
@@ -265,6 +267,26 @@ jobs:
             ! grep -Fq '#define ___SINGLE_THREADED_VMS' build/include/gambit.h
             echo "[gerbil-v19] phase=gambit-target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
             build_stages+=(gambit-target)
+
+            # src/build.sh owns GAMBOPT and GERBIL_GSC, so an environment
+            # override cannot constrain the child compiler VM.  Wrap only the
+            # generated build tool, preserve its required runtime paths, then
+            # restore the native target gsc before installation.
+            target_gsc="$target_prefix/bin/gsc"
+            target_gsc_runtime="$target_prefix/bin/gsc.runtime"
+            mv "$target_gsc" "$target_gsc_runtime"
+            cat > "$target_gsc" <<EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          runtime_options=',p1,~~bin=$target_prefix/bin,~~lib=$target_prefix/lib,~~include=$target_prefix/include'
+          if [[ \${1:-} == -:* ]]; then
+            runtime_options="\$runtime_options,\${1#-:}"
+            shift
+          fi
+          exec '$target_gsc_runtime' "-:\$runtime_options" "\$@"
+          EOF
+            chmod +x "$target_gsc"
+            echo "[gerbil-v19] phase=gerbil-build-compiler state=ready runtimeProcessors=1 executable=$target_gsc_runtime"
           fi
           for target in boot-gxi stage0 stage1 stdlib libgerbil; do
             target_started_at="$SECONDS"
@@ -273,6 +295,10 @@ jobs:
             echo "[gerbil-v19] phase=$target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
             build_stages+=("$target")
           done
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
+            mv "$target_gsc_runtime" "$target_gsc"
+            echo "[gerbil-v19] phase=gerbil-build-compiler state=restored executable=$target_gsc"
+          fi
           ./install.sh
           jq -n \
             --arg schema gerbil-bazel.build-receipt.v1 \
@@ -282,6 +308,7 @@ jobs:
             --arg linker "$linker" \
             --arg defaultRuntimeOptions "$default_runtime_options" \
             --arg bootstrapRuntimeOptions "$bootstrap_runtime_options" \
+            --arg buildCompilerRuntimeOptions "$build_compiler_runtime_options" \
             --arg gambitBootstrapProfile "$gambit_bootstrap_profile" \
             --arg gambitVmProfile "$gambit_vm_profile" \
             --argjson hostConfigureArguments "$(printf '%s\n' "${host_configure_args[@]}" | jq -Rsc 'split("\n")[:-1]')" \
@@ -301,6 +328,7 @@ jobs:
               hostConfigureArguments: $hostConfigureArguments,
               buildStages: $buildStages,
               bootstrapRuntimeOptions: $bootstrapRuntimeOptions,
+              buildCompilerRuntimeOptions: $buildCompilerRuntimeOptions,
               defaultRuntimeOptions: $defaultRuntimeOptions,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
@@ -311,7 +339,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v5-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -344,6 +372,7 @@ jobs:
                (.targetRuntimeProcessors == .gerbilBuildCores) and
                (.gerbilStageProcesses > 0) and
                (.gerbilStageProcesses * .targetRuntimeProcessors <= .gerbilBuildCores) and
+               (.buildCompilerRuntimeOptions == "p1") and
                (["prepare", "gambit", "gambit-target", "boot-gxi", "stage0", "stage1", "stdlib", "libgerbil"] - .buildStages | length == 0)' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
             grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
