@@ -27,7 +27,7 @@ concurrency:
 jobs:
   publish:
     name: Publish (${{ inputs.platform }})
-    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-26' }}
+    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-15' }}
     timeout-minutes: 180
     steps:
       - name: Check out gerbil-bazel
@@ -54,7 +54,7 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-native-stable
+              build_profile=gcc16-native-smp
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -144,8 +144,8 @@ jobs:
           gambit_bootstrap_cores=1
           gambit_vm_profile=platform-default
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            default_runtime_options=p1,tE8,f8,-8
-            gambit_vm_profile=smp-aware-single-threaded-vm
+            default_runtime_options=p100%,tE8,f8,-8
+            gambit_vm_profile=smp-multi-threaded-vm
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
@@ -162,10 +162,12 @@ jobs:
               "--prefix=$GERBIL_PREFIX"
               --enable-march=native
               --enable-smp
+              --enable-multiple-threaded-vms
               --enable-single-host=0
               --enable-optimized-module-limit=0
               --enable-c-opt=-O1
               --enable-c-opt-rts=yes
+              --enable-gcc-opts
               --enable-inline-jumps
               --enable-dynamic-clib
               --enable-trust-c-tco
@@ -243,10 +245,20 @@ jobs:
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            ! grep -Fq '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
-            grep -Fx '#define ___SINGLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
+            jq -e \
+              '(["--enable-smp",
+                 "--enable-multiple-threaded-vms",
+                 "--enable-gcc-opts",
+                 "--enable-default-runtime-options=p100%,tE8,f8,-8"] - .configureArguments | length == 0)' \
+              "$GERBIL_PREFIX/gerbil-build-receipt.json"
+            grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
+            ! grep -Fq '#define ___SINGLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
             [[ "$(gsc -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
-            [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
+            cpu_count="$(gxi -e '(write (##cpu-count))')"
+            processor_count="$(gxi -e '(write (##current-vm-processor-count))')"
+            echo "[gerbil-v19] phase=source-runtime cpuCount=$cpu_count processorCount=$processor_count expectedProcessorCount=$cpu_count"
+            (( cpu_count > 1 ))
+            (( processor_count == cpu_count ))
           fi
           gsc -v
           for attempt in 1 2 3 4 5; do
@@ -310,12 +322,16 @@ jobs:
             '.profile == $profile' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
-            ! grep -Fq '#define ___MULTIPLE_THREADED_VMS' \
+            grep -Fx '#define ___MULTIPLE_THREADED_VMS' \
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
-            grep -Fx '#define ___SINGLE_THREADED_VMS' \
+            ! grep -Fq '#define ___SINGLE_THREADED_VMS' \
               "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
             [[ "$(gsc -e '(cond-expand (enable-smp (display "enabled")) (else (display "disabled")))')" == enabled ]]
-            [[ "$(gxi -e '(write (##current-vm-processor-count))')" == 1 ]]
+            cpu_count="$(gxi -e '(write (##cpu-count))')"
+            processor_count="$(gxi -e '(write (##current-vm-processor-count))')"
+            echo "[gerbil-v19] phase=relocated-runtime cpuCount=$cpu_count processorCount=$processor_count expectedProcessorCount=$cpu_count"
+            (( cpu_count > 1 ))
+            (( processor_count == cpu_count ))
           fi
           gsc -v
           for attempt in 1 2 3 4 5; do
