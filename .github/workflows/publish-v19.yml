@@ -49,17 +49,19 @@ jobs:
             linux-x86_64)
               release_os=linux
               release_arch=x86_64
+              build_profile=portable
               ;;
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
+              build_profile=gcc16-native-unlimited
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
               exit 64
               ;;
           esac
-          release_tag="gerbil-v0.19-$upstream_sha-$TARGET_PLATFORM"
+          release_tag="gerbil-v0.19-$upstream_sha-$TARGET_PLATFORM-$build_profile"
           archive="$release_tag.tar.gz"
           {
             echo "sha=$upstream_sha"
@@ -72,11 +74,7 @@ jobs:
             echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-v19"
             echo "RELEASE_TAG=$release_tag"
             echo "RELEASE_ARCHIVE=$archive"
-            if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]; then
-              echo "GERBIL_BUILD_PROFILE=gcc16-native-bounded"
-            else
-              echo "GERBIL_BUILD_PROFILE=portable"
-            fi
+            echo "GERBIL_BUILD_PROFILE=$build_profile"
           } >> "$GITHUB_ENV"
 
       - name: Restore exact release toolchain
@@ -110,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           dependencies=(pkg-config openssl@3 sqlite zlib)
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-bounded ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-unlimited ]]; then
             dependencies+=(gcc)
           fi
           brew install "${dependencies[@]}"
@@ -142,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-bounded ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-unlimited ]]; then
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
