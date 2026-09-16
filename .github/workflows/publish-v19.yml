@@ -108,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           dependencies=(pkg-config openssl@3 sqlite zlib)
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-unlimited ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             dependencies+=(gcc)
           fi
           brew install "${dependencies[@]}"
@@ -140,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-unlimited ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
