@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v1-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v2-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
@@ -141,6 +141,7 @@ jobs:
         run: |
           set -euo pipefail
           default_runtime_options=platform-default
+          bootstrap_runtime_options=p1
           gambit_bootstrap_cores=1
           gambit_vm_profile=platform-default
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
@@ -192,9 +193,21 @@ jobs:
               target_cores="$gambit_bootstrap_cores"
             fi
             target_started_at="$SECONDS"
-            echo "[gerbil-v19] phase=$target state=start cores=$target_cores"
-            GERBIL_BUILD_FLAGS="-j$target_cores" \
+            echo "[gerbil-v19] phase=$target state=start cores=$target_cores runtimeOptions=$bootstrap_runtime_options"
+            # The configured runtime remains SMP/p100%.  Only the compiler
+            # processes that create it are serialized: gsc-boot is not stable
+            # when its own bootstrap VM inherits the target's p100% default.
+            GAMBOPT="$bootstrap_runtime_options" \
+              GERBIL_BUILD_FLAGS="-j$target_cores" \
               ./build.sh "$target"
+            if [[ "$target" == gambit ]]; then
+              for bootstrap_tool in build/bin/gsi build/bin/gsc; do
+                if [[ ! -x "$bootstrap_tool" ]]; then
+                  echo "[gerbil-v19] phase=gambit state=failed missingExecutable=$bootstrap_tool" >&2
+                  exit 1
+                fi
+              done
+            fi
             echo "[gerbil-v19] phase=$target state=complete elapsedSeconds=$((SECONDS - target_started_at))"
           done
           ./install.sh
@@ -205,6 +218,7 @@ jobs:
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
             --arg defaultRuntimeOptions "$default_runtime_options" \
+            --arg bootstrapRuntimeOptions "$bootstrap_runtime_options" \
             --arg gambitVmProfile "$gambit_vm_profile" \
             --argjson buildStages "$(printf '%s\n' "${build_stages[@]}" | jq -Rsc 'split("\n")[:-1]')" \
             --argjson gerbilBuildCores "$GERBIL_BUILD_CORES" \
@@ -215,6 +229,7 @@ jobs:
               gambitBootstrapCores: $gambitBootstrapCores,
               gambitVmProfile: $gambitVmProfile,
               buildStages: $buildStages,
+              bootstrapRuntimeOptions: $bootstrapRuntimeOptions,
               defaultRuntimeOptions: $defaultRuntimeOptions,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
@@ -225,7 +240,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v1-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v2-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -242,6 +257,7 @@ jobs:
             --arg profile "$GERBIL_BUILD_PROFILE" \
             '.schema == "gerbil-bazel.build-receipt.v1" and
              .profile == $profile and
+             .bootstrapRuntimeOptions == "p1" and
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
@@ -319,7 +335,8 @@ jobs:
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           jq -e \
             --arg profile "$GERBIL_BUILD_PROFILE" \
-            '.profile == $profile' \
+            '.profile == $profile and
+             .bootstrapRuntimeOptions == "p1"' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-* ]]; then
             grep -Fx '#define ___MULTIPLE_THREADED_VMS' \
