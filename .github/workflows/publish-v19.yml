@@ -178,7 +178,13 @@ jobs:
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
           ./configure "${configure_args[@]}"
-          for target in prepare gambit boot-gxi stage0 stage1 stdlib; do
+          # Keep the release closure aligned with Gerbil's official full build.
+          # libgerbil materializes the static runtime/compiler/stdlib objects
+          # consumed by native Gerbil executables; stopping at stdlib leaves an
+          # interpreter-only installation and hides an expensive first-load
+          # path until downstream use.
+          build_stages=(prepare gambit boot-gxi stage0 stage1 stdlib libgerbil)
+          for target in "${build_stages[@]}"; do
             target_cores="$GERBIL_BUILD_CORES"
             if [[ "$target" == gambit ]]; then
               target_cores="$gambit_bootstrap_cores"
@@ -198,6 +204,7 @@ jobs:
             --arg linker "$linker" \
             --arg defaultRuntimeOptions "$default_runtime_options" \
             --arg gambitVmProfile "$gambit_vm_profile" \
+            --argjson buildStages "$(printf '%s\n' "${build_stages[@]}" | jq -Rsc 'split("\n")[:-1]')" \
             --argjson gerbilBuildCores "$GERBIL_BUILD_CORES" \
             --argjson gambitBootstrapCores "$gambit_bootstrap_cores" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
@@ -205,6 +212,7 @@ jobs:
               cores: $gerbilBuildCores, gerbilBuildCores: $gerbilBuildCores,
               gambitBootstrapCores: $gambitBootstrapCores,
               gambitVmProfile: $gambitVmProfile,
+              buildStages: $buildStages,
               defaultRuntimeOptions: $defaultRuntimeOptions,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
