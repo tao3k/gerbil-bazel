@@ -215,6 +215,8 @@ jobs:
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           grep -Fx '#define ___MULTIPLE_THREADED_VMS' "$GERBIL_PREFIX/include/gambit.h"
           grep -Fx '#define ___MAX_PROCESSORS 64' "$GERBIL_PREFIX/include/gambit.h"
+          processor_count="$(gxi -e '(write (##current-vm-processor-count))')"
+          [[ "$processor_count" =~ ^[0-9]+$ && "$processor_count" -gt 1 ]]
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -271,6 +273,8 @@ jobs:
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
           grep -Fx '#define ___MAX_PROCESSORS 64' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/include/gambit.h"
+          processor_count="$(gxi -e '(write (##current-vm-processor-count))')"
+          [[ "$processor_count" =~ ^[0-9]+$ && "$processor_count" -gt 1 ]]
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
 
       - name: Publish immutable central release
