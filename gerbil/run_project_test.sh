@@ -27,7 +27,7 @@ printf 'source owner\n' >"$source_root/src/module.ss"
 printf 'dependency marker\n' >"$dependency_root/.marker"
 printf '%s\t%s\n' \
   "$source_root/build.ss" external/package/build.ss \
-  "$source_root/src/module.ss" external/package/src/module.ss \
+  "$source_root/src/module.ss" external/package/src/renamed.ss \
   >"$manifest"
 printf '; fake validator identity\n' >"$validator"
 printf '; fake resource guard identity\n' >"$resource_guard"
@@ -129,6 +129,8 @@ grep -F '"libraryOutputRequired":false' \
 grep -F '"packageIdentity":""' "$root/generic.receipt.json" >/dev/null
 grep -F '"packageRevision":""' "$root/generic.receipt.json" >/dev/null
 [[ -f "$root/generic.project/external/package/src/generated.c" ]]
+[[ "$(<"$root/generic.project/external/package/src/renamed.ss")" == \
+   'source owner' ]]
 [[ ! -e "$source_root/src/generated.c" ]]
 [[ "$(<"$source_root/src/module.ss")" == 'source owner' ]]
 
@@ -211,3 +213,21 @@ GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
 duplicate_status=$?
 set -e
 [[ "$duplicate_status" -eq 64 ]]
+
+printf '%s\t%s\n' \
+  "$source_root/src/module.ss" src/module.ss \
+  "$source_root/build.ss" build.ss \
+  >"$root/unsorted.sources"
+set +e
+GERBIL_BAZEL_NATIVE_ABI=test-native-abi \
+  "$runner" \
+    "$tools_root/gxi" "$tools_root/tool" "$tools_root/tool" \
+    "$tools_root/tool" "$tools_root/tool" "$tools_root/tool" \
+    "$dependency_root/.marker" "$root/unsorted.sources" \
+    "$root/unsorted.project" build.ss "$root/unsorted.receipt.json" \
+  "$root/unsorted.log" '' "$validator" \
+  "$resource_guard" "$receipt_writer" 0 0 '//tests/smoke:unsorted' '' '' \
+  "$source_resolution_manifest" compile
+unsorted_status=$?
+set -e
+[[ "$unsorted_status" -eq 64 ]]
