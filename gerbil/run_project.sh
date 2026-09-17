@@ -85,8 +85,23 @@ case "$build_script" in
 esac
 
 mkdir -p "$project_root"
-staged_paths="$project_root/.gerbil-bazel-staged-paths"
-: >"$staged_paths"
+previous_relative=
+staged_directory=
+staged_sources=()
+staged_destinations=()
+staging_lc_all_was_set=${LC_ALL+x}
+staging_lc_all=${LC_ALL-}
+export LC_ALL=C
+
+flush_staged_directory() {
+  ((${#staged_sources[@]} > 0)) || return 0
+  mkdir -p "$project_root/$staged_directory"
+  cp -pL "${staged_sources[@]}" "$project_root/$staged_directory/"
+  chmod u+w "${staged_destinations[@]}"
+  staged_sources=()
+  staged_destinations=()
+}
+
 while IFS=$'\t' read -r source relative; do
   [[ -n "$source" ]] || continue
   case "$source" in /*) ;; *) source="$PWD/$source" ;; esac
@@ -96,17 +111,40 @@ while IFS=$'\t' read -r source relative; do
       exit 64
       ;;
   esac
-  if grep -Fx "$relative" "$staged_paths" >/dev/null; then
-    printf 'duplicate staged project source path: %s\n' "$relative" >&2
+  if [[ -n "$previous_relative" && ! "$previous_relative" < "$relative" ]]; then
+    if [[ "$previous_relative" == "$relative" ]]; then
+      printf 'duplicate staged project source path: %s\n' "$relative" >&2
+    else
+      printf 'staged project source manifest is not sorted: %s after %s\n' \
+        "$relative" "$previous_relative" >&2
+    fi
     exit 64
   fi
-  printf '%s\n' "$relative" >>"$staged_paths"
-  destination="$project_root/$relative"
-  mkdir -p "$(dirname "$destination")"
-  cp -pL "$source" "$destination"
-  chmod u+w "$destination"
+  previous_relative=$relative
+  relative_directory=${relative%/*}
+  if [[ "$relative_directory" == "$relative" ]]; then
+    relative_directory=.
+  fi
+  if [[ -n "$staged_directory" && "$relative_directory" != "$staged_directory" ]]; then
+    flush_staged_directory
+  fi
+  staged_directory=$relative_directory
+  if [[ "${source##*/}" != "${relative##*/}" ]]; then
+    flush_staged_directory
+    mkdir -p "$project_root/$relative_directory"
+    cp -pL "$source" "$project_root/$relative"
+    chmod u+w "$project_root/$relative"
+    continue
+  fi
+  staged_sources+=("$source")
+  staged_destinations+=("$project_root/$relative")
 done < "$manifest"
-rm -f "$staged_paths"
+flush_staged_directory
+if [[ "$staging_lc_all_was_set" == x ]]; then
+  export LC_ALL=$staging_lc_all
+else
+  unset LC_ALL
+fi
 
 staged_build_script="$project_root/$build_script"
 if [[ ! -f "$staged_build_script" ]]; then
