@@ -21,6 +21,7 @@ concurrency:
 
 env:
   GERBIL_VERSION_LABEL: v0.18.2-07c84815
+  GERBIL_FORMULA_TAG: gerbil-scheme-0.18.2_1
 
 jobs:
   bazel:
@@ -70,6 +71,11 @@ jobs:
           HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
+          brew tap tao3k/gerbil
+          tap_repository="$(brew --repository tao3k/gerbil)"
+          git -C "$tap_repository" fetch --depth=1 origin \
+            "refs/tags/$GERBIL_FORMULA_TAG:refs/tags/$GERBIL_FORMULA_TAG"
+          git -C "$tap_repository" checkout --detach "$GERBIL_FORMULA_TAG"
           brew install --force-bottle "$GERBIL_FORMULA"
           brew info --json=v2 "$GERBIL_FORMULA" \
             | jq -e '.formulae[0].installed | any(.poured_from_bottle == true)'
