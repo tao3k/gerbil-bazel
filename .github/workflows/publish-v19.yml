@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: 94b87422fb6dd055f9667d86527254bd1ebaf4bb
+        default: f0badc77836ef6f4b83d8d222a4a159f71b9c592
         required: true
         type: string
       platform:
