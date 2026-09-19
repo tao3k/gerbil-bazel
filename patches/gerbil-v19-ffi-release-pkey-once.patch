@@ -2,6 +2,14 @@ diff --git a/src/std/crypto/libcrypto.ss b/src/std/crypto/libcrypto.ss
 index 232143f..936456f 100644
 --- a/src/std/crypto/libcrypto.ss
 +++ b/src/std/crypto/libcrypto.ss
+@@ -11,6 +11,7 @@
+            "<openssl/dh.h>"
+            "<openssl/bn.h>"
+            "<openssl/hmac.h>"
++           "<openssl/kdf.h>"
+            "<openssl/rand.h>")
+ (C-declare #<<END-C
+ #if (OPENSSL_VERSION_MAJOR < 3)
 @@ -178,6 +178,7 @@ static int ffi_BN_bn2bin (BIGNUM *bn, ___SCMOBJ data)
  
  /* pkey */

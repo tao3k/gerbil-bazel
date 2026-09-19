@@ -2,43 +2,69 @@ diff --git a/src/build.sh b/src/build.sh
 index 20e4801..4bfd910 100755
 --- a/src/build.sh
 +++ b/src/build.sh
-@@ -295,9 +295,13 @@ build_srfi() {
+@@ -295,9 +295,25 @@ build_srfi() {
  
  build_tools () {
    feedback_low "Building gerbil tools"
-+  # Keep ordinary module compilation parallel, then close selected latency
-+  # sensitive command-line tools into whole-program executables sequentially.
    (cd tools && gxi ./build.ss) || die
-+  (cd tools && gxi ./build-aot.ss) || die
++  if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
++    # Keep ordinary module compilation parallel, then close selected latency
++    # sensitive command-line tools into whole-program executables sequentially.
++    (cd tools && gxi ./build-aot.ss) || die
++  fi
    for tool in tools/gx*.ss; do
        toolname=$(basename $tool .ss)
 -      (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
-+      test -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" ||
-+        (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
++      case "$toolname" in
++        gxpkg|gxtags)
++          if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
++            test -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" || die
++          else
++            (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil "$toolname")
++          fi
++          ;;
++        *)
++          (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil "$toolname")
++          ;;
++      esac
    done
  }
 diff --git a/src/tools/build-aot.ss b/src/tools/build-aot.ss
 new file mode 100755
-index 0000000..49345b1
+index 0000000..8a4b721
 --- /dev/null
 +++ b/src/tools/build-aot.ss
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,36 @@
 +#!/usr/bin/env gxi
 +;; -*- Gerbil -*-
 +;; Whole-program tool targets are a separate phase because their foreign
 +;; library closure must be declared on the executable build specification.
 +(import :std/build-script
++        :std/build-config
 +        :std/make)
 +
-+(def gxpkg-ld-options
++(def aot-cc-options
++  (append-options
++    (cppflags "libssl" "")
++    (cppflags "libcrypto" "")
++    (if config-enable-zlib (cppflags "zlib" "") "")
++    "-Wno-discarded-qualifiers"
++    "-Wno-deprecated-declarations"
++    "-Wno-implicit-function-declaration"))
++
++(def aot-ld-options
 +  (append-options
 +    (ldflags "libssl" "-lssl")
 +    (ldflags "libcrypto" "-lcrypto")
-+    (ldflags "zlib" "-lz")))
++    (if config-enable-zlib (ldflags "zlib" "-lz") "")))
++
++(def (aot-tool tool)
++  (list optimized-exe: tool
++        "-cc-options" aot-cc-options
++        "-ld-options" aot-ld-options))
 +
 +(defbuild-script
-+  `((optimized-exe: "gxpkg" "-ld-options" ,gxpkg-ld-options)
-+    (optimized-exe: "gxtags"))
++  (map aot-tool '("gxpkg" "gxtags"))
 +  libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
 +  bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
 +  ;; Avoid closing multiple giant C translation units concurrently; ordinary
