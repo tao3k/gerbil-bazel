@@ -1,0 +1,38 @@
+diff --git a/src/build.sh b/src/build.sh
+index 20e4801..bb012d4 100755
+--- a/src/build.sh
++++ b/src/build.sh
+@@ -297,7 +297,9 @@ build_tools () {
+   feedback_low "Building gerbil tools"
+   (cd tools && gxi ./build.ss) || die
+   for tool in tools/gx*.ss; do
+       toolname=$(basename $tool .ss)
+-      (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
++      if [ ! -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" ]; then
++          (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
++      fi
+   done
+ }
+diff --git a/src/tools/build.ss b/src/tools/build.ss
+index 0c8ff29..7d2cc4a 100755
+--- a/src/tools/build.ss
++++ b/src/tools/build.ss
+@@ -5,14 +5,14 @@
+ ;; v0.19 staging
+ (defbuild-script
+   '("env"
+-    "gxtest"
+-    "gxpkg"
+-    "gxtags"
++    (optimized-exe: "gxtest")
++    (optimized-exe: "gxpkg")
++    (optimized-exe: "gxtags")
+ 
+     "gxhttpd/opt"
+     "gxhttpd/config"
+     "gxhttpd/server"
+-    "gxhttpd"
++    (optimized-exe: "gxhttpd")
+     )
+   libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
+   bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))

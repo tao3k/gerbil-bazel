@@ -53,7 +53,7 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-native-full-single-host-unlimited
+              build_profile=gcc16-arm64-aot-tools-single-host-unlimited
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           dependencies=(pkg-config openssl@3 sqlite zlib)
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
             dependencies+=(gcc)
           fi
           brew install "${dependencies[@]}"
@@ -133,6 +133,11 @@ jobs:
           git -C upstream-gerbil checkout --detach FETCH_HEAD
           git -C upstream-gerbil submodule update --init --depth=1
 
+      - name: Apply Darwin whole-program tool patch
+        if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        shell: bash
+        run: git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
+
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
         working-directory: upstream-gerbil
@@ -141,7 +146,7 @@ jobs:
           SINGLE_HOST_MODE: unlimited
         run: |
           set -euo pipefail
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
@@ -151,12 +156,12 @@ jobs:
               '#include <stdio.h>' \
               'int main(void) { FILE *f = fopen("gerbil-gcc-link-probe.out", "w"); return ferror(f) || fclose(f); }' \
               > "$link_probe.c"
-            "$cc" -march=native "$link_probe.c" -o "$link_probe"
+            "$cc" "$link_probe.c" -o "$link_probe"
             "$link_probe"
             linker="$(xcrun --find ld) $(xcrun ld -v 2>&1)"
             configure_args=(
               "--prefix=$GERBIL_PREFIX"
-              --enable-march=native
+              --enable-march=
               --enable-smp
               --enable-c-opt=-O1
               --enable-c-opt-rts=yes
@@ -201,10 +206,12 @@ jobs:
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
             --arg singleHostMode "$SINGLE_HOST_MODE" \
+            --arg toolLinkage "$([[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]] && echo whole-program-aot || echo dynamic)" \
             --argjson cores "$GERBIL_BUILD_CORES" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
               singleHostMode: $singleHostMode,
+              toolLinkage: $toolLinkage,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
             > "$GERBIL_PREFIX/gerbil-build-receipt.json"
@@ -233,11 +240,11 @@ jobs:
              .profile == $profile and
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
             jq -e \
               --arg singleHostMode "$SINGLE_HOST_MODE" \
               '(.singleHostMode == $singleHostMode) and
-               (["--enable-march=native", "--enable-smp", "--enable-gcc-opts"] -
+               (["--enable-march=", "--enable-smp", "--enable-gcc-opts"] -
                 .configureArguments | length == 0)' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
           fi
@@ -245,6 +252,16 @@ jobs:
             '.singleHostMode == "unlimited" and
              (.configureArguments | any(. == "--enable-single-host=0"))' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
+          if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
+            jq -e '.toolLinkage == "whole-program-aot"' \
+              "$GERBIL_PREFIX/gerbil-build-receipt.json"
+            for tool in gxpkg gxtags gxtest gxhttpd; do
+              [[ -x "$GERBIL_HOME/bin/$tool" ]]
+              [[ ! -L "$GERBIL_HOME/bin/$tool" ]]
+            done
+            /usr/bin/time -p gxpkg version
+            /usr/bin/time -p gxtags --help >/dev/null
+          fi
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -298,6 +315,10 @@ jobs:
             '.profile == $profile' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
+          if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
+            /usr/bin/time -p gxpkg version
+            /usr/bin/time -p gxtags --help >/dev/null
+          fi
 
       - name: Publish immutable central release
         env:
