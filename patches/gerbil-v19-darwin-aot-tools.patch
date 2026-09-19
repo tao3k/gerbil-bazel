@@ -8,8 +8,8 @@ index 20e4801..4bfd910 100755
    feedback_low "Building gerbil tools"
    (cd tools && gxi ./build.ss) || die
 +  if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
-+    # Keep ordinary module compilation parallel, then close selected latency
-+    # sensitive command-line tools into whole-program executables sequentially.
++    # Close selected latency-sensitive command-line tools into whole-program
++    # executables after their ordinary modules have been compiled.
 +    (cd tools && gxi ./build-aot.ss) || die
 +  fi
    for tool in tools/gx*.ss; do
@@ -34,7 +34,7 @@ new file mode 100755
 index 0000000..8a4b721
 --- /dev/null
 +++ b/src/tools/build-aot.ss
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,33 @@
 +#!/usr/bin/env gxi
 +;; -*- Gerbil -*-
 +;; Whole-program tool targets are a separate phase because their foreign
@@ -67,7 +67,4 @@ index 0000000..8a4b721
 +  (map aot-tool '("gxpkg" "gxtags"))
 +  libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
 +  bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
-+  ;; Avoid closing multiple giant C translation units concurrently; ordinary
-+  ;; tool modules remain parallel in build.ss.
-+  parallelize: 1
 +  debug: #f)
