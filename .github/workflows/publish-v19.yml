@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: 0c276b3b12c5f277ab5697c711c370cf377c6a21
+        default: f0badc77836ef6f4b83d8d222a4a159f71b9c592
         required: true
         type: string
       platform:
@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           git init upstream-gerbil
-          git -C upstream-gerbil remote add origin https://github.com/mighty-gerbils/gerbil.git
+          git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
           git -C upstream-gerbil fetch --depth=1 origin "$UPSTREAM_REF"
           upstream_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
           case "$TARGET_PLATFORM" in
