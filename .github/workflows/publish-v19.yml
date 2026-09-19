@@ -171,7 +171,7 @@ jobs:
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
           ./configure "${configure_args[@]}"
-          for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang r7rs-large srfi tools; do
+          for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
             target_cores="$GERBIL_BUILD_CORES"
             if [[ "$target" == gambit ]]; then
               target_cores=1
