@@ -16,12 +16,21 @@ on:
         options:
           - linux-x86_64
           - darwin-aarch64
+      single_host_mode:
+        description: Gambit single-host mode (Darwin A/B; upstream keeps the 30000 control-point limit)
+        default: upstream
+        required: true
+        type: choice
+        options:
+          - upstream
+          - disabled
+          - unlimited
 
 permissions:
   contents: write
 
 concurrency:
-  group: gerbil-v19-${{ inputs.platform }}-${{ inputs.upstream_ref }}
+  group: gerbil-v19-${{ inputs.platform }}-${{ inputs.single_host_mode }}-${{ inputs.upstream_ref }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +47,7 @@ jobs:
         env:
           TARGET_PLATFORM: ${{ inputs.platform }}
           UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          SINGLE_HOST_MODE: ${{ inputs.single_host_mode }}
         shell: bash
         run: |
           set -euo pipefail
@@ -54,13 +64,22 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-native-full
+              case "$SINGLE_HOST_MODE" in
+                upstream) build_profile=gcc16-native-full ;;
+                disabled) build_profile=gcc16-native-full-single-host-disabled ;;
+                unlimited) build_profile=gcc16-native-full-single-host-unlimited ;;
+                *) echo "unsupported single-host mode: $SINGLE_HOST_MODE" >&2; exit 64 ;;
+              esac
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
               exit 64
               ;;
           esac
+          if [[ "$TARGET_PLATFORM" != darwin-aarch64 && "$SINGLE_HOST_MODE" != upstream ]]; then
+            echo "single-host A/B modes are currently scoped to darwin-aarch64" >&2
+            exit 64
+          fi
           release_tag="gerbil-v0.19-$upstream_sha-$TARGET_PLATFORM-$build_profile"
           archive="$release_tag.tar.gz"
           {
@@ -108,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           dependencies=(pkg-config openssl@3 sqlite zlib)
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
             dependencies+=(gcc)
           fi
           brew install "${dependencies[@]}"
@@ -138,9 +157,11 @@ jobs:
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
         working-directory: upstream-gerbil
         shell: bash
+        env:
+          SINGLE_HOST_MODE: ${{ inputs.single_host_mode }}
         run: |
           set -euo pipefail
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
             export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
@@ -164,6 +185,12 @@ jobs:
               --enable-dynamic-clib
               --enable-trust-c-tco
             )
+            case "$SINGLE_HOST_MODE" in
+              upstream) ;;
+              disabled) configure_args+=(--disable-single-host) ;;
+              unlimited) configure_args+=(--enable-single-host=0) ;;
+              *) echo "unsupported single-host mode: $SINGLE_HOST_MODE" >&2; exit 64 ;;
+            esac
           else
             cc="${CC:-$(command -v cc)}"
             cxx="${CXX:-$(command -v c++)}"
@@ -171,23 +198,50 @@ jobs:
             configure_args=("--prefix=$GERBIL_PREFIX")
           fi
           ./configure "${configure_args[@]}"
+          gambit_config_header=src/gambit/include/config.h
+          gambit_public_header=src/gambit/include/gambit.h
+          case "$SINGLE_HOST_MODE" in
+            upstream)
+              grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
+              grep -Eq '^#define ___SINGLE_HOST_LIMIT 30000$' "$gambit_public_header"
+              ;;
+            disabled)
+              ! grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
+              grep -Eq '^#define ___SINGLE_HOST_LIMIT 30000$' "$gambit_public_header"
+              ;;
+            unlimited)
+              grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
+              grep -Eq '^#define ___SINGLE_HOST_LIMIT 0$' "$gambit_public_header"
+              ;;
+          esac
+          printf 'mode=%s\n' "$SINGLE_HOST_MODE" \
+            > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
             target_cores="$GERBIL_BUILD_CORES"
             if [[ "$target" == gambit ]]; then
               target_cores=1
             fi
+            target_started=$SECONDS
             GERBIL_BUILD_FLAGS="-j$target_cores" ./build.sh "$target"
+            target_seconds=$((SECONDS - target_started))
+            printf '%s=%s\n' "$target" "$target_seconds" \
+              | tee -a "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
+            echo "::notice title=Gerbil build timing::$target completed in ${target_seconds}s with ${target_cores} core(s)"
           done
           ./install.sh
+          cp "$RUNNER_TEMP/gerbil-v19-build-timings.txt" \
+            "$GERBIL_PREFIX/gerbil-build-timings.txt"
           jq -n \
             --arg schema gerbil-bazel.build-receipt.v1 \
             --arg profile "$GERBIL_BUILD_PROFILE" \
             --arg compiler "$cc $("$cc" -dumpfullversion)" \
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
+            --arg singleHostMode "$SINGLE_HOST_MODE" \
             --argjson cores "$GERBIL_BUILD_CORES" \
             '{schema: $schema, profile: $profile, compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
+              singleHostMode: $singleHostMode,
               configureArguments: $ARGS.positional}' \
             --args -- "${configure_args[@]}" \
             > "$GERBIL_PREFIX/gerbil-build-receipt.json"
@@ -201,6 +255,8 @@ jobs:
 
       - name: Verify source toolchain
         shell: bash
+        env:
+          SINGLE_HOST_MODE: ${{ inputs.single_host_mode }}
         run: |
           set -euo pipefail
           cp tools/release/activate-gerbil.sh "$GERBIL_PREFIX/activate"
@@ -214,11 +270,27 @@ jobs:
              .profile == $profile and
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full ]]; then
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-native-full* ]]; then
             jq -e \
-              '(["--enable-march=native", "--enable-smp", "--enable-gcc-opts"] -
+              --arg singleHostMode "$SINGLE_HOST_MODE" \
+              '(.singleHostMode == $singleHostMode) and
+               (["--enable-march=native", "--enable-smp", "--enable-gcc-opts"] -
                 .configureArguments | length == 0)' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
+            case "$SINGLE_HOST_MODE" in
+              upstream)
+                ! jq -e '.configureArguments | any(. == "--disable-single-host" or . == "--enable-single-host=0")' \
+                  "$GERBIL_PREFIX/gerbil-build-receipt.json"
+                ;;
+              disabled)
+                jq -e '.configureArguments | any(. == "--disable-single-host")' \
+                  "$GERBIL_PREFIX/gerbil-build-receipt.json"
+                ;;
+              unlimited)
+                jq -e '.configureArguments | any(. == "--enable-single-host=0")' \
+                  "$GERBIL_PREFIX/gerbil-build-receipt.json"
+                ;;
+            esac
           fi
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
