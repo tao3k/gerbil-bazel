@@ -157,6 +157,7 @@ jobs:
               "--prefix=$GERBIL_PREFIX"
               --enable-march=native
               --enable-smp
+              --enable-multiple-threaded-vms
               --enable-c-opt=-O1
               --enable-c-opt-rts=yes
               --enable-gcc-opts
@@ -172,7 +173,11 @@ jobs:
           fi
           ./configure "${configure_args[@]}"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang r7rs-large srfi tools; do
-            GERBIL_BUILD_FLAGS="-j$GERBIL_BUILD_CORES" ./build.sh "$target"
+            target_cores="$GERBIL_BUILD_CORES"
+            if [[ "$target" == gambit ]]; then
+              target_cores=1
+            fi
+            GERBIL_BUILD_FLAGS="-j$target_cores" ./build.sh "$target"
           done
           ./install.sh
           jq -n \
