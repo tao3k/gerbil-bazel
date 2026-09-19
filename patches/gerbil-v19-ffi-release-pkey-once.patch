@@ -1,0 +1,24 @@
+diff --git a/src/std/crypto/libcrypto.ss b/src/std/crypto/libcrypto.ss
+index 232143f..936456f 100644
+--- a/src/std/crypto/libcrypto.ss
++++ b/src/std/crypto/libcrypto.ss
+@@ -178,6 +178,7 @@ static int ffi_BN_bn2bin (BIGNUM *bn, ___SCMOBJ data)
+ 
+ /* pkey */
+ #ifndef ___GERBIL_FFI_RELEASE_PKEY
++#define ___GERBIL_FFI_RELEASE_PKEY
+ static ___SCMOBJ ffi_release_EVP_PKEY (void *ptr)
+ {
+   EVP_PKEY_free ((EVP_PKEY*)ptr);
+diff --git a/src/std/net/ssl/libssl.ss b/src/std/net/ssl/libssl.ss
+index a984d2e..a570c21 100644
+--- a/src/std/net/ssl/libssl.ss
++++ b/src/std/net/ssl/libssl.ss
+@@ -485,6 +485,7 @@ static SSL_CTX *ffi_self_signed_tls_ctx(EVP_PKEY *pkey, char *hostname)
+ 
+ 
+ #ifndef ___GERBIL_FFI_RELEASE_PKEY
++#define ___GERBIL_FFI_RELEASE_PKEY
+ static ___SCMOBJ ffi_release_EVP_PKEY (void *ptr)
+ {
+   EVP_PKEY_free ((EVP_PKEY*)ptr);

@@ -133,10 +133,12 @@ jobs:
           git -C upstream-gerbil checkout --detach FETCH_HEAD
           git -C upstream-gerbil submodule update --init --depth=1
 
-      - name: Apply Darwin whole-program tool patch
+      - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
         shell: bash
-        run: git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
+        run: |
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
