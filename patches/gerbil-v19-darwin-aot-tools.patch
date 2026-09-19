@@ -2,15 +2,17 @@ diff --git a/src/build.sh b/src/build.sh
 index 20e4801..4bfd910 100755
 --- a/src/build.sh
 +++ b/src/build.sh
-@@ -295,9 +295,25 @@ build_srfi() {
+@@ -295,9 +295,27 @@ build_srfi() {
  
  build_tools () {
    feedback_low "Building gerbil tools"
    (cd tools && gxi ./build.ss) || die
 +  if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
-+    # Close selected latency-sensitive command-line tools into whole-program
-+    # executables after their ordinary modules have been compiled.
-+    (cd tools && gxi ./build-aot.ss) || die
++    # Close selected latency-sensitive tools one at a time: each final GCC
++    # translation unit is heavyweight, while std/make still owns worker count.
++    for aot_tool in gxpkg gxtags; do
++      (cd tools && GERBIL_AOT_TOOL="$aot_tool" gxi ./build-aot.ss) || die
++    done
 +  fi
    for tool in tools/gx*.ss; do
        toolname=$(basename $tool .ss)
@@ -34,7 +36,7 @@ new file mode 100755
 index 0000000..8a4b721
 --- /dev/null
 +++ b/src/tools/build-aot.ss
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,39 @@
 +#!/usr/bin/env gxi
 +;; -*- Gerbil -*-
 +;; Whole-program tool targets are a separate phase because their foreign
@@ -42,6 +44,12 @@ index 0000000..8a4b721
 +(import :std/build-script
 +        :std/build-config
 +        :std/make)
++
++(def aot-tool-name
++  (let (name (getenv "GERBIL_AOT_TOOL" #f))
++    (unless (or (equal? name "gxpkg") (equal? name "gxtags"))
++      (error "GERBIL_AOT_TOOL must be gxpkg or gxtags" name))
++    name))
 +
 +(def aot-cc-options
 +  (append-options
@@ -64,7 +72,7 @@ index 0000000..8a4b721
 +        "-ld-options" aot-ld-options))
 +
 +(defbuild-script
-+  (map aot-tool '("gxpkg" "gxtags"))
++  (list (aot-tool aot-tool-name))
 +  libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
 +  bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
 +  debug: #f)
