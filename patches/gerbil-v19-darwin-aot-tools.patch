@@ -19,28 +19,29 @@ index 20e4801..4bfd910 100755
  }
 diff --git a/src/tools/build-aot.ss b/src/tools/build-aot.ss
 new file mode 100755
-index 0000000..2103481
+index 0000000..49345b1
 --- /dev/null
 +++ b/src/tools/build-aot.ss
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,22 @@
 +#!/usr/bin/env gxi
 +;; -*- Gerbil -*-
-+;; Build latency-sensitive tools as whole-program executables.  Each tool is
-+;; closed separately so GCC never holds multiple giant C units concurrently.
-+(import :std/make)
++;; Whole-program tool targets are a separate phase because their foreign
++;; library closure must be declared on the executable build specification.
++(import :std/build-script
++        :std/make)
 +
-+(def aot-tools
-+  '("gxpkg" "gxtags"))
++(def gxpkg-ld-options
++  (append-options
++    (ldflags "libssl" "-lssl")
++    (ldflags "libcrypto" "-lcrypto")
++    (ldflags "zlib" "-lz")))
 +
-+(def (main . _)
-+  (let* ((srcdir (current-directory))
-+         (build-prefix (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
-+         (libdir (path-expand "lib" build-prefix))
-+         (bindir (path-expand "bin" build-prefix)))
-+    (for-each
-+      (lambda (tool)
-+        (displayln ">>> Building whole-program tool " tool)
-+        (make (list (list optimized-exe: tool))
-+          srcdir: srcdir libdir: libdir bindir: bindir
-+          force: #t parallelize: 1 debug: #f))
-+      aot-tools)))
++(defbuild-script
++  `((optimized-exe: "gxpkg" "-ld-options" ,gxpkg-ld-options)
++    (optimized-exe: "gxtags"))
++  libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
++  bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
++  ;; Avoid closing multiple giant C translation units concurrently; ordinary
++  ;; tool modules remain parallel in build.ss.
++  parallelize: 1
++  debug: #f)
