@@ -259,9 +259,9 @@ jobs:
               [[ -x "$GERBIL_HOME/bin/$tool" ]]
               [[ ! -L "$GERBIL_HOME/bin/$tool" ]]
             done
-            /usr/bin/time -p gxpkg version
-            /usr/bin/time -p gxtags --help >/dev/null
           fi
+          /usr/bin/time -p gxpkg version
+          /usr/bin/time -p gxtags --help >/dev/null
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
 
       - name: Package relocatable capability
@@ -315,10 +315,8 @@ jobs:
             '.profile == $profile' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
-          if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
-            /usr/bin/time -p gxpkg version
-            /usr/bin/time -p gxtags --help >/dev/null
-          fi
+          /usr/bin/time -p gxpkg version
+          /usr/bin/time -p gxtags --help >/dev/null
 
       - name: Publish immutable central release
         env:
