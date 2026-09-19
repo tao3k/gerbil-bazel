@@ -281,7 +281,7 @@ jobs:
           if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
             jq -e '.toolLinkage == "whole-program-aot"' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
-            for tool in gxpkg gxtags gxtest gxhttpd; do
+            for tool in gxpkg gxtags; do
               [[ -x "$GERBIL_HOME/bin/$tool" ]]
               [[ ! -L "$GERBIL_HOME/bin/$tool" ]]
             done

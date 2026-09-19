@@ -1,38 +1,70 @@
 diff --git a/src/build.sh b/src/build.sh
-index 20e4801..bb012d4 100755
+index 20e4801..4bfd910 100755
 --- a/src/build.sh
 +++ b/src/build.sh
-@@ -297,7 +297,9 @@ build_tools () {
+@@ -295,9 +295,13 @@ build_srfi() {
+ 
+ build_tools () {
    feedback_low "Building gerbil tools"
++  # Keep ordinary module compilation parallel, then close selected latency
++  # sensitive command-line tools into whole-program executables sequentially.
    (cd tools && gxi ./build.ss) || die
++  (cd tools && gxi ./build-aot.ss) || die
    for tool in tools/gx*.ss; do
        toolname=$(basename $tool .ss)
 -      (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
-+      if [ ! -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" ]; then
-+          (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
-+      fi
++      test -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" ||
++        (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
    done
  }
-diff --git a/src/tools/build.ss b/src/tools/build.ss
-index 0c8ff29..7d2cc4a 100755
---- a/src/tools/build.ss
-+++ b/src/tools/build.ss
-@@ -5,14 +5,14 @@
- ;; v0.19 staging
- (defbuild-script
-   '("env"
--    "gxtest"
--    "gxpkg"
--    "gxtags"
-+    (optimized-exe: "gxtest")
-+    (optimized-exe: "gxpkg")
-+    (optimized-exe: "gxtags")
+diff --git a/src/std/crypto/libcrypto.ss b/src/std/crypto/libcrypto.ss
+index 232143f..936456f 100644
+--- a/src/std/crypto/libcrypto.ss
++++ b/src/std/crypto/libcrypto.ss
+@@ -178,6 +178,7 @@ static int ffi_BN_bn2bin (BIGNUM *bn, ___SCMOBJ data)
  
-     "gxhttpd/opt"
-     "gxhttpd/config"
-     "gxhttpd/server"
--    "gxhttpd"
-+    (optimized-exe: "gxhttpd")
-     )
-   libdir: (path-expand "lib" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
-   bindir: (path-expand "bin" (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
+ /* pkey */
+ #ifndef ___GERBIL_FFI_RELEASE_PKEY
++#define ___GERBIL_FFI_RELEASE_PKEY
+ static ___SCMOBJ ffi_release_EVP_PKEY (void *ptr)
+ {
+   EVP_PKEY_free ((EVP_PKEY*)ptr);
+diff --git a/src/std/net/ssl/libssl.ss b/src/std/net/ssl/libssl.ss
+index a984d2e..a570c21 100644
+--- a/src/std/net/ssl/libssl.ss
++++ b/src/std/net/ssl/libssl.ss
+@@ -485,6 +485,7 @@ static SSL_CTX *ffi_self_signed_tls_ctx(EVP_PKEY *pkey, char *hostname)
+ 
+ 
+ #ifndef ___GERBIL_FFI_RELEASE_PKEY
++#define ___GERBIL_FFI_RELEASE_PKEY
+ static ___SCMOBJ ffi_release_EVP_PKEY (void *ptr)
+ {
+   EVP_PKEY_free ((EVP_PKEY*)ptr);
+diff --git a/src/tools/build-aot.ss b/src/tools/build-aot.ss
+new file mode 100755
+index 0000000..2103481
+--- /dev/null
++++ b/src/tools/build-aot.ss
+@@ -0,0 +1,21 @@
++#!/usr/bin/env gxi
++;; -*- Gerbil -*-
++;; Build latency-sensitive tools as whole-program executables.  Each tool is
++;; closed separately so GCC never holds multiple giant C units concurrently.
++(import :std/make)
++
++(def aot-tools
++  '("gxpkg" "gxtags"))
++
++(def (main . _)
++  (let* ((srcdir (current-directory))
++         (build-prefix (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
++         (libdir (path-expand "lib" build-prefix))
++         (bindir (path-expand "bin" build-prefix)))
++    (for-each
++      (lambda (tool)
++        (displayln ">>> Building whole-program tool " tool)
++        (make (list (list optimized-exe: tool))
++          srcdir: srcdir libdir: libdir bindir: bindir
++          force: #t parallelize: 1 debug: #f))
++      aot-tools)))
