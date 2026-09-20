@@ -195,5 +195,21 @@ are recorded as baseline state rather than reported green or attributed to the
 executor.
 
 The next patch is admitted only if it materially improves the MCP clean build,
-does not regress the POO median, and contains no consumer-specific scheduling
-branch.
+does not regress the POO median, and contains no consumer-specific branch.
+
+The first follow-up falsified `std/make` queueing as the remaining Darwin P0.
+In a full MCP rebuild, ordinary native work was essentially drained at 44.307
+seconds, while the single executable-closure job then ran for 112.070 seconds.
+With all static objects retained and only the generated binary removed, the
+same executable rebuilt in 27.270 seconds. The missing cold portion is the
+compiler driver's serial compilation of 187 static C objects, not final link
+or missing worker concurrency.
+
+Those 187 generated C files total 57,870,587 bytes. The largest,
+`gerbil-mcp__data__embedded.c`, is 11,425,297 bytes and takes 14.84 seconds in
+an isolated `gsc -obj`. Disabling GCC scheduler passes takes 14.47 seconds and
+overriding `-O1` with `-O0` takes 14.14 seconds, so neither hypothesis is
+admitted. Preprocessing alone expands that file to 101,577,428 bytes and takes
+18.04 seconds; compiling the preprocessed stream takes 4.90 seconds. The next
+owner is therefore Gambit C/static-closure volume and its duplicated dynamic
+and executable compilation on Darwin, not a speculative `std/make` scheduler.

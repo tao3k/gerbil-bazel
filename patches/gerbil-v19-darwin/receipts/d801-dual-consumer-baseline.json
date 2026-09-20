@@ -1,7 +1,7 @@
 {
   "schema": "gerbil.std-make.dual-consumer-baseline.v1",
   "recorded_at": "2026-09-20T18:00:00+08:00",
-  "purpose": "Freeze the generic std/make admission baseline before the next scheduler round.",
+  "purpose": "Freeze the Darwin build admission baseline before the next measured-owner round.",
   "toolchain": {
     "gerbil_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
     "gerbil_binary_sha256": "d5b99473eb16d04a202635615c85a2139e23aeca8678ae1f25e74d4a4c1d1d6e",
@@ -65,8 +65,40 @@
       }
     }
   },
+  "darwin_executable_closure_diagnosis": {
+    "full_rebuild": {
+      "native_jobs": 508,
+      "ordinary_tail_elapsed_ms": 44307,
+      "executable_queue_ms": 23444,
+      "executable_execution_ms": 112070,
+      "internal_ms": 155952,
+      "external_ms": 162190
+    },
+    "binary_only_rebuild": {
+      "external_ms": 27270,
+      "interpretation": "Existing static objects remove about 85 seconds from the executable closure."
+    },
+    "static_artifacts": {
+      "scheme_files": 203,
+      "c_files": 187,
+      "object_files": 187,
+      "c_bytes": 57870587
+    },
+    "largest_generated_unit": {
+      "path": "gerbil-mcp__data__embedded.c",
+      "c_bytes": 11425297,
+      "full_build_dynamic_execution_ms": 24955,
+      "isolated_gsc_object_ms": 14840,
+      "without_gcc_scheduler_passes_ms": 14470,
+      "gcc_o0_ms": 14140,
+      "preprocess_ms": 18040,
+      "preprocessed_bytes": 101577428,
+      "preprocessed_backend_ms": 4900
+    },
+    "conclusion": "The Darwin P0 is repeated compilation of a very large Gambit C/static closure, dominated by C preprocessing and code volume; std/make concurrency and final linking are not the measured owner."
+  },
   "admission": {
-    "scope": "generic compiler executor and std/make only; no consumer-name branches",
+    "scope": "Change only the measured Darwin runtime or compiler executable-closure owner; no consumer-name branches.",
     "requirements": [
       "materially reduce gerbil-mcp clean-build wall time",
       "do not regress the gerbil-poo stable median",

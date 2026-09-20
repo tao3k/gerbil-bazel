@@ -347,13 +347,33 @@ submitted only after the executable closure has been generated, behind the
 ordinary native-file stream, so FIFO admission delays the graph's final
 critical path even while aggregate worker utilization is high.
 
-This evidence changes the next hypothesis. It is no longer “make POO faster.”
-The compiler needs an explicit, generic job-class contract so executable/link
-closure work can be admitted as critical-path work without consumer-name
-knowledge, fixed worker counts, a second executor, or producer starvation.
-Before admission the implementation must prove bounded fairness, follow-up job
-draining, parameter capture, first-error propagation, and identical artifacts.
-The complete comparison then runs both consumers from a true clean boundary.
+This evidence changes the next hypothesis. It is no longer “make POO faster,”
+but it also does not admit a generic scheduler change. Linux does not reproduce
+the P0-scale delay, so queue topology alone cannot own the platform delta.
+
+A direct Darwin isolation run established the actual boundary. Ordinary MCP
+native jobs were essentially drained at 44.307 seconds. The executable job had
+waited 23.444 seconds, but then executed alone for 112.070 seconds. Retaining
+its static objects and deleting only the binary reduced the same closure build
+to 27.270 seconds. Thus queue priority can recover at most part of the wait; it
+cannot explain or remove the dominant cold execution cost.
+
+The executable path owns a second artifact family: 187 generated static C
+files and 187 static objects in addition to the normal module outputs. The C
+input totals 57,870,587 bytes. Its largest unit is an 11,425,297-byte embedded
+data module; the normal full build compiled it in 24.955 seconds under worker
+contention, and isolated `gsc -obj` compiled it in 14.84 seconds. Disabling the
+three GCC scheduler passes changed that to 14.47 seconds; overriding `-O1` with
+`-O0` changed it to 14.14 seconds. Both flag hypotheses are rejected.
+
+The same file expands through `gambit.h` to 101,577,428 preprocessed bytes.
+Preprocessing alone took 18.04 seconds, while compiling the materialized
+preprocessed stream took 4.90 seconds. The measured owner is therefore the
+volume and duplicate compilation of Gambit-generated C in the Darwin
+executable/static closure. The next experiment must reuse an equivalent
+already-built object or reduce that generated closure while proving relocation,
+module initialization, and artifact equivalence. It must not modify
+`std/make` scheduling first.
 
 ## Ordered experiment matrix
 
