@@ -1,0 +1,217 @@
+From: tao3k team and Contributors
+Subject: [PATCH 2/3] compiler: stream native jobs through a bounded executor
+
+Keep the official std/make graph and execute-pending-compile-jobs! boundary,
+but start a compiler-owned worker pool when the first native job arrives. This
+overlaps Gerbil generation with native compilation without adding a second
+scheduler. Preserve the submission parameterization that the former per-job
+threads captured implicitly, drain follow-up jobs, and propagate the first
+worker error after all queued work completes.
+---
+ src/gerbil/compiler/base.ss | 184 +++++++++++++++++++++++++++---------
+ 1 file changed, 142 insertions(+), 42 deletions(-)
+
+diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
+index 19c7a96..5995368 100644
+--- a/src/gerbil/compiler/base.ss
++++ b/src/gerbil/compiler/base.ss
+@@ -284,55 +284,155 @@ namespace: gxc
+           (else runtime-props))))
+ 
+ ;; parallel build support
+-(def __compile-jobs [])
+-(def __available-cores
+-  (string->number
+-   (getenv "GERBIL_BUILD_CORES" "1")))
+-(def __jobs-mx (make-mutex))
+-(def __jobs-cv (make-condition-variable))
++(def (available-build-cores)
++  (let* ((value (getenv "GERBIL_BUILD_CORES" #f))
++         (configured (and value (string->number value))))
++    (if (and (integer? configured) (>= configured 0))
++      configured
++      (##core-count))))
++(def __available-cores (available-build-cores))
+ 
+-(def (add-compile-job! thunk (name (current-compile-context)))
+-  (mutex-lock! __jobs-mx)
+-  (let (job (make-compile-job thunk name))
+-    (set! __compile-jobs (cons job __compile-jobs)))
+-  (mutex-unlock! __jobs-mx))
++(defstruct compile-executor (submit close))
++(def __compile-executor #f)
++(def __compile-executor-mx (make-mutex 'compile-executor-lifecycle))
+ 
+-(def (pending-compile-jobs)
+-  (mutex-lock! __jobs-mx)
+-  (let (result (reverse! __compile-jobs))
+-    (set! __compile-jobs [])
+-    (mutex-unlock! __jobs-mx)
+-    result))
++(def (open-compile-executor)
++  (def mx (make-mutex 'compile-worker-pool))
++  (def cv (make-condition-variable 'compile-worker-pool))
++  (def front [])
++  (def back [])
++  (def producer-closed? #f)
++  (def active 0)
++  (def first-error #f)
++  (def worker-count (max 1 __available-cores))
+ 
+-(def (execute-pending-compile-jobs!)
+-  (let loop ()
+-    (let (pending (pending-compile-jobs))
+-      (unless (null? pending)
+-        (for-each thread-start! pending)
+-        (for-each join! pending)))))
++  (def (submit! job)
++    (mutex-lock! mx)
++    ;; Closing means the producer returned; running jobs may still enqueue
++    ;; follow-up work, matching the official drain contract.
++    (set! back (cons job back))
++    (condition-variable-signal! cv)
++    (mutex-unlock! mx))
+ 
+-(def (make-compile-job thunk name)
+-  (make-thread
+-   (lambda ()
+-     (let loop ()
+-       (mutex-lock! __jobs-mx)
+-       (if (> __available-cores 0)
+-         (begin
+-           (set! __available-cores (1- __available-cores))
+-           (mutex-unlock! __jobs-mx)
++  (def (next-job)
++    (mutex-lock! mx)
++    (let wait ()
++      (cond
++       ((pair? front)
++        (let (job (car front))
++          (set! front (cdr front))
++          (set! active (fx1+ active))
++          (mutex-unlock! mx)
++          job))
++       ((pair? back)
++        (set! front (reverse! back))
++        (set! back [])
++        (wait))
++       ((and producer-closed? (fxzero? active))
++        (mutex-unlock! mx)
++        #f)
++       (else
++        (mutex-unlock! mx cv)
++        (mutex-lock! mx)
++        (wait)))))
++
++  (def (complete! error)
++    (mutex-lock! mx)
++    (when (and error (not first-error))
++      (set! first-error error))
++    (set! active (fx1- active))
++    (condition-variable-broadcast! cv)
++    (mutex-unlock! mx))
++
++  (def (worker)
++    (let loop ()
++      (alet (job (next-job))
++        (match job
++          ([thunk name]
+            (with-verbose-mutex
+             (displayln "... execute compile job " name))
+-           (unwind-protect
+-             (thunk)
+-             (mutex-lock! __jobs-mx)
+-             (set! __available-cores (fx1+ __available-cores))
+-             (condition-variable-signal! __jobs-cv)
+-             (mutex-unlock! __jobs-mx)))
+-         (begin
+-           (mutex-unlock! __jobs-mx __jobs-cv)
+-           (loop)))))
+-   name))
++           (with-catch
++            (lambda (error) (complete! error))
++            (lambda ()
++              (thunk)
++              (complete! #f)))
++           (loop))))))
++
++  (def workers
++    (let loop ((index 0) (result []))
++      (if (fx= index worker-count)
++        (reverse! result)
++        (loop (fx1+ index)
++              (cons (make-thread worker `(compile-worker ,index)) result)))))
++  (for-each thread-start! workers)
++
++  (def (close!)
++    (mutex-lock! mx)
++    (set! producer-closed? #t)
++    (condition-variable-broadcast! cv)
++    (mutex-unlock! mx)
++    (for-each join! workers)
++    (when first-error (raise first-error)))
++
++  (make-compile-executor submit! close!))
++
++(def (current-or-open-compile-executor)
++  (with-lock __compile-executor-mx
++    (lambda ()
++      (unless __compile-executor
++        (set! __compile-executor (open-compile-executor)))
++      __compile-executor)))
++
++(def (add-compile-job! thunk (name (current-compile-context)))
++  (let (executor (current-or-open-compile-executor))
++    ((compile-executor-submit executor) (make-compile-job thunk name))))
++
++(def (execute-pending-compile-jobs!)
++  (let (executor
++        (with-lock __compile-executor-mx
++          (lambda () __compile-executor)))
++    (when executor
++      (unwind-protect
++        ((compile-executor-close executor))
++        (with-lock __compile-executor-mx
++          (lambda ()
++            (when (eq? __compile-executor executor)
++              (set! __compile-executor #f))))))))
++
++(def (make-compile-job thunk name)
++  ;; The official executor created the job thread here, so Gambit captured the
++  ;; compiler parameterization at submission. A fixed worker pool must retain
++  ;; the same semantic explicitly.
++  (let ((output-dir (current-compile-output-dir))
++        (invoke-gsc (current-compile-invoke-gsc))
++        (gsc-options (current-compile-gsc-options))
++        (keep-scm (current-compile-keep-scm))
++        (verbose (current-compile-verbose))
++        (optimize (current-compile-optimize))
++        (debug (current-compile-debug))
++        (generate-ssxi (current-compile-generate-ssxi))
++        (static (current-compile-static))
++        (timestamp (current-compile-timestamp))
++        (decls (current-compile-decls))
++        (context (current-compile-context))
++        (parallel (current-compile-parallel)))
++    [(lambda ()
++       (parameterize ((current-compile-output-dir output-dir)
++                      (current-compile-invoke-gsc invoke-gsc)
++                      (current-compile-gsc-options gsc-options)
++                      (current-compile-keep-scm keep-scm)
++                      (current-compile-verbose verbose)
++                      (current-compile-optimize optimize)
++                      (current-compile-debug debug)
++                      (current-compile-generate-ssxi generate-ssxi)
++                      (current-compile-static static)
++                      (current-compile-timestamp timestamp)
++                      (current-compile-decls decls)
++                      (current-compile-context context)
++                      (current-compile-parallel parallel))
++         (thunk)))
++     name]))
+ 
+ (defrules go! ()
+   ((_ expr)
+    (spawn (lambda () expr))))
+-- 
+2.51.0

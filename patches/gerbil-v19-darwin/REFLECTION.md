@@ -5,6 +5,48 @@ next.  A patch is not promoted because it compiles, passes focused tests, or
 improves observability.  It must address the measured owner of the cost and
 survive the admission gates below.
 
+## Patch 0002-0007 convergence verdict
+
+The seven-patch investigation stack has converged to three active review
+slices. Patch 0001 remains the independently admitted Gambit Darwin spawn
+change. The former Gerbil Patches 0002-0007 are replaced by:
+
+1. one compiler-owned, host-derived streaming worker pool that starts lazily
+   on first native submission and closes at the official
+   `execute-pending-compile-jobs!` boundary; and
+2. one compile-time Darwin driver branch that exposes the executable static
+   object closure and its final barrier link to that pool.
+
+The converged candidate does not change `std/make`. It contains no report
+struct, `make/contexts`, duplicate build-entry cache, shared slot API, cleanup
+expansion, generated bootstrap edit, or non-Darwin driver branch. Submission
+parameter capture is part of the executor itself because it is required for
+correct deferred native work, not an independent performance patch.
+
+The decisive controlled comparison used both real consumers and changed only
+the executor lifecycle:
+
+| consumer | deferred batch | minimal streaming | delta |
+| --- | ---: | ---: | ---: |
+| Gerbil POO at `22c1948` | 16.45 s | 13.49 s | -17.99% |
+| Gerbil MCP at `9a5c35e` | 99.20 s | 79.58 s | -19.78% |
+
+This falsifies the intermediate hypothesis that the Darwin closure DAG makes
+producer/native overlap unnecessary. It also shows that the overlap belongs in
+the compiler executor: preserving official `std/make` still beats the earlier
+83.69-second full experimental stack by 4.91% on MCP. Against the frozen
+175.19-second MCP external baseline, the converged candidate is 54.58% faster.
+
+The atomic executor gate passes host-budget selection, bounded concurrency,
+follow-up draining, parameter preservation, and first-error propagation. Both
+real repositories build; the MCP arm64 Mach-O passes version and initialize.
+The four pre-existing MCP output-contract failures remain explicitly non-green.
+
+The libgerbil closure-manifest work remains a useful, separately owned
+experiment, but it is removed from the active patch stack until a same-revision
+clean end-to-end A/B proves it independently. Historical patches and receipts
+remain available in Git history; they are evidence, not deployable authority.
+
 ## Round 3 verdict: dependency-graph patch not admitted
 
 The rejected patch file has been removed from the applicable stack. This
@@ -374,6 +416,46 @@ executable/static closure. The next experiment must reuse an equivalent
 already-built object or reduce that generated closure while proving relocation,
 module initialization, and artifact equivalence. It must not modify
 `std/make` scheduling first.
+
+### Darwin driver closure result
+
+The first implementation overreached by adding a public executor job-group,
+in-flight close semantics, and briefly a producer/native fairness policy. The
+fairness policy had no root-cause evidence; the generic executor changes were
+also unnecessary. Both were deleted.
+
+The admitted candidate is a compile-time Darwin branch in
+`gerbil/compiler/driver` only. After `gsc -link` generates the static C family,
+the driver submits every object job followed by one dependency-barrier link job
+to the existing executor before the producer returns. This preserves the
+official executor close lifecycle and leaves the non-Darwin path unchanged.
+
+On the 187-entry MCP clean build, the final driver-only candidate completed
+740/740 jobs with twelve host-derived workers, `peakActive=12`, zero errors,
+81.758 seconds internal wall, and 83.69 seconds external wall. That is 47.57%
+below the 155.952-second attribution run and 51.55% below the frozen
+168.733-second baseline. The result admits the measured-owner hypothesis while
+rejecting broader `std/make` or executor redesign.
+
+## Patch 0002-0007 convergence result
+
+The required convergence is now implemented and measured. The previous six
+Gerbil patches are not applicable files in the active stack. Their surviving
+runtime behavior is expressed by the new Patch 0002 compiler executor and new
+Patch 0003 Darwin driver DAG; all other experimental runtime surface was
+removed.
+
+The deferred-batch intermediate proved why streaming cannot be deleted:
+Gerbil POO took 16.45 seconds and MCP took 99.20 seconds. Holding source,
+environment, worker budget, and Darwin driver constant, the minimal lazy
+streaming executor reduced them to 13.49 and 79.58 seconds. Patch replay against
+D801, atomic executor contracts, both real cold builds, and MCP binary startup
+pass. This is the admission result summarized at the top of this document and
+in `receipts/d801-converged-dual-consumer.json`.
+
+Artifact cleanup and the libgerbil closure manifest remain outside the active
+performance stack. They require their own correctness case and same-revision
+end-to-end A/B before reconsideration.
 
 ## Ordered experiment matrix
 
