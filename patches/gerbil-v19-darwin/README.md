@@ -1,10 +1,10 @@
 # Gerbil v0.19 Darwin build patch stack
 
 This directory carries the local validation stack for the Gerbil v0.19
-Darwin build work.  The patches remain separate so that each ownership layer
-can be applied, tested, and reverted independently.  They are published
-together in one gerbil-bazel pull request only after the complete local stack
-is stable.
+Darwin build work.  The patches remain separate only to make ownership and
+review comments precise.  They form one ordered stack: every patch is applied,
+tested, and published together in one gerbil-bazel pull request after the
+complete local stack is stable.
 
 ## Patch order
 
@@ -23,7 +23,15 @@ is stable.
    - owner: Gerbil compiler native-job submission boundary
    - scope: preserve per-module compiler parameters when bounded workers execute deferred jobs
    - invariant: FFI `-cc-options` and `-ld-options` remain attached to the module that declared them
-5. Evidence owned directly by gerbil-bazel
+5. `0005-gerbil-libgerbil-closure-manifest.patch`
+   - owner: Gerbil stdlib dependency contexts and libgerbil static closure
+   - scope: retain each imported build context, project the exact ordered closure once during stdlib, and consume its validated manifest in libgerbil
+   - invariant: the 338-module manifest is byte-identical to the V19 ordering; missing, malformed, or duplicate entries fail before native compilation
+6. `0006-gerbil-streaming-executor-clean-closure.patch`
+   - owner: Gerbil compiler executor lifecycle and `std/make` artifact lifecycle
+   - scope: replace the remaining global pending-job drain with one streaming executor session across `std/make`, stage1, and Bach; derive the shared worker budget from the environment or host; remove every current-generation GXC/Gambit artifact during `make clean`
+   - invariant: no Legacy pending-job API remains, producer and native work share one bounded budget, nested module artifacts are removed without basename-glob deletion, and the bootstrap compiler interface matches the source API
+7. Evidence owned directly by gerbil-bazel
    - benchmark runners, schemas, tests, and machine-readable receipts
 
 Patches 0002 through 0004 must not compensate for a failed or unvalidated Patch 0001.
@@ -105,12 +113,49 @@ scheduler comparison is admitted.
   `___dynamic_load -> dyld4::APIs::dlopen -> Loader::mapSegments/fcntl` while
   loading hundreds of `.o1` images.  This identifies Darwin loader granularity,
   rather than the bounded native-job worker count, as the owner of that phase.
-- The real Gerbil POO V19 consumer completed a sanitized 26-module cold build:
-  dependency graph construction took 1-2 ms and the Gerbil compilation phase
-  took 4.872 seconds before bounded native jobs completed.  Its eleven test
-  files then passed independently in 0.87-3.76 seconds each.  The unsanitized
-  control reproduced the Darwin `_pow` link failure, confirming that SDK,
-  include, and library isolation remains part of the admission environment.
+- Patch 0005 removes that second Darwin load pass.  `std/make` retains the 294
+  contexts it already imports, and the ordered libgerbil closure is projected
+  from them with zero fallback imports.  Per-root HashTable visitation reduced
+  closure projection from 26,389 ms to 14 ms while preserving the exact
+  7,222-byte manifest (`sha256 aa60c38c15c49eadf62d7f37c35f5f29b1c8cefae875a51b5cee082c4dd607f9`).
+  The focused stdlib target fell from 58.76 s to 29.73 s, and the complete
+  libgerbil target completed in 62.62 s versus the 228 s D801 cold-build phase
+  receipt.  These are focused local receipts, not a replacement for the
+  required clean end-to-end cold A/B.
+- Patch 0005 atomic gates passed with the build-tree AOT `gerbil`: manifest
+  order/round-trip/rejection contracts, both one-worker and parallel
+  `std/make` cases, and compiler executor concurrency, parameterization, and
+  error propagation (1.05 s total).  Three controlled warm `std/make` test
+  samples were 7.77/7.98/8.13 s (7.98 s median); the 9.13 s first run after
+  recompiling `std/make` is retained as a cold post-rebuild sample, not mixed
+  into the warm median.
+- The real Gerbil POO V19 consumer completed repeated sanitized 26-module
+  artifact-clean builds.  With `GERBIL_BUILD_CORES` absent, upstream V19
+  selected one build worker and needed 59.21 s.  Dynamically selecting the 12
+  physical cores reduced the deployed `f0badc7_1` build to 18.50 s.  The D801
+  build-tree with the complete patch stack then produced 13.66/13.65 s samples;
+  the second receipt decomposed into 4.526 s of Gerbil compilation and 8.410 s
+  for 64 native jobs, with `peakActive=12` and zero errors.  The deployed and
+  D801 samples are an external-consumer integration comparison, not a
+  single-revision causal A/B.  All eleven POO test files passed through the
+  built artifacts in three atomic groups taking 2.42/2.41/2.56 s.  A partially
+  sanitized control failed at `fq` with Darwin `_pow` unresolved after 45.60 s;
+  clearing SDK/header/library variables and selecting `/usr/bin` for GCC
+  `collect2` closed that environment boundary.
+- Patch 0006 atomic gates pass on D801 for the compiler executor and both
+  one-worker and parallel `std/make` graphs.  The cleanup contract removed all
+  401 accumulated POO `.ssi`, `.ssxi.ss`, `.scm`, and versioned `.oN`
+  artifacts, including nested modules, while retaining an unrelated
+  same-prefix sentinel.  A subsequent true clean build emitted 180
+  current-generation artifacts and zero `.o2+` files.
+- The D801 source-built runtime completed the real 26-module POO clean build
+  with 64 native jobs, 12 host-derived workers, zero errors, and 13.262 s
+  internal wall time; the full POO test harness then passed.  The installed AOT
+  runtime is `f0badc7`, two commits behind the patched `d801e7a` source.  Those
+  commits change HTTP/interface source and regenerated bootstrap output, but no
+  Patch 0001-0006 owned source file; the AOT runtime is therefore retained as
+  the integration launcher, while patch attribution continues to use the
+  complete ordered D801 stack.
 
 ## Verbose evidence contract
 
@@ -131,3 +176,24 @@ scheduler comparison is admitted.
 
 See `REFLECTION.md` for the evidence decomposition, rejected repair tactics,
 and the next falsifiable architecture experiments.
+
+## D801 dual-consumer baseline
+
+`receipts/d801-dual-consumer-baseline.json` freezes the admission boundary for
+the next generic `std/make` round. Gerbil POO is the small-graph regression
+gate: its stable three-sample clean-build median is 12.550 seconds internally
+and its full unit harness passes. The first-access 19.459-second sample is kept
+separately and is not part of that median.
+
+Gerbil MCP is the primary large-graph scenario. Its clean build contains 187
+entries and 551 native jobs, keeps all 12 host-derived workers active, and
+takes 168.733 seconds internally (175.190 seconds externally). Compilation
+completes without errors, but the maximum job execution is 121.032 seconds and
+the maximum queue delay is 23.700 seconds. Its existing test suite has four
+known output-contract failures in three files and no crashes; those failures
+are recorded as baseline state rather than reported green or attributed to the
+executor.
+
+The next patch is admitted only if it materially improves the MCP clean build,
+does not regress the POO median, and contains no consumer-specific scheduling
+branch.

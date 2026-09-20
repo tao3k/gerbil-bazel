@@ -240,6 +240,121 @@ experiment must measure `.o1` image count, dyld time, peak RSS, libgerbil wall
 time, and first-access test latency for an unchanged control and one bounded
 batching/static-loading variant.
 
+## D801 libgerbil closure projection
+
+The Darwin sample attributed the silent libgerbil prefix to loading hundreds
+of independent `.o1` images.  Source inspection then found that stdlib had
+already imported the same module graph, but `build-libgerbil.ss` discarded
+that graph and reconstructed its ordered static closure in a new process.
+
+The first prototype moved the original closure algorithm into stdlib and wrote
+an explicit versioned manifest.  It reduced the complete libgerbil target from
+the 228-second D801 phase receipt to roughly one minute, but the stdlib target
+grew to 58.76 seconds: its manifest projection still spent 27.76 seconds
+walking the graph.  Instrumentation reported `contextHits=0` and
+`fallbackImports=294`; an atomic one-module probe established that std/make
+keys contexts as `std/assert`, while library imports use `:std/assert`.
+
+Normalizing that boundary produced `contextHits=294` and
+`fallbackImports=0`, yet projection still took 26.389 seconds.  This falsified
+dynamic loading as the remaining owner.  The inherited DFS did not mark a
+shared dependency until an entire root traversal completed, so diamond-shaped
+imports repeatedly traversed the same subgraphs.  A per-root `seen` HashTable
+reduced projection to 14 ms without changing global first-encounter ordering.
+
+The optimized manifest is byte-identical to the pre-optimization control:
+7,222 bytes and SHA-256
+`aa60c38c15c49eadf62d7f37c35f5f29b1c8cefae875a51b5cee082c4dd607f9`.
+The focused stdlib target fell from 58.76 seconds to 29.73 seconds, and the
+complete libgerbil target completed in 62.62 seconds (72.5% below the earlier
+228-second D801 phase receipt).  Manifest unit contracts, std/make one-worker
+and parallel cases, and compiler executor concurrency/error contracts passed.
+Three controlled warm std/make test samples were 7.77/7.98/8.13 seconds
+(7.98-second median).  The 9.13-second first run after rebuilding std/make is
+reported separately and is not used as the stable test-runtime result.
+These focused runs admit Patch 0005 for integration testing; they do not
+replace a clean end-to-end cold A/B.
+
+Complexity removed: libgerbil no longer owns a second source of closure truth
+or a second Darwin module-load pass.  Complexity added: a versioned manifest,
+retained build contexts, schema/order validation, and per-root DFS visitation.
+The next dominant phase is std/make's approximately 25-30 second import and
+dependency scan, which remains visible and must be optimized independently.
+
+The real Gerbil POO consumer exposed a separate configuration failure before
+that algorithm can be judged.  `std/make` maps an absent
+`GERBIL_BUILD_CORES` to zero and then clamps the worker pool to one.  Its
+artifact-clean build therefore took 59.21 seconds and emitted module compile
+events serially.  Selecting the machine's 12 physical cores dynamically made
+the compile events burst immediately and reduced the deployed V19 build to
+18.50 seconds.  This is a 68.8% configuration-path improvement, not a new
+scheduler algorithm.  The default worker budget and the compiler executor's
+independent default of one must be unified behind the same runtime-derived
+source before package-local configuration can be removed.
+
+With the worker budget held at 12, the D801 build-tree patch stack produced
+two artifact-clean Gerbil POO builds in 13.66 and 13.65 seconds.  The stable
+receipt reported 4.526 seconds for Gerbil compilation and 8.410 seconds for 64
+native jobs (`peakActive=12`, zero errors).  That is materially below the
+18.50-second deployed `f0badc7_1` consumer result, but the revisions differ;
+it is integration evidence, not yet the required same-revision causal A/B.
+The remaining consumer critical path is now the native phase, especially the
+tail after the queue drains, rather than dependency graph construction.
+
+## D801 streaming executor and clean-artifact closure
+
+The next audit found that the applied patch stack still retained a global
+pending-job list and drained it after the `std/make` graph.  The final D801
+architecture replaces that duplicate authority with one compiler-owned
+streaming executor session.  `std/make`, stage1, and Bach establish the same
+session lifecycle; build producers and native jobs acquire slots from one
+host-derived budget.  The Legacy pending-job API is absent from source and the
+generated bootstrap compiler interface is synchronized with the source API.
+
+The first apparent cold POO measurements were not valid cold samples:
+`make clean` removed `.ssi` and static Scheme output but retained generated
+`.scm`, `.ssxi.ss`, nested-module output, and successive Gambit `.oN` images.
+There were 401 such accumulated files.  Patch 0006 derives the exact module
+basename namespace and removes current-generation top-level and nested
+artifacts without using a broad glob.  Its negative contract retains an
+unrelated same-prefix `.scm` sentinel.  After the repaired clean, the POO build
+produced 180 artifacts and no `.o2+` files.
+
+The true clean trace reports 64 native jobs, `peakActive=12`, and no errors.
+Per-job evidence rejects FIFO/LPT and fixed-worker tuning as the next primary
+change: the longest units (`object~1`, `table-testing~0`, `trie~0`, and
+`type~0`) have small queue waits relative to their 3-5 second GCC execution.
+Per-entry evidence also shows Scheme-to-C generation in tens to hundreds of
+milliseconds after the initial support layer.  `trie~0` arrives late because
+of the real POO dependency chain, not a hidden `std/make` batch barrier.
+
+The post-stage1 D801 source runtime completed the clean POO build in 13.262 s
+internal wall time and passed the full POO harness.  The installed AOT runtime
+identifies as `f0badc7`, two commits behind `d801e7a`; an owner-overlap audit
+shows that those commits do not change any Patch 0001-0006 owned source file.
+It can therefore launch the complete patched module stack for integration
+validation.  The patch files remain one mandatory ordered stack even though
+they are split for review commentary.
+
+## Dual-consumer critical-path round
+
+The complete D801 AOT runtime establishes a new two-consumer baseline. Gerbil
+POO remains intentionally small and is used only to catch scheduler overhead
+or semantic regressions. Gerbil MCP is the representative large graph: 551
+native jobs complete with twelve workers and no compiler errors, but its
+168.733-second executor wall contains one 121.032-second job. That long job is
+submitted only after the executable closure has been generated, behind the
+ordinary native-file stream, so FIFO admission delays the graph's final
+critical path even while aggregate worker utilization is high.
+
+This evidence changes the next hypothesis. It is no longer “make POO faster.”
+The compiler needs an explicit, generic job-class contract so executable/link
+closure work can be admitted as critical-path work without consumer-name
+knowledge, fixed worker counts, a second executor, or producer starvation.
+Before admission the implementation must prove bounded fairness, follow-up job
+draining, parameter capture, first-error propagation, and identical artifacts.
+The complete comparison then runs both consumers from a true clean boundary.
+
 ## Ordered experiment matrix
 
 Each experiment changes one owner at a time:
@@ -273,7 +388,7 @@ are true:
   upstream-derived worker budget;
 - the real Gerbil POO V19 consumer passes `clean -> atomic tests -> cold build`;
 - no ten-second silent interval occurs in a local gate;
-- the patch applies independently to the pinned V19 source revision.
+- the complete ordered patch stack applies to the pinned V19 source revision.
 
 ## Required reflection after every round
 

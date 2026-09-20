@@ -1,0 +1,78 @@
+{
+  "schema": "gerbil.std-make.dual-consumer-baseline.v1",
+  "recorded_at": "2026-09-20T18:00:00+08:00",
+  "purpose": "Freeze the generic std/make admission baseline before the next scheduler round.",
+  "toolchain": {
+    "gerbil_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+    "gerbil_binary_sha256": "d5b99473eb16d04a202635615c85a2139e23aeca8678ae1f25e74d4a4c1d1d6e",
+    "aot": "complete-general",
+    "compiler": "GCC 16",
+    "pipe": true
+  },
+  "environment": {
+    "platform": "darwin-arm64",
+    "worker_source": "GERBIL_BUILD_CORES from host physical-core discovery",
+    "workers": 12,
+    "unset": [
+      "SDKROOT",
+      "CPATH",
+      "LIBRARY_PATH",
+      "C_INCLUDE_PATH",
+      "CPLUS_INCLUDE_PATH",
+      "MACOSX_DEPLOYMENT_TARGET"
+    ],
+    "compiler_path": "/usr/bin"
+  },
+  "consumers": {
+    "gerbil-poo": {
+      "role": "small-graph regression gate",
+      "entries": 26,
+      "native_jobs": 64,
+      "samples": [
+        {"internal_ms": 12236, "external_ms": 12810, "resolve_ms": 1749},
+        {"internal_ms": 12624, "external_ms": 13369, "resolve_ms": 1856},
+        {"internal_ms": 12550, "external_ms": 13127, "resolve_ms": 1884}
+      ],
+      "median": {"internal_ms": 12550, "external_ms": 13127, "resolve_ms": 1856},
+      "warm_repository_control": {"internal_ms": 11100, "external_ms": 11655, "resolve_ms": 1807},
+      "first_access_excluded": {"internal_ms": 19459, "resolve_ms": 10344},
+      "tests": {"status": "pass", "scope": "full unit harness"}
+    },
+    "gerbil-mcp": {
+      "role": "large-graph primary optimization scenario",
+      "revision": "9a5c35e",
+      "entries": 187,
+      "native_jobs": 551,
+      "resolve_ms": 5455,
+      "internal_ms": 168733,
+      "external_ms": 175190,
+      "user_ms": 327840,
+      "system_ms": 91790,
+      "workers": 12,
+      "peak_active": 12,
+      "completed": 551,
+      "compile_errors": 0,
+      "queue_total_ms": 6946341,
+      "queue_max_ms": 23700,
+      "execution_total_ms": 588990,
+      "execution_max_ms": 121032,
+      "tests": {
+        "status": "known-baseline-failure",
+        "files": 27,
+        "failed_checks": 4,
+        "failed_files": ["chunk-05-test", "chunk-12-test", "chunk-21-test"],
+        "crashed": []
+      }
+    }
+  },
+  "admission": {
+    "scope": "generic compiler executor and std/make only; no consumer-name branches",
+    "requirements": [
+      "materially reduce gerbil-mcp clean-build wall time",
+      "do not regress the gerbil-poo stable median",
+      "preserve host-derived worker count",
+      "preserve compiler error propagation and artifact semantics",
+      "compare with the same source revision, AOT binary, environment, and clean boundary"
+    ]
+  }
+}

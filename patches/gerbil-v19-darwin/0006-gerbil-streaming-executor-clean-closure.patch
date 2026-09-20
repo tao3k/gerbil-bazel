@@ -1,0 +1,1477 @@
+diff --git a/src/bootstrap/gerbil/compiler/base.ssxi.ss b/src/bootstrap/gerbil/compiler/base.ssxi.ss
+index b68705c..72ebe80 100644
+--- a/src/bootstrap/gerbil/compiler/base.ssxi.ss
++++ b/src/bootstrap/gerbil/compiler/base.ssxi.ss
+@@ -504,24 +504,323 @@ package: gerbil/compiler
+              origin:
+              gerbil/compiler/base)))
+   (declare-type
+-   gxc#__compile-jobs
+-   (optimizer-resolve-class '(typedecl gxc#__compile-jobs) 'list::t))
++   gxc#available-build-cores
++   (@lambda 0
++            #f
++            signature:
++            (return:
++             t::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
+   (declare-type
+    gxc#__available-cores
+-   (optimizer-resolve-class '(typedecl gxc#__available-cores) 'number::t))
++   (optimizer-resolve-class '(typedecl gxc#__available-cores) 't::t))
++  (declare-type
++   gxc#current-compile-executor-session
++   (optimizer-resolve-class
++    '(typedecl gxc#current-compile-executor-session)
++    'procedure::t))
++  (declare-class
++   gxc#compile-executor-session::t
++   (@class gxc#compile-executor-session::t
++           ()
++           (object::t t::t)
++           (submit with-slot close)
++           (submit with-slot close)
++           #f
++           #t
++           #f
++           #f
++           #f
++           #f))
++  (declare-type
++   gxc#compile-executor-session::t
++   (optimizer-resolve-class
++    '(typedecl gxc#compile-executor-session::t)
++    'class::t))
++  (declare-type
++   gxc#compile-executor-session?
++   (@predicate gxc#compile-executor-session::t))
++  (declare-type
++   gxc#make-compile-executor-session
++   (@constructor gxc#compile-executor-session::t))
++  (declare-type
++   gxc#compile-executor-session-submit
++   (@accessor gxc#compile-executor-session::t submit #t))
++  (declare-type
++   gxc#compile-executor-session-with-slot
++   (@accessor gxc#compile-executor-session::t with-slot #t))
++  (declare-type
++   gxc#compile-executor-session-close
++   (@accessor gxc#compile-executor-session::t close #t))
++  (declare-type
++   gxc#compile-executor-session-submit-set!
++   (@mutator gxc#compile-executor-session::t submit #t))
++  (declare-type
++   gxc#compile-executor-session-with-slot-set!
++   (@mutator gxc#compile-executor-session::t with-slot #t))
++  (declare-type
++   gxc#compile-executor-session-close-set!
++   (@mutator gxc#compile-executor-session::t close #t))
++  (declare-type
++   gxc#&compile-executor-session-submit
++   (@accessor gxc#compile-executor-session::t submit #f))
++  (declare-type
++   gxc#&compile-executor-session-with-slot
++   (@accessor gxc#compile-executor-session::t with-slot #f))
++  (declare-type
++   gxc#&compile-executor-session-close
++   (@accessor gxc#compile-executor-session::t close #f))
++  (declare-type
++   gxc#&compile-executor-session-submit-set!
++   (@mutator gxc#compile-executor-session::t submit #f))
++  (declare-type
++   gxc#&compile-executor-session-with-slot-set!
++   (@mutator gxc#compile-executor-session::t with-slot #f))
++  (declare-type
++   gxc#&compile-executor-session-close-set!
++   (@mutator gxc#compile-executor-session::t close #f))
++  (declare-class
++   gxc#compile-job-report::t
++   (@class gxc#compile-job-report::t
++           ()
++           (object::t t::t)
++           (jobs workers
++                 completed
++                 errors
++                 peak-active
++                 queue-total-ms
++                 queue-max-ms
++                 execution-total-ms
++                 execution-max-ms
++                 worker-construction-total-ms
++                 worker-construction-max-ms
++                 wall-ms
++                 batches)
++           (jobs workers
++                 completed
++                 errors
++                 peak-active
++                 queue-total-ms
++                 queue-max-ms
++                 execution-total-ms
++                 execution-max-ms
++                 worker-construction-total-ms
++                 worker-construction-max-ms
++                 wall-ms
++                 batches)
++           #f
++           #t
++           #f
++           #f
++           #f
++           #f))
++  (declare-type
++   gxc#compile-job-report::t
++   (optimizer-resolve-class '(typedecl gxc#compile-job-report::t) 'class::t))
++  (declare-type gxc#compile-job-report? (@predicate gxc#compile-job-report::t))
++  (declare-type
++   gxc#make-compile-job-report
++   (@constructor gxc#compile-job-report::t))
++  (declare-type
++   gxc#compile-job-report-jobs
++   (@accessor gxc#compile-job-report::t jobs #t))
++  (declare-type
++   gxc#compile-job-report-workers
++   (@accessor gxc#compile-job-report::t workers #t))
++  (declare-type
++   gxc#compile-job-report-completed
++   (@accessor gxc#compile-job-report::t completed #t))
++  (declare-type
++   gxc#compile-job-report-errors
++   (@accessor gxc#compile-job-report::t errors #t))
++  (declare-type
++   gxc#compile-job-report-peak-active
++   (@accessor gxc#compile-job-report::t peak-active #t))
++  (declare-type
++   gxc#compile-job-report-queue-total-ms
++   (@accessor gxc#compile-job-report::t queue-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-queue-max-ms
++   (@accessor gxc#compile-job-report::t queue-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-execution-total-ms
++   (@accessor gxc#compile-job-report::t execution-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-execution-max-ms
++   (@accessor gxc#compile-job-report::t execution-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-worker-construction-total-ms
++   (@accessor gxc#compile-job-report::t worker-construction-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-worker-construction-max-ms
++   (@accessor gxc#compile-job-report::t worker-construction-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-wall-ms
++   (@accessor gxc#compile-job-report::t wall-ms #t))
++  (declare-type
++   gxc#compile-job-report-batches
++   (@accessor gxc#compile-job-report::t batches #t))
++  (declare-type
++   gxc#compile-job-report-jobs-set!
++   (@mutator gxc#compile-job-report::t jobs #t))
++  (declare-type
++   gxc#compile-job-report-workers-set!
++   (@mutator gxc#compile-job-report::t workers #t))
++  (declare-type
++   gxc#compile-job-report-completed-set!
++   (@mutator gxc#compile-job-report::t completed #t))
++  (declare-type
++   gxc#compile-job-report-errors-set!
++   (@mutator gxc#compile-job-report::t errors #t))
+   (declare-type
+-   gxc#__jobs-mx
+-   (optimizer-resolve-class '(typedecl gxc#__jobs-mx) 'mutex::t))
++   gxc#compile-job-report-peak-active-set!
++   (@mutator gxc#compile-job-report::t peak-active #t))
+   (declare-type
+-   gxc#__jobs-cv
+-   (optimizer-resolve-class '(typedecl gxc#__jobs-cv) 'condvar::t))
++   gxc#compile-job-report-queue-total-ms-set!
++   (@mutator gxc#compile-job-report::t queue-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-queue-max-ms-set!
++   (@mutator gxc#compile-job-report::t queue-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-execution-total-ms-set!
++   (@mutator gxc#compile-job-report::t execution-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-execution-max-ms-set!
++   (@mutator gxc#compile-job-report::t execution-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-worker-construction-total-ms-set!
++   (@mutator gxc#compile-job-report::t worker-construction-total-ms #t))
++  (declare-type
++   gxc#compile-job-report-worker-construction-max-ms-set!
++   (@mutator gxc#compile-job-report::t worker-construction-max-ms #t))
++  (declare-type
++   gxc#compile-job-report-wall-ms-set!
++   (@mutator gxc#compile-job-report::t wall-ms #t))
++  (declare-type
++   gxc#compile-job-report-batches-set!
++   (@mutator gxc#compile-job-report::t batches #t))
++  (declare-type
++   gxc#&compile-job-report-jobs
++   (@accessor gxc#compile-job-report::t jobs #f))
++  (declare-type
++   gxc#&compile-job-report-workers
++   (@accessor gxc#compile-job-report::t workers #f))
++  (declare-type
++   gxc#&compile-job-report-completed
++   (@accessor gxc#compile-job-report::t completed #f))
++  (declare-type
++   gxc#&compile-job-report-errors
++   (@accessor gxc#compile-job-report::t errors #f))
++  (declare-type
++   gxc#&compile-job-report-peak-active
++   (@accessor gxc#compile-job-report::t peak-active #f))
++  (declare-type
++   gxc#&compile-job-report-queue-total-ms
++   (@accessor gxc#compile-job-report::t queue-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-queue-max-ms
++   (@accessor gxc#compile-job-report::t queue-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-execution-total-ms
++   (@accessor gxc#compile-job-report::t execution-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-execution-max-ms
++   (@accessor gxc#compile-job-report::t execution-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-worker-construction-total-ms
++   (@accessor gxc#compile-job-report::t worker-construction-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-worker-construction-max-ms
++   (@accessor gxc#compile-job-report::t worker-construction-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-wall-ms
++   (@accessor gxc#compile-job-report::t wall-ms #f))
++  (declare-type
++   gxc#&compile-job-report-batches
++   (@accessor gxc#compile-job-report::t batches #f))
++  (declare-type
++   gxc#&compile-job-report-jobs-set!
++   (@mutator gxc#compile-job-report::t jobs #f))
++  (declare-type
++   gxc#&compile-job-report-workers-set!
++   (@mutator gxc#compile-job-report::t workers #f))
++  (declare-type
++   gxc#&compile-job-report-completed-set!
++   (@mutator gxc#compile-job-report::t completed #f))
++  (declare-type
++   gxc#&compile-job-report-errors-set!
++   (@mutator gxc#compile-job-report::t errors #f))
++  (declare-type
++   gxc#&compile-job-report-peak-active-set!
++   (@mutator gxc#compile-job-report::t peak-active #f))
++  (declare-type
++   gxc#&compile-job-report-queue-total-ms-set!
++   (@mutator gxc#compile-job-report::t queue-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-queue-max-ms-set!
++   (@mutator gxc#compile-job-report::t queue-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-execution-total-ms-set!
++   (@mutator gxc#compile-job-report::t execution-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-execution-max-ms-set!
++   (@mutator gxc#compile-job-report::t execution-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-worker-construction-total-ms-set!
++   (@mutator gxc#compile-job-report::t worker-construction-total-ms #f))
++  (declare-type
++   gxc#&compile-job-report-worker-construction-max-ms-set!
++   (@mutator gxc#compile-job-report::t worker-construction-max-ms #f))
++  (declare-type
++   gxc#&compile-job-report-wall-ms-set!
++   (@mutator gxc#compile-job-report::t wall-ms #f))
++  (declare-type
++   gxc#&compile-job-report-batches-set!
++   (@mutator gxc#compile-job-report::t batches #f))
++  (declare-type
++   gxc#compile-verbosity>=?
++   (@lambda 2
++            #f
++            signature:
++            (return:
++             boolean::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#compile-elapsed-milliseconds
++   (@lambda 1
++            #f
++            signature:
++            (return:
++             number::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
+   (declare-type
+    gxc#add-compile-job!__%
+    (@lambda 2
+             #f
+             signature:
+             (return:
+-             void::t
++             t::t
+              effect:
+              #f
+              arguments:
+@@ -536,7 +835,7 @@ package: gerbil/compiler
+             #f
+             signature:
+             (return:
+-             void::t
++             t::t
+              effect:
+              #f
+              arguments:
+@@ -552,7 +851,7 @@ package: gerbil/compiler
+      gxc#add-compile-job!__0
+      signature:
+      (return:
+-      void::t
++      t::t
+       effect:
+       #f
+       arguments:
+@@ -565,7 +864,7 @@ package: gerbil/compiler
+      gxc#add-compile-job!__%
+      signature:
+      (return:
+-      void::t
++      t::t
+       effect:
+       #f
+       arguments:
+@@ -575,12 +874,12 @@ package: gerbil/compiler
+       origin:
+       gerbil/compiler/base))))
+   (declare-type
+-   gxc#pending-compile-jobs
+-   (@lambda 0
++   gxc#call-with-compile-job-slot
++   (@lambda 1
+             #f
+             signature:
+             (return:
+-             list::t
++             t::t
+              effect:
+              #f
+              arguments:
+@@ -590,12 +889,42 @@ package: gerbil/compiler
+              origin:
+              gerbil/compiler/base)))
+   (declare-type
+-   gxc#execute-pending-compile-jobs!
++   gxc#open-compile-executor-session__%
++   (@lambda 2
++            #f
++            signature:
++            (return:
++             gxc#compile-executor-session::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#open-compile-executor-session__0
+    (@lambda 0
+             #f
+             signature:
+             (return:
+-             void::t
++             gxc#compile-executor-session::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#open-compile-executor-session__1
++   (@lambda 1
++            #f
++            signature:
++            (return:
++             gxc#compile-executor-session::t
+              effect:
+              #f
+              arguments:
+@@ -604,13 +933,142 @@ package: gerbil/compiler
+              #f
+              origin:
+              gerbil/compiler/base)))
++  (declare-type
++   gxc#open-compile-executor-session
++   (@case-lambda
++    (0
++     gxc#open-compile-executor-session__0
++     signature:
++     (return:
++      gxc#compile-executor-session::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))
++    (1
++     gxc#open-compile-executor-session__1
++     signature:
++     (return:
++      gxc#compile-executor-session::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))
++    (2
++     gxc#open-compile-executor-session__%
++     signature:
++     (return:
++      gxc#compile-executor-session::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))))
++  (declare-type
++   gxc#call-with-compile-job-executor__%
++   (@lambda 3
++            #f
++            signature:
++            (return:
++             values::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#call-with-compile-job-executor__0
++   (@lambda 1
++            #f
++            signature:
++            (return:
++             values::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#call-with-compile-job-executor__1
++   (@lambda 2
++            #f
++            signature:
++            (return:
++             values::t
++             effect:
++             #f
++             arguments:
++             #f
++             unchecked:
++             #f
++             origin:
++             gerbil/compiler/base)))
++  (declare-type
++   gxc#call-with-compile-job-executor
++   (@case-lambda
++    (1
++     gxc#call-with-compile-job-executor__0
++     signature:
++     (return:
++      values::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))
++    (2
++     gxc#call-with-compile-job-executor__1
++     signature:
++     (return:
++      values::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))
++    (3
++     gxc#call-with-compile-job-executor__%
++     signature:
++     (return:
++      values::t
++      effect:
++      #f
++      arguments:
++      #f
++      unchecked:
++      #f
++      origin:
++      gerbil/compiler/base))))
+   (declare-type
+    gxc#make-compile-job
+    (@lambda 2
+             #f
+             signature:
+             (return:
+-             thread::t
++             pair::t
+              effect:
+              #f
+              arguments:
+diff --git a/src/build/build-bach.ss b/src/build/build-bach.ss
+index 6d832cf..0cc5858 100644
+--- a/src/build/build-bach.ss
++++ b/src/build/build-bach.ss
+@@ -176,12 +176,19 @@
+            gsc-gx-macros ...
+            builtin-modules-scm ...
+            bach-main-scm])
+-  (for-each (lambda (path-c)
+-              (add-compile-job!
+-               (lambda () (invoke (gerbil-gsc) ["-obj" "-cc-options" compiler-debug-option path-c]))
+-               `(compile ,path-c)))
+-            [builtin-modules-c ... bach-main-c bach-link-c])
+-  (execute-pending-compile-jobs!)
++  (call-with-values
++   (lambda ()
++     (call-with-compile-job-executor
++      (lambda ()
++        (for-each
++         (lambda (path-c)
++           (add-compile-job!
++            (lambda ()
++              (invoke (gerbil-gsc)
++                      ["-obj" "-cc-options" compiler-debug-option path-c]))
++            `(compile ,path-c)))
++         [builtin-modules-c ... bach-main-c bach-link-c]))))
++   (lambda (_ report) (void)))
+   (displayln "... build " output-bin)
+   (invoke (gerbil-gcc)
+           [(link-output-options output-bin) ...
+diff --git a/src/build/build1.ss b/src/build/build1.ss
+index fe8fd81..c1717d4 100644
+--- a/src/build/build1.ss
++++ b/src/build/build1.ss
+@@ -85,16 +85,18 @@
+   (gxc#optimizer-info-init!)
+   (gx#import-module "gerbil/builtin.ssxi.ss" #t)
+   (gx#import-module "gerbil/builtin-inline-rules.ssxi.ss" #t))
+-;; compile core prelude
+-(compile-group gerbil-modules-core)
+-;; compile runtime
+-(compile-group gerbil-modules-runtime)
+-;; compile expander
+-(compile-group gerbil-modules-expander)
+-;; compile compiler
+-(compile-group gerbil-modules-compiler)
+-;; compile base lang
+-(compile-group gerbil-modules-base)
+-
+-;; run the compile jobs to complete the build
+-(execute-pending-compile-jobs!)
++(call-with-values
++ (lambda ()
++   (call-with-compile-job-executor
++    (lambda ()
++      ;; compile core prelude
++      (compile-group gerbil-modules-core)
++      ;; compile runtime
++      (compile-group gerbil-modules-runtime)
++      ;; compile expander
++      (compile-group gerbil-modules-expander)
++      ;; compile compiler
++      (compile-group gerbil-modules-compiler)
++      ;; compile base lang
++      (compile-group gerbil-modules-base))))
++ (lambda (_ report) (void)))
+diff --git a/src/gerbil/compiler.ss b/src/gerbil/compiler.ss
+index 259e843..a264088 100644
+--- a/src/gerbil/compiler.ss
++++ b/src/gerbil/compiler.ss
+@@ -9,5 +9,7 @@ namespace: gxc
+         "compiler/base")
+ (export (import: "compiler/driver")
+         (struct-out compile-job-report)
++        available-build-cores
+         add-compile-job!
+-        execute-pending-compile-jobs!)
++        call-with-compile-job-executor
++        call-with-compile-job-slot)
+diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
+index 2a3e704..fd266e9 100644
+--- a/src/gerbil/compiler/base.ss
++++ b/src/gerbil/compiler/base.ss
+@@ -287,11 +287,17 @@ namespace: gxc
+           (else runtime-props))))
+ 
+ ;; parallel build support
+-(def __compile-jobs [])
+-(def __available-cores
+-  (string->number
+-   (getenv "GERBIL_BUILD_CORES" "1")))
+-(def __jobs-mx (make-mutex))
++(def (available-build-cores)
++  (let* ((value (getenv "GERBIL_BUILD_CORES" #f))
++         (configured (and value (string->number value))))
++    (if (and (integer? configured) (>= configured 0))
++      configured
++      (##core-count))))
++(def __available-cores (available-build-cores))
++(def current-compile-executor-session (make-parameter #f))
++
++(defstruct compile-executor-session (submit with-slot close)
++  transparent: #t)
+ 
+ (defstruct compile-job-report
+   (jobs workers completed errors peak-active
+@@ -309,95 +315,30 @@ namespace: gxc
+   (inexact->exact (round (* 1000 (- (##current-time-point) started)))))
+ 
+ (def (add-compile-job! thunk (name (current-compile-context)))
+-  (mutex-lock! __jobs-mx)
+-  (let (job (make-compile-job thunk name))
+-    (set! __compile-jobs (cons job __compile-jobs)))
+-  (mutex-unlock! __jobs-mx))
+-
+-(def (pending-compile-jobs)
+-  (mutex-lock! __jobs-mx)
+-  (let (result (reverse! __compile-jobs))
+-    (set! __compile-jobs [])
+-    (mutex-unlock! __jobs-mx)
+-    result))
+-
+-(def (execute-pending-compile-jobs! (verbosity (current-compile-verbose)))
++  (def job (make-compile-job thunk name))
++  (let (session (current-compile-executor-session))
++    (if session
++      ((compile-executor-session-submit session) job)
++      (error "parallel compilation requires an active executor session" name))))
++
++(def (call-with-compile-job-slot thunk)
++  (let (session (current-compile-executor-session))
++    (if session
++      ((compile-executor-session-with-slot session) thunk)
++      (thunk))))
++
++(def (open-compile-executor-session
++      (verbosity (current-compile-verbose))
++      (worker-count (max 1 __available-cores)))
+   (def started (##current-time-point))
+-  (let loop ((jobs 0) (workers 0) (completed 0) (errors 0)
+-             (peak-active 0)
+-             (queue-total-ms 0) (queue-max-ms 0)
+-             (execution-total-ms 0) (execution-max-ms 0)
+-             (worker-construction-total-ms 0)
+-             (worker-construction-max-ms 0)
+-             (batches 0))
+-    (let (pending (pending-compile-jobs))
+-      (if (null? pending)
+-        (make-compile-job-report
+-         jobs workers completed errors peak-active
+-         queue-total-ms queue-max-ms
+-         execution-total-ms execution-max-ms
+-         worker-construction-total-ms worker-construction-max-ms
+-         (compile-elapsed-milliseconds started) batches)
+-        (let (report (execute-compile-jobs! pending verbosity))
+-          ;; Jobs may enqueue follow-up work while they execute.
+-          (loop (+ jobs (compile-job-report-jobs report))
+-                (max workers (compile-job-report-workers report))
+-                (+ completed (compile-job-report-completed report))
+-                (+ errors (compile-job-report-errors report))
+-                (max peak-active (compile-job-report-peak-active report))
+-                (+ queue-total-ms (compile-job-report-queue-total-ms report))
+-                (max queue-max-ms (compile-job-report-queue-max-ms report))
+-                (+ execution-total-ms
+-                   (compile-job-report-execution-total-ms report))
+-                (max execution-max-ms
+-                     (compile-job-report-execution-max-ms report))
+-                (+ worker-construction-total-ms
+-                   (compile-job-report-worker-construction-total-ms report))
+-                (max worker-construction-max-ms
+-                     (compile-job-report-worker-construction-max-ms report))
+-                (fx1+ batches)))))))
+-
+-(def (make-compile-job thunk name)
+-  ;; The old executor created the job thread here, so Gambit captured the
+-  ;; compiler parameterization at submission time.  A shared worker pool must
+-  ;; preserve that semantic explicitly: by execution time the coordinator may
+-  ;; already be compiling another module with different GSC/FFI options.
+-  (let ((output-dir (current-compile-output-dir))
+-        (invoke-gsc (current-compile-invoke-gsc))
+-        (gsc-options (current-compile-gsc-options))
+-        (keep-scm (current-compile-keep-scm))
+-        (verbose (current-compile-verbose))
+-        (optimize (current-compile-optimize))
+-        (debug (current-compile-debug))
+-        (generate-ssxi (current-compile-generate-ssxi))
+-        (static (current-compile-static))
+-        (timestamp (current-compile-timestamp))
+-        (decls (current-compile-decls))
+-        (context (current-compile-context))
+-        (parallel (current-compile-parallel)))
+-    [(lambda ()
+-       (parameterize ((current-compile-output-dir output-dir)
+-                      (current-compile-invoke-gsc invoke-gsc)
+-                      (current-compile-gsc-options gsc-options)
+-                      (current-compile-keep-scm keep-scm)
+-                      (current-compile-verbose verbose)
+-                      (current-compile-optimize optimize)
+-                      (current-compile-debug debug)
+-                      (current-compile-generate-ssxi generate-ssxi)
+-                      (current-compile-static static)
+-                      (current-compile-timestamp timestamp)
+-                      (current-compile-decls decls)
+-                      (current-compile-context context)
+-                      (current-compile-parallel parallel))
+-         (thunk)))
+-     name
+-     (##current-time-point)]))
+-
+-(def (execute-compile-jobs! pending verbosity)
+-  (def started (##current-time-point))
+-  (def queue pending)
+-  (def queue-mx (make-mutex 'compile-jobs))
+-  (def first-error #f)
++  (def mx (make-mutex 'compile-executor-session))
++  (def cv (make-condition-variable 'compile-executor-session))
++  (def front [])
++  (def back [])
++  (def closed? #f)
++  (def terminated? #f)
++  (def available-slots worker-count)
++  (def submitted 0)
+   (def completed 0)
+   (def errors 0)
+   (def active 0)
+@@ -406,104 +347,207 @@ namespace: gxc
+   (def queue-max-ms 0)
+   (def execution-total-ms 0)
+   (def execution-max-ms 0)
++  (def first-error #f)
++  ;; Per-job tracing is deliberately independent from compiler verbosity:
++  ;; verbosity 9 enables the optimizer's very large internal dump and changes
++  ;; the workload being measured.
++  (def trace-jobs? (getenv "GERBIL_BUILD_TRACE_JOBS" #f))
++
++  (def (submit! job)
++    (mutex-lock! mx)
++    (when terminated?
++      (mutex-unlock! mx)
++      (error "compile executor session is terminated"))
++    (set! back (cons job back))
++    (set! submitted (fx1+ submitted))
++    (condition-variable-signal! cv)
++    (mutex-unlock! mx))
++
++  (def (with-slot thunk)
++    (mutex-lock! mx)
++    (let wait ()
++      (if (fx> available-slots 0)
++        (begin
++          (set! available-slots (fx1- available-slots))
++          (mutex-unlock! mx))
++        (begin
++          (mutex-unlock! mx cv)
++          (mutex-lock! mx)
++          (wait))))
++    (unwind-protect
++      (thunk)
++      (begin
++        (mutex-lock! mx)
++        (set! available-slots (fx1+ available-slots))
++        (condition-variable-broadcast! cv)
++        (mutex-unlock! mx))))
+ 
+   (def (next-job)
+-    (with-lock queue-mx
+-      (lambda ()
+-        (and (pair? queue)
+-             (let (job (car queue))
+-               (set! queue (cdr queue))
+-               job)))))
++    (mutex-lock! mx)
++    (let loop ()
++      (cond
++       ((pair? front)
++        (let (job (car front))
++          (set! front (cdr front))
++          (mutex-unlock! mx)
++          job))
++       ((pair? back)
++        (set! front (reverse! back))
++        (set! back [])
++        (loop))
++       (closed?
++        (mutex-unlock! mx)
++        #f)
++       (else
++        (mutex-unlock! mx cv)
++        (mutex-lock! mx)
++        (loop)))))
+ 
+   (def (record-error! error)
+-    (with-lock queue-mx
++    (with-lock mx
+       (lambda ()
+         (set! errors (fx1+ errors))
+         (unless first-error
+           (set! first-error error)))))
+ 
+   (def (job-start! enqueued-at)
+-    (with-lock queue-mx
++    (with-lock mx
+       (lambda ()
+-        (let (queue-ms
+-              (inexact->exact
+-               (round (* 1000 (- (##current-time-point) enqueued-at)))))
++        (let (queue-ms (compile-elapsed-milliseconds enqueued-at))
+           (set! queue-total-ms (+ queue-total-ms queue-ms))
+           (set! queue-max-ms (max queue-max-ms queue-ms)))
+         (set! active (fx1+ active))
+         (set! peak-active (max peak-active active)))))
+ 
+-  (def (job-complete! job-started-at)
+-    (with-lock queue-mx
++  (def (job-complete! name queue-ms job-started-at)
++    (def execution-ms (compile-elapsed-milliseconds job-started-at))
++    (with-lock mx
+       (lambda ()
+-        (let (execution-ms (compile-elapsed-milliseconds job-started-at))
+-          (set! execution-total-ms (+ execution-total-ms execution-ms))
+-          (set! execution-max-ms (max execution-max-ms execution-ms)))
++        (set! execution-total-ms (+ execution-total-ms execution-ms))
++        (set! execution-max-ms (max execution-max-ms execution-ms))
+         (set! active (fx1- active))
+         (set! completed (fx1+ completed))
++        (when trace-jobs?
++          (with-verbose-mutex
++           (displayln "... build-observe phase=native event=job-end name=" name
++                      " queueMs=" queue-ms
++                      " executionMs=" execution-ms)))
+         (when (and (compile-verbosity>=? verbosity 3)
+                    (or (fx= completed 1)
+-                       (zero? (modulo completed worker-count))
+-                       (fx= completed (length pending))))
++                       (zero? (modulo completed worker-count))))
+           (with-verbose-mutex
+            (displayln "... build-observe phase=native event=progress completed="
+                       completed
+-                      " jobs=" (length pending)
++                      " submitted=" submitted
+                       " active=" active
+-                      " queued=" (- (length pending) completed active)
+-                      " elapsedMs=" (compile-elapsed-milliseconds started)))))))
++                      " queued=" (- submitted completed active)
++                      " elapsedMs="
++                      (compile-elapsed-milliseconds started)))))))
+ 
+   (def (worker)
+     (let loop ()
+       (alet (job (next-job))
+         (match job
+-          ([thunk name enqueued-at]
+-           (job-start! enqueued-at)
+-           (let (job-started-at (##current-time-point))
+-             (when (compile-verbosity>=? verbosity 9)
+-               (with-verbose-mutex
+-                (displayln "... execute compile job " name)))
+-             (with-catch record-error! thunk)
+-             (job-complete! job-started-at))
++          ([job-thunk name enqueued-at]
++           (with-slot
++            (lambda ()
++              (def queue-ms (compile-elapsed-milliseconds enqueued-at))
++              (job-start! enqueued-at)
++              (let (job-started-at (##current-time-point))
++                (when (compile-verbosity>=? verbosity 9)
++                  (with-verbose-mutex
++                   (displayln "... execute compile job " name)))
++                (with-catch record-error! job-thunk)
++                (job-complete! name queue-ms job-started-at))))
+            (loop))))))
+ 
+-  (def worker-count
+-    (min (length pending) (max 1 __available-cores)))
+-  (when (compile-verbosity>=? verbosity 3)
+-    (with-verbose-mutex
+-     (displayln "... build-observe phase=native event=prepare jobs="
+-                (length pending) " workers=" worker-count)))
+   (def worker-construction-started (##current-time-point))
+   (def workers
+-    (let loop ((index 0) (result []))
++    (let loop ((index 0) (workers []))
+       (if (fx= index worker-count)
+-        (reverse! result)
++        (reverse! workers)
+         (loop (fx1+ index)
+-              (cons (make-thread worker `(compile-worker ,index)) result)))))
++              (cons (make-thread worker `(compile-worker ,index)) workers)))))
+   (def worker-construction-ms
+     (compile-elapsed-milliseconds worker-construction-started))
+-
+   (when (compile-verbosity>=? verbosity 3)
+     (with-verbose-mutex
+-     (displayln "... build-observe phase=native event=start jobs="
+-                (length pending) " workers=" worker-count
++     (displayln "... build-observe phase=native event=start mode=streaming workers="
++                worker-count
+                 " workerConstructionMs=" worker-construction-ms)))
+-
+   (for-each thread-start! workers)
+ 
+-  ;; Reclaim every worker even when one native job fails.
+-  (for-each
+-   (lambda (thread)
+-     (with-catch record-error! (cut join! thread)))
+-   workers)
+-  (when first-error
+-    (raise first-error))
+-  (make-compile-job-report
+-   (length pending) worker-count completed errors peak-active
+-   queue-total-ms queue-max-ms
+-   execution-total-ms execution-max-ms
+-   worker-construction-ms worker-construction-ms
+-   (compile-elapsed-milliseconds started) 1))
++  (def (close!)
++    (mutex-lock! mx)
++    (set! closed? #t)
++    (condition-variable-broadcast! cv)
++    (mutex-unlock! mx)
++    (for-each join! workers)
++    (mutex-lock! mx)
++    (set! terminated? #t)
++    (mutex-unlock! mx)
++    (when first-error (raise first-error))
++    (make-compile-job-report
++     submitted worker-count completed errors peak-active
++     queue-total-ms queue-max-ms execution-total-ms execution-max-ms
++     worker-construction-ms worker-construction-ms
++     (compile-elapsed-milliseconds started) 1))
++
++  (make-compile-executor-session submit! with-slot close!))
++
++(def (call-with-compile-job-executor thunk
++                                     (verbosity (current-compile-verbose))
++                                     (worker-count (max 1 __available-cores)))
++  (when (current-compile-executor-session)
++    (error "compile executor session is already active"))
++  (def session (open-compile-executor-session verbosity worker-count))
++  (def producer-error #f)
++  (def result #f)
++  (parameterize ((current-compile-executor-session session))
++    (with-catch
++     (lambda (error) (set! producer-error error))
++     (lambda () (set! result (thunk)))))
++  (def report ((compile-executor-session-close session)))
++  (when producer-error (raise producer-error))
++  (values result report))
++
++(def (make-compile-job thunk name)
++  ;; The old executor created the job thread here, so Gambit captured the
++  ;; compiler parameterization at submission time.  A shared worker pool must
++  ;; preserve that semantic explicitly: by execution time the coordinator may
++  ;; already be compiling another module with different GSC/FFI options.
++  (let ((output-dir (current-compile-output-dir))
++        (invoke-gsc (current-compile-invoke-gsc))
++        (gsc-options (current-compile-gsc-options))
++        (keep-scm (current-compile-keep-scm))
++        (verbose (current-compile-verbose))
++        (optimize (current-compile-optimize))
++        (debug (current-compile-debug))
++        (generate-ssxi (current-compile-generate-ssxi))
++        (static (current-compile-static))
++        (timestamp (current-compile-timestamp))
++        (decls (current-compile-decls))
++        (context (current-compile-context))
++        (parallel (current-compile-parallel))
++        (executor-session (current-compile-executor-session)))
++    [(lambda ()
++       (parameterize ((current-compile-output-dir output-dir)
++                      (current-compile-invoke-gsc invoke-gsc)
++                      (current-compile-gsc-options gsc-options)
++                      (current-compile-keep-scm keep-scm)
++                      (current-compile-verbose verbose)
++                      (current-compile-optimize optimize)
++                      (current-compile-debug debug)
++                      (current-compile-generate-ssxi generate-ssxi)
++                      (current-compile-static static)
++                      (current-compile-timestamp timestamp)
++                      (current-compile-decls decls)
++                      (current-compile-context context)
++                      (current-compile-parallel parallel)
++                      (current-compile-executor-session executor-session))
++         (thunk)))
++     name
++     (##current-time-point)]))
+ 
+ (defrules go! ()
+   ((_ expr)
+diff --git a/src/gerbil/test/compiler-executor-test.ss b/src/gerbil/test/compiler-executor-test.ss
+index 1097f39..58651e3 100644
+--- a/src/gerbil/test/compiler-executor-test.ss
++++ b/src/gerbil/test/compiler-executor-test.ss
+@@ -6,10 +6,87 @@
+ (export compiler-executor-test)
+ 
+ (def configured-workers
+-  (max 1 (string->number (getenv "GERBIL_BUILD_CORES" "1"))))
++  (max 1 __available-cores))
+ 
+ (def compiler-executor-test
+   (test-suite "compiler native-job executor"
++    (test-case "native core budget inherits environment or host capacity"
++      (def previous (getenv "GERBIL_BUILD_CORES" #f))
++      (unwind-protect
++        (begin
++          (setenv "GERBIL_BUILD_CORES" "0")
++          (check (available-build-cores) => 0)
++          (setenv "GERBIL_BUILD_CORES" "1")
++          (check (available-build-cores) => 1)
++          (setenv "GERBIL_BUILD_CORES" "7")
++          (check (available-build-cores) => 7)
++          (setenv "GERBIL_BUILD_CORES" "invalid")
++          (check (available-build-cores) => (##core-count))
++          (setenv "GERBIL_BUILD_CORES")
++          (check (available-build-cores) => (##core-count)))
++        (if previous
++          (setenv "GERBIL_BUILD_CORES" previous)
++          (setenv "GERBIL_BUILD_CORES"))))
++
++    (test-case "native jobs execute while their producer remains active"
++      (def mx (make-mutex 'streaming-executor-test))
++      (def started? #f)
++      (def producer-observed-start? #f)
++      (call-with-values
++       (lambda ()
++         (call-with-compile-job-executor
++          (lambda ()
++            (add-compile-job!
++             (lambda ()
++               (with-lock mx (lambda () (set! started? #t))))
++             'streaming-job)
++            (let loop ((attempt 0))
++              (cond
++               ((with-lock mx (lambda () started?))
++                (set! producer-observed-start? #t))
++               ((fx< attempt 100)
++                (thread-sleep! 0.001)
++                (loop (fx1+ attempt))))))))
++       (lambda (_ report)
++         (check producer-observed-start? => #t)
++         (check (compile-job-report-jobs report) => 1)
++         (check (compile-job-report-completed report) => 1)
++         (check (compile-job-report-errors report) => 0))))
++
++    (test-case "producer and native work share one executor budget"
++      (def mx (make-mutex 'unified-executor-budget-test))
++      (def active 0)
++      (def peak 0)
++      (def (work)
++        (with-lock mx
++          (lambda ()
++            (set! active (fx1+ active))
++            (set! peak (max peak active))))
++        (thread-sleep! 0.02)
++        (with-lock mx (lambda () (set! active (fx1- active)))))
++      (call-with-values
++       (lambda ()
++         (call-with-compile-job-executor
++          (lambda ()
++            (let loop ((index 0))
++              (when (fx< index 4)
++                (add-compile-job! work `(native ,index))
++                (loop (fx1+ index))))
++            (let (producers
++                  (map (lambda (index)
++                         (make-thread
++                          (lambda () (call-with-compile-job-slot work))
++                          `(producer ,index)))
++                       '(0 1)))
++              (for-each thread-start! producers)
++              (for-each join! producers)))
++          #f 2))
++       (lambda (_ report)
++         (check (fx<= peak 2) => #t)
++         (check (fx> peak 1) => #t)
++         (check (compile-job-report-jobs report) => 4)
++         (check (compile-job-report-completed report) => 4))))
++
+     (test-case "bounded execution and follow-up draining"
+       (def mx (make-mutex 'compiler-executor-test))
+       (def active 0)
+@@ -30,18 +107,23 @@
+         (thread-sleep! 0.02)
+         (locked (lambda () (set! active (fx1- active)))))
+ 
+-      (let loop ((index 0))
+-        (when (fx< index 8)
+-          (add-compile-job! (cut work index) `(contract ,index))
+-          (loop (fx1+ index))))
+-      (add-compile-job!
++      (def report #f)
++      (call-with-values
+        (lambda ()
+-         (add-compile-job!
++         (call-with-compile-job-executor
+           (lambda ()
+-            (locked (lambda () (set! follow-up (fx1+ follow-up)))))
+-          'follow-up))
+-       'enqueue-follow-up)
+-      (def report (execute-pending-compile-jobs!))
++            (let loop ((index 0))
++              (when (fx< index 8)
++                (add-compile-job! (cut work index) `(contract ,index))
++                (loop (fx1+ index))))
++            (add-compile-job!
++             (lambda ()
++               (add-compile-job!
++                (lambda ()
++                  (locked (lambda () (set! follow-up (fx1+ follow-up)))))
++                'follow-up))
++             'enqueue-follow-up))))
++       (lambda (_ result) (set! report result)))
+ 
+       (check (fx<= peak (min configured-workers 9)) => #t)
+       (when (fx> configured-workers 1)
+@@ -59,22 +141,23 @@
+ 
+     (test-case "submission parameterization is preserved"
+       (def observed #f)
+-      (parameterize ((current-compile-gsc-options
+-                      '("-cc-options" "-I/submission/include"
+-                        "-ld-options" "-L/submission/lib -lexample"))
+-                     (current-compile-debug #t)
+-                     (current-compile-context '(submission-context)))
+-        (add-compile-job!
+-         (lambda ()
+-           (set! observed
+-             (list (current-compile-gsc-options)
+-                   (current-compile-debug)
+-                   (current-compile-context))))
+-         'parameterization))
+-      (parameterize ((current-compile-gsc-options [])
+-                     (current-compile-debug #f)
+-                     (current-compile-context '(execution-context)))
+-        (execute-pending-compile-jobs!))
++      (call-with-values
++       (lambda ()
++         (call-with-compile-job-executor
++          (lambda ()
++            (parameterize ((current-compile-gsc-options
++                            '("-cc-options" "-I/submission/include"
++                              "-ld-options" "-L/submission/lib -lexample"))
++                           (current-compile-debug #t)
++                           (current-compile-context '(submission-context)))
++              (add-compile-job!
++               (lambda ()
++                 (set! observed
++                   (list (current-compile-gsc-options)
++                         (current-compile-debug)
++                         (current-compile-context))))
++               'parameterization)))))
++       (lambda (_ report) (void)))
+       (check observed
+              => '(("-cc-options" "-I/submission/include"
+                    "-ld-options" "-L/submission/lib -lexample")
+@@ -84,10 +167,14 @@
+     (test-case "first error propagates after queued work drains"
+       (def mx (make-mutex 'compiler-executor-error-test))
+       (def survived-error 0)
+-      (add-compile-job! (lambda () (error "expected worker failure")) 'failure)
+-      (add-compile-job!
+-       (lambda ()
+-         (with-lock mx (lambda () (set! survived-error 1))))
+-       'after-failure)
+-      (check-exception (execute-pending-compile-jobs!) true)
++      (check-exception
++       (call-with-compile-job-executor
++        (lambda ()
++          (add-compile-job!
++           (lambda () (error "expected worker failure")) 'failure)
++          (add-compile-job!
++           (lambda ()
++             (with-lock mx (lambda () (set! survived-error 1))))
++           'after-failure)))
++       true)
+       (check (with-lock mx (lambda () survived-error)) => 1))))
+diff --git a/src/std/make-test.ss b/src/std/make-test.ss
+index a293bf8..61c1cf9 100644
+--- a/src/std/make-test.ss
++++ b/src/std/make-test.ss
+@@ -15,6 +15,7 @@
+      (def srcdir (path-expand "src" directory))
+      (def libdir (path-expand "lib" directory))
+      (def prefix (path-strip-directory directory))
++     (def compiled-dir (path-expand prefix libdir))
+      (def saved-load-path (load-path))
+      ;; Reverse dependency order ensures scheduling, not the buildspec, orders builds.
+      (def modules '("leaf" "middle" "upstream" "unrelated"))
+@@ -23,7 +24,7 @@
+        (call-with-output-file (path-expand name srcdir)
+          (lambda (port)
+            (for-each (lambda (form) (write form port) (newline port)) forms))))
+-     (def (build (verbose #f))
++     (def (build (verbose 0))
+        (with-output-to-string
+          (lambda ()
+            (make modules srcdir: srcdir libdir: libdir
+@@ -84,6 +85,27 @@
+           (check (list-ref after 3) => (list-ref before 3))
+           (check (build) => "")
+           (check (timestamps) => after)))
++      (check (ormap (cut string-suffix? ".o1" <>)
++                    (directory-files compiled-dir))
++             => #t)
++      ;; Cleaning one module must not turn into a basename glob that removes
++      ;; an unrelated generated-looking file with the same textual prefix.
++      (def prefix-neighbor (path-expand "leaf-neighbor.scm" compiled-dir))
++      (call-with-output-file prefix-neighbor
++        (cut write 'keep <>))
++      (with-output-to-string
++        (lambda ()
++          (make-clean modules srcdir: srcdir libdir: libdir
++                      bindir: (path-expand "bin" directory))))
++      (check (file-exists? prefix-neighbor) => #t)
++      (check (filter (lambda (name)
++                       (and (not (string=? name "leaf-neighbor.scm"))
++                            (or (string-suffix? ".ssi" name)
++                                (string-suffix? ".ssxi.ss" name)
++                                (string-suffix? ".scm" name)
++                                (string-contains name ".o"))))
++                     (directory-files compiled-dir))
++             => [])
+       (finally
+        (set-load-path! saved-load-path)))
+      directory))
+diff --git a/src/std/make.ss b/src/std/make.ss
+index 2c70b22..1b9621e 100644
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -127,7 +127,7 @@ TODO:
+   (cond
+    ((integer? cpu-count-spec) cpu-count-spec)
+    ((eq? cpu-count-spec #t)
+-    (: (string->number (getenv "GERBIL_BUILD_CORES" "0")) :integer))
++    (available-build-cores))
+    (else 0)))
+ 
+ (def (settings-verbose>=? settings level)
+@@ -216,34 +216,40 @@ TODO:
+     (message "... build-observe phase=build event=start entries="
+              (length buildspec)
+              " workers=" (settings-parallelize settings)))
+-  (parameterize ((current-directory (settings-srcdir settings))
+-                 (current-expander-compiling? #t))
+-    (add-load-path! (settings-srcdir settings))
+-    (set! build-contexts (make-build buildspec settings)))
++  (def (build)
++    (parameterize ((current-directory (settings-srcdir settings))
++                   (current-expander-compiling? #t))
++      (add-load-path! (settings-srcdir settings))
++      (make-build buildspec settings)))
+   (if (> (settings-parallelize settings) 1)
+-    (let (report
+-          (execute-pending-compile-jobs! (settings-verbose settings)))
++    (call-with-values
++     (lambda ()
++       (call-with-compile-job-executor build (settings-verbose settings)))
++     (lambda (contexts report)
++       (set! build-contexts contexts)
++       (when (settings-verbose>=? settings 3)
++         (message "... build-observe phase=native event=end jobs="
++                  (compile-job-report-jobs report)
++                  " workers=" (compile-job-report-workers report)
++                  " completed=" (compile-job-report-completed report)
++                  " errors=" (compile-job-report-errors report)
++                  " peakActive=" (compile-job-report-peak-active report)
++                  " queueTotalMs=" (compile-job-report-queue-total-ms report)
++                  " queueMaxMs=" (compile-job-report-queue-max-ms report)
++                  " executionTotalMs="
++                  (compile-job-report-execution-total-ms report)
++                  " executionMaxMs="
++                  (compile-job-report-execution-max-ms report)
++                  " workerConstructionTotalMs="
++                  (compile-job-report-worker-construction-total-ms report)
++                  " workerConstructionMaxMs="
++                  (compile-job-report-worker-construction-max-ms report)
++                  " wallMs=" (compile-job-report-wall-ms report)
++                  " batches=" (compile-job-report-batches report)))))
++    (begin
++      (set! build-contexts (build))
+       (when (settings-verbose>=? settings 3)
+-        (message "... build-observe phase=native event=end jobs="
+-                 (compile-job-report-jobs report)
+-                 " workers=" (compile-job-report-workers report)
+-                 " completed=" (compile-job-report-completed report)
+-                 " errors=" (compile-job-report-errors report)
+-                 " peakActive=" (compile-job-report-peak-active report)
+-                 " queueTotalMs=" (compile-job-report-queue-total-ms report)
+-                 " queueMaxMs=" (compile-job-report-queue-max-ms report)
+-                 " executionTotalMs="
+-                 (compile-job-report-execution-total-ms report)
+-                 " executionMaxMs="
+-                 (compile-job-report-execution-max-ms report)
+-                 " workerConstructionTotalMs="
+-                 (compile-job-report-worker-construction-total-ms report)
+-                 " workerConstructionMaxMs="
+-                 (compile-job-report-worker-construction-max-ms report)
+-                 " wallMs=" (compile-job-report-wall-ms report)
+-                 " batches=" (compile-job-report-batches report))))
+-    (when (settings-verbose>=? settings 3)
+-      (message "... build-observe phase=native event=end mode=inline")))
++        (message "... build-observe phase=native event=end mode=inline"))))
+   (when (settings-verbose>=? settings 3)
+     (message "... build-observe phase=build event=end elapsedMs="
+              (elapsed-milliseconds started)))
+@@ -344,7 +350,15 @@ TODO:
+     (def (build-worker)
+       (try
+        (for (entry workch)
+-         (build (build-entry-spec entry) settings)
++         (call-with-compile-job-slot
++          (lambda ()
++            (def entry-started (##current-time-point))
++            (build (build-entry-spec entry) settings)
++            (when (settings-verbose>=? settings 3)
++              (message "... build-observe phase=gerbil event=entry-end module="
++                       (build-entry-id entry)
++                       " elapsedMs="
++                       (elapsed-milliseconds entry-started)))))
+          (completion-post! (hash-ref completions (build-entry-id entry)) 'done))
+        (catch (e)
+          (barrier-error! build-barrier e)
+@@ -390,7 +404,15 @@ TODO:
+     (create-directory* (path-expand "static" (settings-libdir settings)))
+ 
+     ;; Import each module exactly once, then prepare the completion table.
++    (def resolve-started (##current-time-point))
++    (when (settings-verbose>=? settings 3)
++      (message "... build-observe phase=resolve event=start entries="
++               (length buildspec)))
+     (def entries (map resolve-build-entry buildspec))
++    (when (settings-verbose>=? settings 3)
++      (message "... build-observe phase=resolve event=end entries="
++               (length entries)
++               " elapsedMs=" (elapsed-milliseconds resolve-started)))
+     (for (entry entries)
+       (let (id (build-entry-id entry))
+         (hash-put! completions id (make-completion `(build ,id)))))
+@@ -441,13 +463,69 @@ TODO:
+ (def (library-symbol id)
+   (make-symbol ":" (module-strip-nesting id)))
+ 
++(def (decimal-suffix? str start)
++  (and (fx< start (string-length str))
++       (let loop ((index start))
++         (or (fx= index (string-length str))
++             (and (char-numeric? (string-ref str index))
++                  (loop (fx1+ index)))))))
++
++(def (gambit-object-suffix? suffix)
++  (and (string-prefix? ".o" suffix)
++       (decimal-suffix? suffix 2)))
++
++(def (nested-generated-suffix? suffix)
++  ;; Nested Gerbil module artifacts retain the enclosing module basename and
++  ;; append one or more `~<module>` components before the generated suffix.
++  ;; Match that namespace exactly; do not broaden cleanup to basename globs.
++  (and (string-prefix? "~" suffix)
++       (cond
++        ((string-suffix? ".ssxi.ss" suffix)
++         (fx> (fx- (string-length suffix) 8) 1))
++        ((string-suffix? ".scm" suffix)
++         (fx> (fx- (string-length suffix) 4) 1))
++        ((string-rindex suffix #\.)
++         => (lambda (index)
++              (and (fx> index 1)
++                   (gambit-object-suffix?
++                    (substring suffix index (string-length suffix))))))
++        (else #f))))
++
++(def (gxc-generated-suffix? suffix)
++  (or (member suffix '(".scm" ".ssxi.ss"))
++      (gambit-object-suffix? suffix)
++      (nested-generated-suffix? suffix)))
++
++(def (gxc-generated-outputs mod settings)
++  (let* ((ssi (library-path mod ".ssi" settings))
++         (directory (path-directory ssi))
++         (base (path-strip-extension (path-strip-directory ssi))))
++    (if (file-exists? directory)
++      (filter-map
++       (lambda (name)
++         (and (string-prefix? base name)
++              (let (suffix (substring name (string-length base) (string-length name)))
++                (and (gxc-generated-suffix? suffix)
++                     (path-expand name directory)))))
++       (directory-files directory))
++      [])))
++
++(def (spec-generated-outputs spec settings)
++  (match spec
++    ((? string? modf) (gxc-generated-outputs modf settings))
++    ([gxc: modf . _] (gxc-generated-outputs modf settings))
++    ([ssi: _ . submodules]
++     (append-map (cut spec-generated-outputs <> settings) submodules))
++    (_ [])))
++
+ (def (make-clean . args)
+   (defvalues (positionals keywords) (separate-keyword-arguments args #t))
+   (def buildspec (match positionals ([x] x) (_ (error "invalid arguments" make positionals))))
+   (def settings (apply make-settings keywords))
+ 
+   (for* ((spec buildspec)
+-         (f    (spec-outputs spec settings)))
++         (f    (append (spec-outputs spec settings)
++                       (spec-generated-outputs spec settings))))
+     (when (file-exists? f)
+       (displayln "... remove " f)
+       (delete-file-or-directory f))))
