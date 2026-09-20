@@ -86,6 +86,25 @@ scheduler comparison is admitted.
   171.172 seconds for `gxpkg` and 140.855 seconds for `gxtags`.  These are
   diagnostic receipts, not an admitted cold end-to-end A/B: the run followed
   earlier failed and incremental attempts and therefore contains warm state.
+- A subsequent sanitized `make clean` D801 build with the complete patch stack,
+  GCC 16, 12 detected cores, `-pipe`, and `GERBIL_BUILD_AOT_TOOLS=yes`
+  completed successfully in 1,352 seconds.  Its target receipts were Gambit
+  296 s, stage0 60 s, stage1 224 s, stdlib 235 s, libgerbil 228 s, languages
+  3 s, and tools 306 s.  The stdlib native phase completed 800/800 jobs with
+  12 workers, zero errors, and a 181.876 s wall time.  The tools target
+  included independent whole-program AOT builds for `gxpkg` (159.246 s) and
+  `gxtags` (138.118 s).
+- The resulting `gerbil`, `gxpkg`, and `gxtags` are arm64 Mach-O executables;
+  `gxi`, `gxc`, and `gxtest` resolve to the AOT `gerbil` executable.  With the
+  build-tree `GERBIL_HOME`, repeated startup measurements were 0.10-0.12 s for
+  `gxi`, 0.00-0.01 s for `gxpkg` and `gxtags`, and 0.87-0.90 s for warm
+  `gxtest`.  The first `gxtest` access took 26.88 s and is reported separately,
+  not averaged into the warm measurements.
+- A two-second sample of the silent libgerbil startup phase showed a 1.0 GiB
+  footprint with the main thread dominated by
+  `___dynamic_load -> dyld4::APIs::dlopen -> Loader::mapSegments/fcntl` while
+  loading hundreds of `.o1` images.  This identifies Darwin loader granularity,
+  rather than the bounded native-job worker count, as the owner of that phase.
 - The real Gerbil POO V19 consumer completed a sanitized 26-module cold build:
   dependency graph construction took 1-2 ms and the Gerbil compilation phase
   took 4.872 seconds before bounded native jobs completed.  Its eleven test

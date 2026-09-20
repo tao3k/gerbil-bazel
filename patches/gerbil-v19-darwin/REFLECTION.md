@@ -216,6 +216,30 @@ admission result, and the experiment does not yet cover Gerbil-generated
 files, production flags, chunk sizing, error identity, incremental rebuilds,
 or interaction with the upstream-derived worker budget.  H3 remains open.
 
+## D801 full-build phase ownership
+
+The complete sanitized D801 cold build establishes that the bounded native
+executor is active: the stdlib phase completed 800 native jobs with 12 workers,
+zero errors, and peak concurrency 12.  Its 181.876-second native wall time is
+therefore not evidence of an accidentally serial worker configuration.
+
+The first dominant phase outside that executor is libgerbil startup.  A live
+Darwin sample measured a 1.0 GiB process while nearly every sampled main-thread
+frame was below `___dynamic_load` in dyld's `dlopen`, `mapSegments`, and
+`fcntl` path.  The next falsifiable hypothesis is therefore:
+
+> Reducing the number of independently loaded `.o1` images, while preserving
+> module identity, incremental boundaries, failure identity, and generated
+> artifacts, materially reduces Darwin libgerbil wall time and first-access
+> `gxtest` latency.
+
+This hypothesis belongs to the compiler output/loading boundary.  It must not
+be repaired by changing the upstream-derived worker count, hiding the cold
+sample, or weakening the ten-second observability contract.  The first
+experiment must measure `.o1` image count, dyld time, peak RSS, libgerbil wall
+time, and first-access test latency for an unchanged control and one bounded
+batching/static-loading variant.
+
 ## Ordered experiment matrix
 
 Each experiment changes one owner at a time:
