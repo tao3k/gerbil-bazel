@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tao3k/gerbil-bazel/schemas/gerbil-bazel.std-make-scheduler-receipt.v1.schema.json",
+  "title": "Gerbil std/make Scheduler Receipt v1",
+  "description": "Neutral cold, warm, ordering, overlay, and failure evidence for the upstream Gerbil scheduler.",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "host",
+    "toolchain",
+    "configuration",
+    "cold",
+    "warm",
+    "failure",
+    "artifacts",
+    "nativeArtifacts",
+    "assertions"
+  ],
+  "properties": {
+    "schema": {"const": "gerbil-bazel.std-make-scheduler-receipt.v1"},
+    "status": {"enum": ["passed", "failed"]},
+    "host": {
+      "type": "object",
+      "required": ["system", "architecture", "availableLogicalCpuCount"],
+      "properties": {
+        "system": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "availableLogicalCpuCount": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "toolchain": {
+      "type": "object",
+      "required": [
+        "gxi",
+        "gxiExecutable",
+        "gsc",
+        "gscExecutable",
+        "gscVersion",
+        "gerbilVersion",
+        "gerbilRevision",
+        "resolvedModules",
+        "resolvedRuntimeObjects",
+        "expectedModuleRoots"
+      ],
+      "properties": {
+        "gxi": {"type": "string", "minLength": 1},
+        "gxiExecutable": {"$ref": "#/$defs/executableIdentity"},
+        "gsc": {"type": "string", "minLength": 1},
+        "gscExecutable": {"$ref": "#/$defs/executableIdentity"},
+        "gscVersion": {"type": "string", "minLength": 1},
+        "gerbilVersion": {"type": "string", "minLength": 1},
+        "gerbilRevision": {"type": ["string", "null"]},
+        "resolvedModules": {
+          "type": "object",
+          "required": ["compilerBase", "compilerDriver", "stdMake"],
+          "properties": {
+            "compilerBase": {"type": "string", "minLength": 1},
+            "compilerDriver": {"type": "string", "minLength": 1},
+            "stdMake": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        "resolvedRuntimeObjects": {
+          "type": "object",
+          "required": ["compilerBase", "compilerDriver", "stdMake"],
+          "properties": {
+            "compilerBase": {"$ref": "#/$defs/runtimeObjects"},
+            "compilerDriver": {"$ref": "#/$defs/runtimeObjects"},
+            "stdMake": {"$ref": "#/$defs/runtimeObjects"}
+          },
+          "additionalProperties": false
+        },
+        "expectedModuleRoots": {
+          "type": "object",
+          "required": ["compilerBase", "compilerDriver", "stdMake"],
+          "properties": {
+            "compilerBase": {"type": ["string", "null"]},
+            "compilerDriver": {"type": ["string", "null"]},
+            "stdMake": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "configuration": {
+      "type": "object",
+      "required": ["buildCores", "independentModules", "chainModules", "buildTimeoutSeconds", "failureTimeoutSeconds"],
+      "properties": {
+        "buildCores": {"type": "integer", "minimum": 1},
+        "independentModules": {"type": "integer", "minimum": 0},
+        "chainModules": {"type": "integer", "minimum": 3},
+        "buildTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "consumerTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "failureTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "expectedNativeJobKind": {
+          "type": ["string", "null"],
+          "enum": ["compile-file", "compile-batch", null]
+        }
+      },
+      "additionalProperties": false
+    },
+    "cold": {"$ref": "#/$defs/buildRun"},
+    "warm": {
+      "type": "object",
+      "required": ["exitCode", "elapsedNs", "timedOut", "eventCount"],
+      "properties": {
+        "exitCode": {"type": "integer"},
+        "elapsedNs": {"type": "integer", "minimum": 0},
+        "timedOut": {"type": "boolean"},
+        "eventCount": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "consumer": {
+      "type": "object",
+      "required": ["exitCode", "elapsedNs", "timedOut", "events"],
+      "properties": {
+        "exitCode": {"type": "integer"},
+        "elapsedNs": {"type": "integer", "minimum": 0},
+        "timedOut": {"type": "boolean"},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}}
+      },
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "required": ["exitCode", "elapsedNs", "timedOut", "events"],
+      "properties": {
+        "exitCode": {"type": "integer"},
+        "elapsedNs": {"type": "integer", "minimum": 0},
+        "timedOut": {"type": "boolean"},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}}
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "nativeArtifacts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["name", "passed"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "passed": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": ["elapsedNs", "line"],
+      "properties": {
+        "elapsedNs": {"type": "integer", "minimum": 0},
+        "line": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "runtimeObjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "executableIdentity": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "buildRun": {
+      "type": "object",
+      "required": [
+        "exitCode",
+        "elapsedNs",
+        "timedOut",
+        "scheduler",
+        "observations",
+        "derivedMetrics",
+        "events"
+      ],
+      "properties": {
+        "exitCode": {"type": "integer"},
+        "elapsedNs": {"type": "integer", "minimum": 0},
+        "timedOut": {"type": "boolean"},
+        "scheduler": {
+          "type": "object",
+          "required": [
+            "gerbilCompileAnnouncementCount",
+            "nativeJobEnqueueCount",
+            "nativeJobStartCount",
+            "firstNativeJobStartNs",
+            "lastNativeJobEnqueueNs",
+            "observedOrder"
+          ],
+          "properties": {
+            "gerbilCompileAnnouncementCount": {"type": "integer", "minimum": 0},
+            "nativeJobEnqueueCount": {"type": "integer", "minimum": 0},
+            "nativeJobStartCount": {"type": "integer", "minimum": 0},
+            "nativeJobKindCounts": {
+              "type": "object",
+              "required": ["compile-file", "compile-batch"],
+              "properties": {
+                "compile-file": {"type": "integer", "minimum": 0},
+                "compile-batch": {"type": "integer", "minimum": 0}
+              },
+              "additionalProperties": false
+            },
+            "nativeCompilerInvocationCount": {"type": "integer", "minimum": 0},
+            "firstNativeJobStartNs": {"type": ["integer", "null"], "minimum": 0},
+            "lastNativeJobEnqueueNs": {"type": ["integer", "null"], "minimum": 0},
+            "observedOrder": {"enum": ["staged", "overlapped", "unobserved"]}
+          },
+          "additionalProperties": false
+        },
+        "observations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/buildObservation"}
+        },
+        "derivedMetrics": {
+          "type": "object",
+          "required": [
+            "nativeJobCount",
+            "nativeAverageQueueMs",
+            "nativeAverageExecutionMs",
+            "nativeWallShare",
+            "nativeWorkerUtilization"
+          ],
+          "properties": {
+            "nativeJobCount": {"type": ["integer", "null"], "minimum": 0},
+            "nativeAverageQueueMs": {"type": ["number", "null"], "minimum": 0},
+            "nativeAverageExecutionMs": {"type": ["number", "null"], "minimum": 0},
+            "nativeWallShare": {"type": ["number", "null"], "minimum": 0},
+            "nativeWorkerUtilization": {"type": ["number", "null"], "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}}
+      },
+      "additionalProperties": false
+    },
+    "buildObservation": {
+      "type": "object",
+      "required": ["phase", "event", "elapsedNs"],
+      "properties": {
+        "phase": {"type": "string", "minLength": 1},
+        "event": {"type": "string", "minLength": 1},
+        "elapsedNs": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": {
+        "type": ["string", "integer", "boolean"]
+      }
+    }
+  }
+}

@@ -48,7 +48,15 @@ scenario-test:
 scenario-runner-test:
     python3 tools/bench/run_build_scenarios_test.py
 
-check: query build test scenario-runner-test auto-test prebuilt-test source-package-test
+std-make-scheduler-runner-test:
+    python3 tools/bench/run_std_make_scheduler_scenarios_test.py
+
+std-make-scheduler-scenario:
+    tools/bench/run_std_make_scheduler_scenarios.py \
+      --gxi "${GERBIL_GXI:-gxi}" \
+      --receipt .ci/receipts/std-make-scheduler.json
+
+check: query build test scenario-runner-test std-make-scheduler-runner-test auto-test prebuilt-test source-package-test
 
 lock-check:
     {{ bazel }} mod deps --lockfile_mode=error
