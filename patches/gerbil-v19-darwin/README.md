@@ -46,6 +46,11 @@ scheduler comparison is admitted.
 
 ## Current status
 
+- The complete Patch 1 -> Patch 2 -> Patch 3 stack applies without conflict to
+  the current `v0.19-staging` revision `d801e7a1`. That revision retains the
+  same Gambit `dcd677cd` gitlink and does not modify any patch-owned source
+  file. Timing numbers below remain receipts from the earlier `f0badc7`
+  baseline and are not relabeled as D801 measurements.
 - Patch 0001 focused tests: 46/46 passed in three consecutive runs.
 - Patch 0001 strict spawn comparison: the same Scheme executable and compiler,
   with only `libgambit.a` changed, measured 2.27-2.31 seconds for 20 fork/exec

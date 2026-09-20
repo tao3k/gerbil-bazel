@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: f0badc77836ef6f4b83d8d222a4a159f71b9c592
+        default: d801e7a1c7f77df421f638e62aaebe370f193c97
         required: true
         type: string
       platform:
@@ -139,6 +139,9 @@ jobs:
         run: |
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
+          git -C upstream-gerbil/src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-bounded-compile-executor.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-build-observability.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
