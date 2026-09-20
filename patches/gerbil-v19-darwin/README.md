@@ -19,10 +19,14 @@ is stable.
    - owner: Gerbil compiler and the existing V19 `std/make` lifecycle
    - scope: structured phase, queue, execution, worker, and wall-time evidence
    - invariant: preserves the official V19 coordinator and worker algorithm
-4. Evidence owned directly by gerbil-bazel
+4. `0004-gerbil-compile-job-parameterization.patch`
+   - owner: Gerbil compiler native-job submission boundary
+   - scope: preserve per-module compiler parameters when bounded workers execute deferred jobs
+   - invariant: FFI `-cc-options` and `-ld-options` remain attached to the module that declared them
+5. Evidence owned directly by gerbil-bazel
    - benchmark runners, schemas, tests, and machine-readable receipts
 
-Patches 0002 and 0003 must not compensate for a failed or unvalidated Patch 0001.
+Patches 0002 through 0004 must not compensate for a failed or unvalidated Patch 0001.
 In particular, Gambit process creation is validated before any std/make
 scheduler comparison is admitted.
 
@@ -46,7 +50,7 @@ scheduler comparison is admitted.
 
 ## Current status
 
-- The complete Patch 1 -> Patch 2 -> Patch 3 stack applies without conflict to
+- The complete Patch 1 -> Patch 2 -> Patch 3 -> Patch 4 stack applies without conflict to
   the current `v0.19-staging` revision `d801e7a1`. That revision retains the
   same Gambit `dcd677cd` gitlink and does not modify any patch-owned source
   file. Timing numbers below remain receipts from the earlier `f0badc7`
@@ -73,6 +77,15 @@ scheduler comparison is admitted.
   coordinator-per-entry and bounded build-worker algorithm. Verbose level 3
   reports build, Gerbil, and native phases; level 9 retains individual compiler
   invocations.
+- Patch 0004 closes a correctness regression exposed by the bounded executor:
+  OpenSSL, SQLite, and zlib compiler/linker options are captured when each job
+  is submitted and restored inside the shared worker.  Its regression contract
+  passed with the source-built D801 compiler executor.
+- The focused D801 recovery run rebuilt 733 stdlib native jobs with 12 workers
+  and zero errors after Patch 0004.  The GCC 16 AOT jobs then completed in
+  171.172 seconds for `gxpkg` and 140.855 seconds for `gxtags`.  These are
+  diagnostic receipts, not an admitted cold end-to-end A/B: the run followed
+  earlier failed and incremental attempts and therefore contains warm state.
 - The real Gerbil POO V19 consumer completed a sanitized 26-module cold build:
   dependency graph construction took 1-2 ms and the Gerbil compilation phase
   took 4.872 seconds before bounded native jobs completed.  Its eleven test

@@ -139,9 +139,9 @@ jobs:
         run: |
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
-          git -C upstream-gerbil/src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-bounded-compile-executor.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-build-observability.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gerbil-compile-job-parameterization.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
@@ -189,6 +189,9 @@ jobs:
           fi
           configure_args+=(--enable-single-host=0)
           ./configure "${configure_args[@]}"
+          # Gerbil configure resets the integrated Gambit submodule to the
+          # configured revision, so apply the Darwin runtime patch afterwards.
+          git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
           gambit_config_header=src/gambit/include/config.h
           gambit_public_header=src/gambit/include/gambit.h
           grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
@@ -197,9 +200,6 @@ jobs:
             > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
             target_cores="$GERBIL_BUILD_CORES"
-            if [[ "$target" == gambit ]]; then
-              target_cores=1
-            fi
             target_started=$SECONDS
             GERBIL_BUILD_FLAGS="-j$target_cores" ./build.sh "$target"
             target_seconds=$((SECONDS - target_started))
