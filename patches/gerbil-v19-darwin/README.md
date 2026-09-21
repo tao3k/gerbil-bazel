@@ -52,6 +52,17 @@ Patches `0005` (build observability) and `0006` (test observability) remain
 local investigation candidates. They are not applied by `publish-v19.yml` and
 their later observed build cannot replace the four-patch performance baseline.
 
+Patch `0007` freezes the D851 Darwin executable-graph-scoped runtime-object
+reuse candidate, layered after `0002` and `0003` on staging revision
+`d801e7a1c7f77df421f638e62aaebe370f193c97`. It is preserved for replay
+and review, **not** applied by the release workflow. In reversed-order real
+consumer A/B, MCP cold builds improved from 72.130 to 60.690 seconds and from
+74.727 to 59.555 seconds. POO native-warm builds had no demonstrated gain,
+and one MCP attempt tripped the strict 10-second silence gate. The source,
+test conditions, and failed admission gates are recorded in
+`receipts/d851-executable-graph-scoped-runtime-object-reuse.md`; Git retention
+does not imply release qualification.
+
 ## Convergence decision
 
 The former Patch 0002-0007 series was an investigation history, not six
