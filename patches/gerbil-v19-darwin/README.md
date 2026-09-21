@@ -145,7 +145,10 @@ audit trail for rejected hypotheses and attribution experiments.
   exception value; a failed object must never release the link barrier, even
   when the exception is `#f`.
 - The Darwin process test covers environment, working directory, stderr
-  redirection, and missing executable on the built Gambit interpreter.
+  redirection, child-specific `PATH` resolution, and missing executable on the
+  built Gambit interpreter. Darwin `posix_spawnp` does not search the supplied
+  child environment's `PATH`; only that bare-name/explicit-environment case
+  keeps the original fork/exec path.
 - Run tests separately before the final clean cold build.
 - Validate both real consumers: Gerbil POO and Gerbil MCP.
 - Record cold and warm measurements separately.
