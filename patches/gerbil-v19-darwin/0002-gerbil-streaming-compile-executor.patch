@@ -7,15 +7,16 @@ overlaps Gerbil generation with native compilation without adding a second
 scheduler. Preserve the submission parameterization that the former per-job
 threads captured implicitly, drain follow-up jobs, and propagate the first
 worker error after all queued work completes.
+Track error presence separately from its value: Scheme permits raising #f.
 ---
- src/gerbil/compiler/base.ss | 184 +++++++++++++++++++++++++++---------
- 1 file changed, 142 insertions(+), 42 deletions(-)
+ src/gerbil/compiler/base.ss | 186 ++++++++++++++++++++++++++++---------
+ 1 file changed, 144 insertions(+), 42 deletions(-)
 
 diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 index 19c7a96..5995368 100644
 --- a/src/gerbil/compiler/base.ss
 +++ b/src/gerbil/compiler/base.ss
-@@ -284,55 +284,155 @@ namespace: gxc
+@@ -284,55 +284,157 @@ namespace: gxc
            (else runtime-props))))
  
  ;; parallel build support
@@ -55,6 +56,7 @@ index 19c7a96..5995368 100644
 +  (def back [])
 +  (def producer-closed? #f)
 +  (def active 0)
++  (def first-error? #f)
 +  (def first-error #f)
 +  (def worker-count (max 1 __available-cores))
  
@@ -103,10 +105,11 @@ index 19c7a96..5995368 100644
 +        (mutex-lock! mx)
 +        (wait)))))
 +
-+  (def (complete! error)
++  (def (complete! success? value)
 +    (mutex-lock! mx)
-+    (when (and error (not first-error))
-+      (set! first-error error))
++    (when (and (not success?) (not first-error?))
++      (set! first-error? #t)
++      (set! first-error value))
 +    (set! active (fx1- active))
 +    (condition-variable-broadcast! cv)
 +    (mutex-unlock! mx))
@@ -129,10 +132,10 @@ index 19c7a96..5995368 100644
 -           (loop)))))
 -   name))
 +           (with-catch
-+            (lambda (error) (complete! error))
++            (lambda (error) (complete! #f error))
 +            (lambda ()
 +              (thunk)
-+              (complete! #f)))
++              (complete! #t #f)))
 +           (loop))))))
 +
 +  (def workers
@@ -149,7 +152,7 @@ index 19c7a96..5995368 100644
 +    (condition-variable-broadcast! cv)
 +    (mutex-unlock! mx)
 +    (for-each join! workers)
-+    (when first-error (raise first-error)))
++    (when first-error? (raise first-error)))
 +
 +  (make-compile-executor submit! close!))
 +

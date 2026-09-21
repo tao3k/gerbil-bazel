@@ -52,7 +52,8 @@ jobs:
               patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
               patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
-              patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch; do
+              patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch \
+              patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
               printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
             done
           } | git hash-object --stdin)"
@@ -233,6 +234,11 @@ jobs:
               | tee -a "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
             echo "::notice title=Gerbil build timing::$target completed in ${target_seconds}s with ${target_cores} core(s)"
           done
+          if [[ "${{ runner.os }}" == macOS ]]; then
+            (cd src/gambit/tests && \
+              ../gsi/gsi -:=.. run-unit-tests.scm \
+                unit-tests/12-os/process_spawn.scm)
+          fi
           ./install.sh
           cp "$RUNNER_TEMP/gerbil-v19-build-timings.txt" \
             "$GERBIL_PREFIX/gerbil-build-timings.txt"
@@ -320,6 +326,14 @@ jobs:
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
+            for cores in 1 3; do
+              GERBIL_BUILD_CORES="$cores" \
+                gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+            done
+            env -u GERBIL_BUILD_CORES \
+              gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+          fi
 
       - name: Package relocatable capability
         shell: bash

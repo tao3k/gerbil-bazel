@@ -137,6 +137,12 @@ audit trail for rejected hypotheses and attribution experiments.
 - Patch replay against D801 must pass without context drift.
 - Gambit focused process tests must remain green.
 - Compiler executor contracts run with 1, 3, and host-derived workers.
+- The executor must propagate a raised `#f`, drain work submitted by a worker,
+  retain submission parameters, and reopen cleanly after an error. The
+  release workflow runs this contract against the built compiler, not merely
+  against patch text.
+- The Darwin process test covers environment, working directory, stderr
+  redirection, and missing executable on the built Gambit interpreter.
 - Run tests separately before the final clean cold build.
 - Validate both real consumers: Gerbil POO and Gerbil MCP.
 - Record cold and warm measurements separately.

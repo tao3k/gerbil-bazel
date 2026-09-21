@@ -223,7 +223,7 @@ new file mode 100644
 index 00000000..638d7f6d
 --- /dev/null
 +++ b/tests/unit-tests/12-os/process_spawn.scm
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,40 @@
 +(include "#.scm")
 +
 +(define (process-first-line settings)
@@ -251,6 +251,14 @@ index 00000000..638d7f6d
 +       (process-first-line
 +        (list path: "/bin/pwd"
 +              directory: "/private/tmp")))
++
++      ;; stderr shares the redirected output pipe in open-input-process.
++      (test-equal
++       '(0 . "stderr-only")
++       (process-first-line
++        (list path: "/bin/sh"
++              arguments: (list "-c" "printf stderr-only >&2")
++              stderr-redirection: #t)))
 +
 +      (test-error-tail
 +       no-such-file-or-directory-exception?
