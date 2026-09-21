@@ -5,6 +5,7 @@ Darwin cold executable builds spend their dominant tail compiling the second,
 static object family serially inside one executor job. Submit those independent
 objects to the existing compiler executor and queue one dependency-barrier link.
 Keep the official V19 closure job unchanged on non-Darwin platforms.
+Track object-job success explicitly because a Scheme exception can be #f.
 ---
  src/gerbil/compiler/driver.ss | 115 ++++++++++++++++++++++++++--------
  1 file changed, 90 insertions(+), 25 deletions(-)
@@ -88,9 +89,9 @@ index ab45133..f124e83 100644
 +                     (cv (make-condition-variable 'darwin-executable-objects))
 +                     (remaining (length jobs))
 +                     (failed? #f))
-+                 (def (complete! error)
++                 (def (complete! succeeded?)
 +                   (mutex-lock! mx)
-+                   (when error (set! failed? #t))
++                   (unless succeeded? (set! failed? #t))
 +                   (set! remaining (fx1- remaining))
 +                   (condition-variable-broadcast! cv)
 +                   (mutex-unlock! mx))
@@ -113,11 +114,11 @@ index ab45133..f124e83 100644
 +                        (lambda ()
 +                          (with-catch
 +                           (lambda (error)
-+                             (complete! error)
++                             (complete! #f)
 +                             (raise error))
 +                           (lambda ()
 +                             (thunk)
-+                             (complete! #f))))
++                             (complete! #t))))
 +                        job-name))))
 +                  jobs)
 +                 (add-compile-job!

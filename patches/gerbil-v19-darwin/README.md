@@ -141,6 +141,9 @@ audit trail for rejected hypotheses and attribution experiments.
   retain submission parameters, and reopen cleanly after an error. The
   release workflow runs this contract against the built compiler, not merely
   against patch text.
+- The Darwin executable closure records object success independently of the
+  exception value; a failed object must never release the link barrier, even
+  when the exception is `#f`.
 - The Darwin process test covers environment, working directory, stderr
   redirection, and missing executable on the built Gambit interpreter.
 - Run tests separately before the final clean cold build.
