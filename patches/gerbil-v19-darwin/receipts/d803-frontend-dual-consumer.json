@@ -1,0 +1,116 @@
+{
+  "schema": "gerbil-v19-darwin-frontend-dual-consumer-v1",
+  "platform": "darwin-arm64",
+  "toolchain": {
+    "gerbil_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+    "gerbil_version": "v0.19-dev-60-gd801e7a",
+    "gambit_version": "v4.9.8-18-gdcd677cd",
+    "compiler": "Homebrew GCC 16.2.0",
+    "prefix": "/private/tmp/gerbil-v19-d801-four-patch/v0.19-dev-60-gd801e7a"
+  },
+  "concurrency": {
+    "required_environment": "GERBIL_BUILD_CORES",
+    "direct_mcp_source": "getconf _NPROCESSORS_ONLN",
+    "poo_source": "Justfile physical-cores recipe",
+    "resolved_workers": 12,
+    "hardcoded_in_source": false,
+    "missing_setting_invalidates_performance_comparison": true
+  },
+  "observability": {
+    "status": "temporary diagnostic instrumentation; not admitted to the fixed patch stack",
+    "verbosity": 3,
+    "changes_build_algorithm": false,
+    "events": [
+      "frontend start/end",
+      "import-expand end",
+      "gerbil-producer entry-end"
+    ],
+    "events_runtime_qualified": true,
+    "algorithmic_improvement_claimed": false
+  },
+  "real_poo_consumer": {
+    "repository": "/Users/guangtao/ghq/github.com/tao3k/poo-flow/.data/gerbil-poo-v19",
+    "source_state": "preexisting dirty worktree; no consumer source edits made by this run",
+    "command_entrypoint": "just clean && just build",
+    "workers": 12,
+    "clean_build_wall_seconds": 13.13,
+    "user_seconds": 40.99,
+    "system_seconds": 9.59,
+    "frontend_elapsed_milliseconds": 12438,
+    "import_expand": {
+      "events": 78,
+      "cumulative_worker_milliseconds": 1892,
+      "maximum_milliseconds": 369,
+      "maximum_subject": "t/table-testing.ss"
+    },
+    "gerbil_producer": {
+      "events": 25,
+      "cumulative_worker_milliseconds": 23906,
+      "maximum_milliseconds": 1631,
+      "maximum_subject": "support/rationaldict.ss"
+    },
+    "build_passed": true
+  },
+  "real_mcp_consumer": {
+    "repository": "/private/tmp/gerbil-mcp",
+    "revision": "9a5c35e",
+    "source_modified": false,
+    "command_entrypoint": "make clean && make",
+    "workers": 12,
+    "clean_build_wall_seconds": 81.03,
+    "user_seconds": 366.20,
+    "system_seconds": 101.17,
+    "frontend_elapsed_milliseconds": 75065,
+    "import_expand": {
+      "events": 561,
+      "unique_first_pass_modules": 187,
+      "cumulative_worker_milliseconds": 5242,
+      "maximum_milliseconds": 476,
+      "maximum_subject": "util/compat.ss",
+      "later_cache_hits_milliseconds": 0
+    },
+    "gerbil_producer": {
+      "events": 187,
+      "cumulative_worker_milliseconds": 175095,
+      "maximum_milliseconds": 33270,
+      "maximum_subject": "main.ss",
+      "second_maximum_milliseconds": 1734,
+      "second_maximum_subject": "data/embedded.ss",
+      "third_maximum_milliseconds": 1528,
+      "third_maximum_subject": "util/parse.ss"
+    },
+    "mach_o_arm64": true,
+    "build_passed": true
+  },
+  "comparison": {
+    "previous_admitted_candidate_wall_seconds": 79.58,
+    "current_valid_parallel_wall_seconds": 81.03,
+    "delta_seconds": 1.45,
+    "delta_percent": 1.82,
+    "same_performance_band": true
+  },
+  "excluded_diagnostics": [
+    {
+      "consumer": "gerbil-mcp",
+      "wall_seconds": 393.33,
+      "completed": true,
+      "excluded_from_ab": true,
+      "reason": "GERBIL_BUILD_CORES was omitted and the Gerbil producer serialized"
+    },
+    {
+      "consumer": "gerbil-mcp",
+      "wall_seconds_at_stop": 113.76,
+      "completed": false,
+      "excluded_from_ab": true,
+      "reason": "instrumented serial confirmation was stopped after serialization was established"
+    }
+  ],
+  "decision": {
+    "import_or_macro_expansion_is_primary_tail": false,
+    "dominant_owner": "compile-executable-module/separate executable closure production represented by the main.ss producer",
+    "probable_subphase": "prepare-link gsc -link and closure materialization before ordinary object jobs are fully submitted",
+    "consumer_source_change_allowed": false,
+    "next_gate": "time closure enumeration, prepare-link/gsc -link, object-job submission, and final link independently; optimize only the measured dominant subphase",
+    "repeat_current_clean_builds_without_candidate_change": false
+  }
+}

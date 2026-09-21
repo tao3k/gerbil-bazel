@@ -1,0 +1,90 @@
+{
+  "schema": "gerbil-v19-darwin-baseline-critical-path-v1",
+  "base_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+  "gambit_revision": "dcd677cd3e40860bdd27dfbdbf5e3ce46ab03813",
+  "platform": "darwin-arm64",
+  "consumer": {
+    "name": "gerbil-mcp",
+    "revision": "9a5c35e275e5d6847ff421151bb224f2eae177c1",
+    "source_changed": false
+  },
+  "authoritative_baseline": {
+    "wall_seconds": 65.35,
+    "user_seconds": 316.57,
+    "system_seconds": 91.57,
+    "workers": 12
+  },
+  "wall_time_buckets": {
+    "gerbil_generation_and_dynamic_closure_seconds": 25.466,
+    "gerbil_generation_and_dynamic_closure_percent": 38.97,
+    "prepare_link_duplicate_scheme_frontend_seconds": 20.894,
+    "prepare_link_duplicate_scheme_frontend_percent": 31.97,
+    "parallel_static_object_closure_seconds": 18.87,
+    "parallel_static_object_closure_percent": 28.87,
+    "final_native_link_seconds": 0.12,
+    "final_native_link_percent": 0.18,
+    "note": "The static object value is the exact isolated 187-input measurement validated against the same critical-path shape; percentages are an owner decomposition, not additive CPU time."
+  },
+  "cpu_family_attribution": {
+    "runtime_dynamic_user_seconds": 122.76,
+    "runtime_dynamic_percent_of_attributed_user": 38.7,
+    "static_object_user_seconds": 102.95,
+    "static_object_percent_of_attributed_user": 32.5,
+    "compile_time_user_seconds": 51.15,
+    "compile_time_percent_of_attributed_user": 16.1,
+    "module_loader_user_seconds": 29.61,
+    "module_loader_percent_of_attributed_user": 9.3,
+    "executable_link_frontend_user_seconds": 10.74,
+    "executable_link_frontend_percent_of_attributed_user": 3.4,
+    "interpretation": "prepare-link is a large serial wall owner despite modest CPU; runtime dynamic plus static object compilation dominate CPU and duplicate the runtime module representation"
+  },
+  "low_frequency_timeline_validation": {
+    "sampling_interval_seconds": 5,
+    "wall_seconds": 78.729,
+    "comparable_as_baseline": false,
+    "reason": "host and external process sampling overhead kept this run outside the 65.35 to 72.51 second baseline band",
+    "preflight_end_seconds": 3.746,
+    "first_module_generation_seconds": 11.204,
+    "compile_exe_reached_seconds": 33.281,
+    "first_static_object_seconds": 58.109,
+    "prepare_link_interval_seconds": 24.828,
+    "static_object_drain_seconds": 20.326,
+    "final_link_interval_seconds": 0.294,
+    "use": "phase-order and critical-path-shape validation only"
+  },
+  "rejected_instrumentation": {
+    "sampling_interval_seconds": 0.25,
+    "wall_seconds": 82.284,
+    "reason": "frequent macOS ps traversal materially perturbed the build"
+  },
+  "priority": [
+    {
+      "rank": 1,
+      "owner": "duplicate static Scheme-to-C work in prepare-link",
+      "recoverable_wall_upper_bound_seconds": 20.074,
+      "evidence": "the same closure falls from 10.22 to 0.82 seconds when equivalent C inputs already exist"
+    },
+    {
+      "rank": 2,
+      "owner": "second native compilation of the runtime closure",
+      "measured_wall_seconds": 18.87,
+      "evidence": "187 static object inputs consume 102.95 attributed user seconds"
+    },
+    {
+      "rank": 3,
+      "owner": "Gerbil generation plus required dynamic, compile-time, and loader artifacts",
+      "measured_wall_seconds": 25.466,
+      "evidence": "this is parallel and contains required output families, so it must be split by representation reuse before scheduling changes"
+    }
+  ],
+  "decision": {
+    "admit_patch": false,
+    "next_architectural_gate": "prove one canonical runtime C producer and determine whether one PIC native object can feed both the dynamic bundle and executable closure",
+    "do_not_continue": [
+      "worker-count tuning",
+      "second frontend pools",
+      "coarse batches",
+      "Python ownership wrappers"
+    ]
+  }
+}

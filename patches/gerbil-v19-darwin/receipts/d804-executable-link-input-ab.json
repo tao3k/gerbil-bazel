@@ -1,0 +1,130 @@
+{
+  "schema": "gerbil-v19-darwin-executable-link-input-ab-v1",
+  "base_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+  "platform": "darwin-arm64",
+  "consumer": "gerbil-mcp",
+  "worker_source": "GERBIL_BUILD_CORES=12 derived from the observed host",
+  "invariants": {
+    "consumer_source_changed": false,
+    "mcp_source_changed": false,
+    "fixed_patch_added": false,
+    "aot_toolchain_used": true,
+    "darwin_environment_sanitized": true
+  },
+  "input_closure": {
+    "libgerbil_c": 132,
+    "consumer_static_scheme": 186,
+    "consumer_main_static_scheme": 1,
+    "total_link_inputs_in_micro_ab": 320
+  },
+  "exact_link_input_micro_ab": {
+    "original_scheme_inputs_seconds": 10.22,
+    "existing_c_inputs_seconds": 0.82,
+    "speedup": 12.46,
+    "generated_link_c_bytes": 8185689,
+    "generated_link_c_sha256_original": "3119ccdcd4d29c14752bba1b50fe3deb563da381096e6ce8312c1a8394ec5c0e",
+    "generated_link_c_sha256_existing_c": "3119ccdcd4d29c14752bba1b50fe3deb563da381096e6ce8312c1a8394ec5c0e",
+    "result": "byte-identical"
+  },
+  "atomic_multi_input_contract": {
+    "inputs": 2,
+    "single_vs_multi_c_equal": true,
+    "single_vs_multi_object_equal": true,
+    "note": "gsc -obj -keep-temp with two real MCP static Scheme modules produced byte-identical per-module C and object files"
+  },
+  "isolated_stage_measurements": {
+    "c_only_187_inputs_12_processes_seconds": 2.92,
+    "c_only_user_seconds": 10.33,
+    "c_only_system_seconds": 0.71,
+    "object_187_inputs_12_processes_seconds": 18.87,
+    "object_user_seconds": 98.83,
+    "object_system_seconds": 17.85
+  },
+  "real_clean_builds": [
+    {
+      "candidate": "observed original four-patch AOT path",
+      "wall_seconds": 65.35,
+      "user_seconds": 316.57,
+      "system_seconds": 91.57,
+      "prepare_link_milliseconds": 20894,
+      "result": "baseline"
+    },
+    {
+      "candidate": "consume C without producing it",
+      "wall_seconds": 59.33,
+      "prepare_link_milliseconds": 1365,
+      "result": "invalid",
+      "reason": "clean static C inputs did not exist; native object jobs failed"
+    },
+    {
+      "candidate": "one combined gsc process per module",
+      "wall_seconds": 76.34,
+      "user_seconds": 341.95,
+      "system_seconds": 93.09,
+      "prepare_link_milliseconds": 929,
+      "result": "rejected",
+      "reason": "187 compiler startups erased the prepare-link gain"
+    },
+    {
+      "candidate": "twelve combined C-and-object batches",
+      "wall_seconds": 96.75,
+      "user_seconds": 354.05,
+      "system_seconds": 96.50,
+      "prepare_link_milliseconds": 881,
+      "max_batch_milliseconds": 32880,
+      "result": "rejected",
+      "reason": "coarse object batches destroyed fine-grained load balancing"
+    },
+    {
+      "candidate": "FIFO C batches then fine-grained objects",
+      "wall_seconds": 75.06,
+      "user_seconds": 337.75,
+      "system_seconds": 90.80,
+      "c_stage_milliseconds": 24583,
+      "prepare_link_milliseconds": 826,
+      "object_stage_milliseconds": 18707,
+      "result": "rejected",
+      "reason": "C batches waited behind the existing native queue and lost producer-worker overlap"
+    },
+    {
+      "candidate": "priority C and priority objects",
+      "wall_seconds": 75.25,
+      "user_seconds": 341.16,
+      "system_seconds": 92.71,
+      "c_stage_milliseconds": 3321,
+      "prepare_link_milliseconds": 1525,
+      "object_stage_milliseconds": 25819,
+      "result": "rejected",
+      "reason": "priority object work delayed the ordinary native tail"
+    },
+    {
+      "candidate": "priority C and FIFO objects",
+      "wall_seconds": 89.39,
+      "user_seconds": 363.03,
+      "system_seconds": 98.52,
+      "c_stage_milliseconds": 34293,
+      "prepare_link_milliseconds": 989,
+      "object_stage_milliseconds": 22138,
+      "result": "rejected",
+      "reason": "the mixed queue candidate regressed both total CPU and wall time"
+    }
+  ],
+  "decision": {
+    "admit_patch": false,
+    "proven_duplicate_work": "gsc -link recompiles 187 consumer static Scheme inputs before reading their linker metadata",
+    "proven_fast_path": "when equivalent C already exists, prepare-link falls from 10.22 seconds to 0.82 seconds with byte-identical output",
+    "rejected_direction": "executor queue and coarse batching experiments",
+    "next_owner": "Gambit gsc -link source-to-C frontend path",
+    "next_gate": "remove or parallelize duplicate static Scheme frontend work inside the official link path without adding per-module compiler startups, changing consumer code, or weakening object granularity"
+  },
+  "logs": [
+    "/private/tmp/gerbil-mcp-d804-candidate-clean.log",
+    "/private/tmp/gerbil-mcp-d804-dag-candidate-clean.log",
+    "/private/tmp/gerbil-mcp-d804-batched-candidate-clean.log",
+    "/private/tmp/gerbil-mcp-d804-staged-candidate-clean.log",
+    "/private/tmp/gerbil-mcp-d804-priority-candidate-clean.log",
+    "/private/tmp/gerbil-mcp-d804-c-priority-clean.log",
+    "/private/tmp/gerbil-mcp-c-batch-isolated.log",
+    "/private/tmp/gerbil-mcp-object-isolated.log"
+  ]
+}

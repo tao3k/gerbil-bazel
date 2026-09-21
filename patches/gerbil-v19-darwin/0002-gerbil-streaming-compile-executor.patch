@@ -1,5 +1,5 @@
 From: tao3k team and Contributors
-Subject: [PATCH 2/3] compiler: stream native jobs through a bounded executor
+Subject: [PATCH 2/4] compiler: stream native jobs through a bounded executor
 
 Keep the official std/make graph and execute-pending-compile-jobs! boundary,
 but start a compiler-owned worker pool when the first native job arrives. This

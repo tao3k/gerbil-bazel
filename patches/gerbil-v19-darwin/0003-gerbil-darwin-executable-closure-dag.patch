@@ -1,5 +1,5 @@
 From: tao3k team and Contributors
-Subject: [PATCH 3/3] compiler: parallelize Darwin executable object closure
+Subject: [PATCH 3/4] compiler: parallelize Darwin executable object closure
 
 Darwin cold executable builds spend their dominant tail compiling the second,
 static object family serially inside one executor job. Submit those independent
