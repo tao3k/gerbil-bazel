@@ -212,9 +212,10 @@ jobs:
             # audited patch. Keep configure newest so Gambit's make rules do
             # not regenerate it with an arbitrary host Autoconf version.
             touch src/gambit/configure
-            (cd src/gambit && ./config.status --recheck)
-            # config.status has materialized the configured Unix template at
-            # this point; the executable gambuild-C is created later by make.
+            # --recheck runs configure with --no-create, so explicitly
+            # regenerate the configured templates before checking the flag.
+            (cd src/gambit && ./config.status --recheck && ./config.status)
+            # The executable gambuild-C is created later by make.
             grep -F -- '-ftrack-macro-expansion=0' src/gambit/bin/gambuild-C.unix
           fi
           gambit_config_header=src/gambit/include/config.h
