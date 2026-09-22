@@ -24,6 +24,7 @@ gerbil.auto(
     expected_version_prefixes = [
         "Gerbil v0.18.2",
         "Gerbil 07c8481",
+        "Gerbil f0badc7",
     ],
     linux_prebuilt_arch = "x86_64",
     linux_prebuilt_install_digest = GERBIL_LINUX_INSTALL_DIGEST,
@@ -35,6 +36,7 @@ gerbil.auto(
     expected_version_prefixes = [
         "Gerbil v0.18.2",
         "Gerbil 07c8481",
+        "Gerbil f0badc7",
     ],
     linux_prebuilt_arch = "x86_64",
     linux_prebuilt_install_digest = GERBIL_LINUX_INSTALL_DIGEST,
