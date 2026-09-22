@@ -64,7 +64,9 @@ jobs:
             rebase --committer-date-is-author-date "$staging_sha"
           git -C "$upstream_dir" diff --quiet "$staging_sha" -- src/std/net/http
           git -C "$upstream_dir" apply --check \
-            "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch" \
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch" \
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
       - name: Install Linux consumer dependencies
         if: runner.os == 'Linux'

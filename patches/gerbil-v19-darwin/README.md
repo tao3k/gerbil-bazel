@@ -46,6 +46,23 @@ immutable release tag. The 65.35-second complete MCP build in D804 is the best
 recorded four-patch result, not a reproducible guarantee for another host or
 revision.
 
+## Darwin runtime closure patches
+
+Two correctness slices follow the performance stack in the macOS release:
+
+- `0010-gerbil-darwin-socket-address-contract.patch` initializes Darwin
+  `sa_len`, passes matching native lengths to outbound socket syscalls, and
+  keeps an `accept` EAGAIN sentinel out of accepted-fd setup. Linux `accept4`
+  and non-Darwin sockaddr ABI behavior are unchanged. Its port-0 regression
+  exercises the pending-accept path before connecting a client.
+- `0011-gerbil-darwin-release-dynamic-linkage.patch` preserves release and
+  optimized executable generation while avoiding unsupported fully static
+  executable linkage on Darwin. Non-Darwin release linkage remains static.
+
+The local qualification in
+`receipts/d878-darwin-http-runtime-closure.md` covers the upstream atomic
+socket test, a release AOT sockaddr probe, and the real ASP HTTP JSON suite.
+
 ## Observation-only patches, excluded from the performance release
 
 Patches `0005` (build observability) and `0006` (test observability) remain

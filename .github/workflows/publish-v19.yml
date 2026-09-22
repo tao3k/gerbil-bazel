@@ -64,6 +64,8 @@ jobs:
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
               patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
               patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch \
+              patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch \
+              patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch \
               patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
               printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
             done
@@ -175,6 +177,8 @@ jobs:
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
@@ -310,11 +314,12 @@ jobs:
           gxtest -v 3 \
             upstream-gerbil/src/std/io/bio/bio-test.ss \
             upstream-gerbil/src/std/encoding/json/json-test.ss \
+            upstream-gerbil/src/std/os/socket-test.ss \
             upstream-gerbil/src/std/ensemble/ucan/did-test.ss \
             upstream-gerbil/src/std/ensemble/ucan/context-test.ss \
             upstream-gerbil/src/std/ensemble/network/auth-test.ss \
             | tee "$test_log"
-          [[ "$(grep -c '^MODULE-OK ' "$test_log")" -eq 5 ]]
+          [[ "$(grep -c '^MODULE-OK ' "$test_log")" -eq 6 ]]
           [[ "$(grep -c '^HARNESS-OK ' "$test_log")" -eq 1 ]]
           ! grep -F 'ERROR' "$test_log"
 
