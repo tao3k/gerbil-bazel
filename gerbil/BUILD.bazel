@@ -110,7 +110,6 @@ exports_files([
     "validate_json.ss",
     "validate_json_v19.ss",
     "validate_project_receipt_v1.ss",
-    "validate_project_receipt_v19.ss",
     "write_project_receipt.ss",
     "write_project_receipt_v19.ss",
 ])
