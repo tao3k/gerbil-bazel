@@ -81,6 +81,9 @@ The GCC precompiled-header feasibility gate is in
 `receipts/d861-gambit-header-pch-rejection.md`.
 The ordinary-file string-lowering rejection and unqualified multi-threaded-VM
 experiment are in `receipts/d871-d872-ordinary-string-and-vm-parallelism.md`.
+The unchanged D866 candidate's strict dual-consumer requalification and
+same-binary POO drift control are in
+`receipts/d873-dual-consumer-requalification.md`.
 Patch `0008` restores the official pure-module output path after `0007`; its
 order-balanced dual-consumer A/B is in
 `receipts/d862-uninstrumented-dual-consumer-ab.md`. Patch `0009` is a separate

@@ -5,6 +5,20 @@ next.  A patch is not promoted because it compiles, passes focused tests, or
 improves observability.  It must address the measured owner of the cost and
 survive the admission gates below.
 
+## Current D873 decision
+
+The four-patch release stack is unchanged. D866 (0007+0008) repeated a
+material MCP executable-closure win in both strict build orders, but did not
+clear POO qualification: an unchanged original-versus-original POO control
+drifted from 12.788 to 21.393 seconds on this host. Both sides of every
+real-consumer run built successfully and respected the 10-second output gate.
+The control is a test-validity failure, not permission to weaken a performance
+gate or a proof of D866 non-regression. Keep D866 outside the release workflow
+until the POO control is stable and the original/candidate comparison clears
+the existing gates. See `receipts/d873-dual-consumer-requalification.md` for
+the exact A/B data and binary identities. Do not reopen OS-thread, worker-count,
+or `std/make` queue hypotheses as substitutes for this qualification.
+
 ## Patch 0002-0007 convergence verdict
 
 The seven-patch investigation stack has converged to three active review
