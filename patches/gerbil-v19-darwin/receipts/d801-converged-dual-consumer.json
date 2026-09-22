@@ -1,0 +1,76 @@
+{
+  "schema": "gerbil-v19-darwin-convergence-v1",
+  "gerbil_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+  "platform": "darwin-arm64",
+  "compiler": "gcc-16",
+  "worker_source": "GERBIL_BUILD_CORES supplied from host physical cores",
+  "sanitized_environment": [
+    "SDKROOT",
+    "CPATH",
+    "LIBRARY_PATH",
+    "C_INCLUDE_PATH",
+    "CPLUS_INCLUDE_PATH",
+    "MACOSX_DEPLOYMENT_TARGET"
+  ],
+  "compiler_path": "/usr/bin",
+  "active_patches": [
+    "0001-gambit-darwin-posix-spawn.patch",
+    "0002-gerbil-streaming-compile-executor.patch",
+    "0003-gerbil-darwin-executable-closure-dag.patch"
+  ],
+  "atomic_executor": {
+    "workers": 2,
+    "wall_seconds": 2.21,
+    "passed": true,
+    "contracts": [
+      "host-budget-resolution",
+      "bounded-concurrency",
+      "producer-native-overlap",
+      "follow-up-drain",
+      "submission-parameterization",
+      "first-error-propagation"
+    ]
+  },
+  "consumers": {
+    "gerbil_poo": {
+      "repository_revision": "22c1948",
+      "working_tree_note": "existing algorithm work preserved",
+      "deferred_batch_wall_seconds": 16.45,
+      "streaming_wall_seconds": 13.49,
+      "streaming_user_seconds": 41.24,
+      "streaming_sys_seconds": 9.36,
+      "streaming_delta_percent": -17.99,
+      "build_passed": true,
+      "atomic_test_files_passed": 11,
+      "atomic_test_files_failed": 0,
+      "aggregate_harness": "stopped after ten-second silent interval"
+    },
+    "gerbil_mcp": {
+      "repository_revision": "9a5c35e",
+      "frozen_external_baseline_seconds": 175.19,
+      "deferred_batch_darwin_dag_seconds": 99.20,
+      "streaming_darwin_dag_seconds": 79.58,
+      "streaming_user_seconds": 356.34,
+      "streaming_sys_seconds": 103.93,
+      "streaming_vs_batch_percent": -19.78,
+      "streaming_vs_frozen_percent": -54.58,
+      "previous_full_stack_seconds": 83.69,
+      "streaming_vs_previous_full_stack_percent": -4.91,
+      "build_passed": true,
+      "binary": "Mach-O 64-bit executable arm64",
+      "version_passed": true,
+      "initialize_passed": true,
+      "known_test_failures": 4,
+      "focused_test_refresh": "stopped after ten-second silent interval; baseline failures not relabeled"
+    }
+  },
+  "decision": {
+    "std_make_source_changed": false,
+    "non_darwin_driver_changed": false,
+    "admit_minimal_streaming_executor": true,
+    "admit_darwin_executable_dag": true,
+    "admit_previous_patches_0002_through_0007": false,
+    "homebrew_install_authorized": false,
+    "upstream_publish_authorized": false
+  }
+}

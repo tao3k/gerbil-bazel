@@ -4,7 +4,10 @@
 
 (export main)
 
-(import :gerbil/gambit :std/text/json)
+(import (only-in :std/encoding/json
+                 JSONReadOptions
+                 current-json-read-options
+                 read-json))
 
 (def +project-receipt-schema+ "gerbil-bazel.project-receipt.v1")
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
@@ -61,7 +64,8 @@
   (unless condition (apply error message irritants)))
 
 (def (read-json-file path)
-  (call-with-input-file path read-json))
+  (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+    (call-with-input-file path read-json)))
 
 (def (exact-fields! value allowed label)
   (contract-assert (hash-table? value) "receipt value must be a JSON object" label)

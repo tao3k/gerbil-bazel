@@ -1,0 +1,46 @@
+From: tao3k team and Contributors
+Subject: [PATCH] std/make: expose Darwin module-index progress at verbose level 3
+
+The first worker cannot announce a compile until std/make has imported every
+build-spec module to derive its completion identity. On a large Darwin package,
+this legitimate macro-expansion phase can exceed the consumer's 10-second
+silence watchdog. Report real indexed-module progress through std/make's
+existing flushed message path. Keep the official import and graph algorithm,
+non-Darwin behavior, and non-verbose output unchanged.
+---
+ src/std/make.ss | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/src/std/make.ss b/src/std/make.ss
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -339,12 +339,26 @@
+     ;; prepare the build
+     (create-directory* (settings-bindir settings))
+     (create-directory* (settings-libdir settings))
+     (create-directory* (path-expand "static" (settings-libdir settings)))
+ 
+     ;; prepare the completion table
+-    (for (spec buildspec)
+-      (let (id (module-id spec))
+-        (hash-put! completions id (make-completion `(build ,id)))))
++    (let ((progress?
++           (and (settings-verbose>=? settings 3)
++                (cond-expand (darwin #t) (else #f))))
++          (indexed 0))
++      (when progress?
++        (message "... build-observe phase=module-index event=start total="
++                 (length buildspec)))
++      (for (spec buildspec)
++        (let (id (module-id spec))
++          (hash-put! completions id (make-completion `(build ,id))))
++        (set! indexed (+ indexed 1))
++        (when (and progress? (zero? (modulo indexed 16)))
++          (message "... build-observe phase=module-index event=progress indexed="
++                   indexed)))
++      (when progress?
++        (message "... build-observe phase=module-index event=end indexed="
++                 indexed)))
+ 
+     ;; spawn a thread for each spec that waits for the dependency completions
+     ;; and pushes to the work channel if necessary.

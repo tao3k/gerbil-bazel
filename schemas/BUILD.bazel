@@ -4,4 +4,5 @@ exports_files([
     "gerbil-bazel.build-scenario-receipt.v1.schema.json",
     "gerbil-bazel.prebuilt-capability-manifest.v1.schema.json",
     "gerbil-bazel.project-receipt.v1.schema.json",
+    "gerbil-bazel.std-make-scheduler-receipt.v1.schema.json",
 ])

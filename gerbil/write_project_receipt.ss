@@ -4,16 +4,23 @@
 
 (export main)
 
-(import :gerbil/gambit
-        (only-in :std/misc/ports read-file-lines)
-        (only-in :std/text/json read-json json-object->string write-json-sort-keys?))
+(import (only-in :std/misc/ports read-file-lines)
+        (only-in :std/encoding/json
+                 JSONReadOptions
+                 JSONWriteOptions
+                 current-json-read-options
+                 current-json-write-options
+                 read-json
+                 json->string))
 
 (def (read-json-file path)
-  (call-with-input-file path read-json))
+  (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+    (call-with-input-file path read-json)))
 
 (def (read-json-string text)
-  (let (port (open-input-string text))
-    (read-json port)))
+  (parameterize ((current-json-read-options (JSONReadOptions object-as-hash: #t)))
+    (let (port (open-input-string text))
+      (read-json port))))
 
 (def (optional-json-file path)
   (and (not (string=? path "-")) (read-json-file path)))
@@ -47,9 +54,9 @@
     (hash-put! receipt "buildReceipt" build-receipt))
   (when (pair? source-resolutions)
     (hash-put! receipt "dependencySourceResolutions" source-resolutions))
-  (parameterize ((write-json-sort-keys? #t))
+  (parameterize ((current-json-write-options (JSONWriteOptions sort-keys: #t)))
     (call-with-output-file output
       (lambda (port)
-        (display (json-object->string receipt) port)
+        (display (json->string receipt) port)
         (newline port))))
     (exit 0)))

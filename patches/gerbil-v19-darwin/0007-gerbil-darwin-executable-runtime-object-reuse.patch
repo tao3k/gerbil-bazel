@@ -1,0 +1,504 @@
+From: tao3k team and Contributors
+Subject: [PATCH 7/7] compiler: reuse Darwin runtime objects in executable graphs
+
+Preserve the executable-graph-scoped candidate on staging V19. This patch
+layers after 0002 and 0003. D874 corrected output-dependency failure and
+unknown-output handling; earlier performance receipts predate that change.
+It is an investigation candidate, not part of the four-patch release workflow.
+
+---
+diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
+--- a/src/gerbil/compiler/base.ss
++++ b/src/gerbil/compiler/base.ss
+@@ -292,7 +292,9 @@
+       (##core-count))))
+ (def __available-cores (available-build-cores))
+ 
+-(defstruct compile-executor (submit close))
++(defstruct compile-executor
++  (submit close register-output publish-output after-outputs output-produced?))
++(defstruct compile-output-result (completed? failed? callbacks))
+ (def __compile-executor #f)
+ (def __compile-executor-mx (make-mutex 'compile-executor-lifecycle))
+ 
+@@ -305,6 +307,7 @@
+   (def active 0)
+   (def first-error? #f)
+   (def first-error #f)
++  (def output-results (make-hash-table))
+   (def worker-count (max 1 __available-cores))
+ 
+   (def (submit! job)
+@@ -314,6 +317,68 @@
+     (set! back (cons job back))
+     (condition-variable-signal! cv)
+     (mutex-unlock! mx))
++
++  (def (register-output! output)
++    (with-lock mx
++      (lambda ()
++        (when (hash-get output-results output)
++          (error "duplicate compile output producer" output))
++        (hash-put! output-results output
++                   (make-compile-output-result #f #f [])))))
++
++  (def (output-produced? output)
++    (with-lock mx (lambda () (and (hash-get output-results output) #t))))
++
++  (def (publish-output! output failed?)
++    (def callbacks
++      (with-lock mx
++        (lambda ()
++          (let (result (hash-get output-results output))
++            (unless result (error "unknown compile output producer" output))
++            (when (compile-output-result-completed? result)
++              (error "compile output published twice" output))
++            (set! (compile-output-result-completed? result) #t)
++            (set! (compile-output-result-failed? result) failed?)
++            (let (callbacks (compile-output-result-callbacks result))
++              (set! (compile-output-result-callbacks result) [])
++              callbacks)))))
++    (for-each (lambda (callback) (callback failed?)) callbacks))
++
++  (def (after-outputs! outputs job)
++    (def remaining 0)
++    (def failed? #f)
++    (def ready? #f)
++    (def (complete-one! failed-output?)
++      (def submit-now? #f)
++      (with-lock mx
++        (lambda ()
++          (when failed-output? (set! failed? #t))
++          (set! remaining (fx1- remaining))
++          (when (and (fxzero? remaining) (not failed?))
++            (set! submit-now? #t))))
++      (when submit-now? (submit! job)))
++    (with-lock mx
++      (lambda ()
++        (for-each
++         (lambda (output)
++           (unless (hash-get output-results output)
++             (error "unknown compile output dependency" output)))
++         outputs)
++        (for-each
++         (lambda (output)
++           (let (result (hash-get output-results output))
++             (if (compile-output-result-completed? result)
++               (when (compile-output-result-failed? result)
++                 (set! failed? #t))
++               (begin
++                 (set! remaining (fx1+ remaining))
++                 (set! (compile-output-result-callbacks result)
++                       (cons complete-one!
++                             (compile-output-result-callbacks result)))))))
++         outputs)
++        (when (and (fxzero? remaining) (not failed?))
++          (set! ready? #t))))
++    (when ready? (submit! job)))
+ 
+   (def (next-job)
+     (mutex-lock! mx)
+@@ -376,7 +441,9 @@
+     (for-each join! workers)
+     (when first-error? (raise first-error)))
+ 
+-  (make-compile-executor submit! close!))
++  (make-compile-executor
++   submit! close! register-output! publish-output!
++   after-outputs! output-produced?))
+ 
+ (def (current-or-open-compile-executor)
+   (with-lock __compile-executor-mx
+@@ -389,6 +456,30 @@
+   (let (executor (current-or-open-compile-executor))
+     ((compile-executor-submit executor) (make-compile-job thunk name))))
+ 
++(def (add-compile-output-job! output thunk (name (current-compile-context)))
++  (let (executor (current-or-open-compile-executor))
++    ((compile-executor-register-output executor) output)
++    ((compile-executor-submit executor)
++     (make-compile-job
++      (lambda ()
++        (with-catch
++         (lambda (error)
++           ((compile-executor-publish-output executor) output #t)
++           (raise error))
++         (lambda ()
++           (thunk)
++           ((compile-executor-publish-output executor) output #f))))
++      name))))
++
++(def (add-compile-dependent-job! outputs thunk (name (current-compile-context)))
++  (let (executor (current-or-open-compile-executor))
++    ((compile-executor-after-outputs executor)
++     outputs (make-compile-job thunk name))))
++
++(def (current-compile-output-produced? output)
++  (let (executor (current-or-open-compile-executor))
++    ((compile-executor-output-produced? executor) output)))
++
+ (def (execute-pending-compile-jobs!)
+   (let (executor
+         (with-lock __compile-executor-mx
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -112,6 +112,7 @@
+          (optimize    (pgetq optimize: opts))
+          (debug       (pgetq debug: opts))
+          (gen-ssxi    (pgetq generate-ssxi: opts))
++         (static?     (pgetq static: opts))
+          (parallel?   (pgetq parallel: opts)))
+ 
+     (when outdir
+@@ -126,6 +127,7 @@
+                    (current-compile-optimize optimize)
+                    (current-compile-debug debug)
+                    (current-compile-generate-ssxi gen-ssxi)
++                   (current-compile-static static?)
+                    (current-compile-timestamp (compile-timestamp))
+                    (current-compile-context `((compile-module ,srcpath)))
+                    (current-compile-identifiers (make-bound-identifier-table))
+@@ -238,6 +240,10 @@
+         (else (reverse! result)))))
+ 
+   (def (compile-stub output-scm output-bin)
++    (def (runtime-c-for-static ctx static-scm)
++      (path-expand
++       (string-append (module-id->path-string (expander-context-id ctx)) "~0.c")
++       (path-normalize (path-expand ".." (path-directory static-scm)))))
+     (let* ((gerbil-home      (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
+            (gerbil-libdir    (path-expand "lib" gerbil-home))
+            (gerbil-staticdir (path-expand "static" gerbil-libdir))
+@@ -248,13 +254,22 @@
+            (libgerbil-c      (map replace-extension-with-c libgerbil-scm))
+            (libgerbil-o      (map replace-extension-with-object libgerbil-scm))
+            (src-deps         (filter userlib-module? deps))
+-           (src-deps-scm     (map find-static-module-file src-deps))
+-           (src-deps-scm     (filter not-file-empty? src-deps-scm))
+-           (src-deps-scm     (map path-expand src-deps-scm))
++           (src-deps-with-scm
++            (filter (lambda (entry) (not-file-empty? (cdr entry)))
++                    (map (lambda (dep)
++                           (cons dep (find-static-module-file dep)))
++                         src-deps)))
++           (src-deps-scm     (map (lambda (entry) (path-expand (cdr entry)))
++                                  src-deps-with-scm))
++           (src-deps-runtime-c
++            (map (lambda (entry)
++                   (runtime-c-for-static (car entry) (cdr entry)))
++                 src-deps-with-scm))
+            (src-deps-c       (map replace-extension-with-c src-deps-scm))
+            (src-deps-o       (map replace-extension-with-object src-deps-scm))
+            (src-bin-scm      (find-static-module-file ctx))
+            (src-bin-scm      (path-expand src-bin-scm))
++           (src-bin-runtime-c (runtime-c-for-static ctx src-bin-scm))
+            (src-bin-c        (replace-extension-with-c src-bin-scm))
+            (src-bin-o        (replace-extension-with-object src-bin-scm))
+            (output-bin       (path-expand output-bin))
+@@ -297,7 +312,8 @@
+             (unwind-protect
+               (when (or (not (file-exists? o-path))
+                         (not scm-path)
+-                        (file-newer? scm-path o-path))
++                        (file-newer? scm-path o-path)
++                        (file-newer? c-path o-path))
+                 (let (gsc-cc-opts (gsc-cc-options static: #f))
+                   (invoke (gerbil-gsc)
+                           ["-obj"
+@@ -313,13 +329,45 @@
+         (let ((scm-paths [src-deps-scm ... src-bin-scm output-scm #f])
+               (c-paths [src-deps-c ... src-bin-c output-c output_-c]))
+           (def (prepare-link)
+-            (invoke (gerbil-gsc)
+-                    ["-link"
+-                     gsc-link-opts ...
+-                     libgerbil-c ...
+-                     src-deps-scm ...
+-                     src-bin-scm
+-                     output-scm]))
++            (cond-expand
++              (darwin
++               (let ((ready-deps (map current-compile-output-produced?
++                                      src-deps-runtime-c))
++                     (ready-bin (current-compile-output-produced? src-bin-runtime-c)))
++                 (invoke (gerbil-gsc)
++                         ["-link"
++                          gsc-link-opts ...
++                          libgerbil-c ...
++                          (map (lambda (scm runtime-c ready?)
++                                 (if ready? runtime-c scm))
++                               src-deps-scm src-deps-runtime-c ready-deps) ...
++                          (if ready-bin src-bin-runtime-c src-bin-scm)
++                          output-scm])
++                 ;; The executable object jobs retain their existing static C
++                 ;; paths.  Dynamic C lives elsewhere, so late producers and
++                 ;; Scheme fallback never race on the same output file.
++                 (for-each (lambda (runtime-c static-c ready?)
++                             (when (and ready?
++                                        (or (not (file-exists? static-c))
++                                            (file-newer? runtime-c static-c)))
++                               (when (file-exists? static-c)
++                                 (delete-file static-c))
++                               (copy-file runtime-c static-c)))
++                           src-deps-runtime-c src-deps-c ready-deps)
++                 (when (and ready-bin
++                            (or (not (file-exists? src-bin-c))
++                                (file-newer? src-bin-runtime-c src-bin-c)))
++                   (when (file-exists? src-bin-c)
++                     (delete-file src-bin-c))
++                   (copy-file src-bin-runtime-c src-bin-c))))
++              (else
++               (invoke (gerbil-gsc)
++                       ["-link"
++                        gsc-link-opts ...
++                        libgerbil-c ...
++                        src-deps-scm ...
++                        src-bin-scm
++                        output-scm]))))
+           (def (link-executable)
+             (invoke (gerbil-gcc)
+                     ["-w" "-o" output-bin
+@@ -397,8 +445,13 @@
+           (if (current-compile-parallel)
+             (cond-expand
+               (darwin
+-               (prepare-link)
+-               (schedule-darwin-objects-and-link))
++               (add-compile-dependent-job!
++                (filter current-compile-output-produced?
++                        [src-deps-runtime-c ... src-bin-runtime-c])
++                (lambda ()
++                  (prepare-link)
++                  (schedule-darwin-objects-and-link))
++                `(prepare-executable-link ,output-bin)))
+               (else
+                (add-compile-job! compile-it)))
+             (compile-it))))))
+@@ -752,14 +805,23 @@
+            (scmrt (compile-output-file ctx #f ".scm"))
+            (scms (compile-static-output-file ctx)))
+       (when runtime-code?
+-        (compile-scm-file scm0 runtime-code))
++        (cond-expand
++          (darwin (compile-scm-file scm0 runtime-code #f scms))
++          (else (compile-scm-file scm0 runtime-code))))
+       (parameterize ((current-compile-gsc-options #f))
+         (compile-scm-file scmrt loader-code))
+-      (when (file-exists? scms)
+-        (delete-file scms))
+-      (if runtime-code?
+-        (copy-file scm0 scms)
+-        (call-with-output-file scms void))))
++      (cond-expand
++        (darwin
++         (unless runtime-code?
++           (when (file-exists? scms)
++             (delete-file scms))
++           (call-with-output-file scms void)))
++        (else
++         (when (file-exists? scms)
++           (delete-file scms))
++         (if runtime-code?
++           (copy-file scm0 scms)
++           (call-with-output-file scms void))))))
+ 
+   (let (all-modules (cons ctx (lift-nested-modules ctx)))
+     (for-each
+@@ -849,7 +911,7 @@
+     (reverse (unbox modules))))
+ 
+ ;;; utilities
+-(def (compile-scm-file path code (phi? #f))
++(def (compile-scm-file path code (phi? #f) (static-path #f))
+   (verbose "compile " path)
+   (with-output-to-scheme-file path
+     (lambda ()
+@@ -860,12 +922,21 @@
+           (extended-bindings)
+           ,@(if phi? '((inlining-limit 200)) '())))
+       (pretty-print code)))
++  (when static-path
++    (when (file-exists? static-path)
++      (delete-file static-path))
++    (copy-file path static-path))
+   (when (current-compile-invoke-gsc)
+-    (let (compile-it
+-          (lambda ()
+-            (gsc-compile-file path phi?)))
++    (let* ((runtime-c (and static-path
++                           (current-compile-static)
++                           (not (gerbil-toolchain-static-path? static-path))
++                           (string-append (path-strip-extension path) ".c")))
++           (compile-it
++            (lambda () (gsc-compile-file path phi? static-path))))
+       (if (current-compile-parallel)
+-        (add-compile-job! compile-it `(compile-file ,path))
++        (if runtime-c
++          (add-compile-output-job! runtime-c compile-it `(compile-file ,path))
++          (add-compile-job! compile-it `(compile-file ,path)))
+         (compile-it)))))
+ 
+ (def (gsc-link-options (phi? #f))
+@@ -943,12 +1014,93 @@
+ (def (not-string-empty? str)
+   (not (string-empty? str)))
+ 
+-(def (gsc-compile-file path phi?)
++(def (gerbil-toolchain-static-path? path)
++  (string-prefix?
++   (string-append
++    (path-expand "lib/static"
++                 (getenv "GERBIL_BUILD_PREFIX" (gerbil-home)))
++    "/")
++   (path-expand path)))
++
++(def (c-linker-id name)
++  (call-with-output-string
++   (lambda (output)
++     (string-for-each
++      (lambda (character)
++        (cond
++         ((char=? character #\_)
++          (display "__" output))
++         ((let (code (char->integer character))
++            (or (and (>= code 65) (<= code 90))
++                (and (>= code 97) (<= code 122))
++                (and (>= code 48) (<= code 57))))
++          (write-char character output))
++         (else
++          (display #\_ output)
++          (display (number->string (char->integer character) 16) output)
++          (display #\_ output))))
++      name))))
++
++(def (gsc-compile-file path phi? static-path)
+   (let ((gsc-link-opts (gsc-link-options phi?))
+         (gsc-cc-opts (gsc-cc-options phi?))
+         (gsc-ld-opts (gsc-ld-options phi?)))
+-    (invoke (gerbil-gsc)
+-            [gsc-cc-opts ... gsc-ld-opts ... gsc-link-opts ... path])))
++    (cond-expand
++      (darwin
++       (if (and static-path
++                (current-compile-static)
++                (not (gerbil-toolchain-static-path? static-path)))
++         (let* ((dynamic-o
++                 (string-append (path-strip-extension path) ".o1"))
++                (runtime-c
++                 (string-append (path-strip-extension path) ".c"))
++                (static-c
++                 (string-append (path-strip-extension static-path) ".c"))
++                (static-o
++                 (string-append (path-strip-extension static-path) ".o"))
++                (module-ref
++                 (path-strip-directory (path-strip-extension static-path)))
++                (dynamic-linker (path-strip-directory dynamic-o))
++                (alias-option
++                 (string-append "-Wl,-alias,____LNK_"
++                                (c-linker-id module-ref)
++                                ",____LNK_"
++                                (c-linker-id dynamic-linker))))
++           (invoke (gerbil-gsc)
++                   ["-c" "-o" runtime-c
++                    "-module-ref" module-ref
++                    "-linker-name" module-ref
++                    gsc-link-opts ...
++                    path])
++           (when (file-exists? static-c)
++             (delete-file static-c))
++           (copy-file runtime-c static-c)
++           (invoke (gerbil-gsc)
++                   ["-obj" "-o" static-o
++                    gsc-cc-opts ...
++                    "-cc-options" "-D___DYNAMIC -fPIC"
++                    static-c])
++           (invoke "env"
++                   [(string-append
++                     "GAMBITDIR_INCLUDE="
++                     (cdr (assoc "GAMBITDIR_INCLUDE"
++                                 (##shell-install-dirs '("include")))))
++                    (string-append "BUILD_DYN_OUTPUT_FILENAME_PARAM=" dynamic-o)
++                    (string-append "BUILD_DYN_INPUT_FILENAMES_PARAM=" static-o)
++                    (string-append "BUILD_DYN_META_INFO_FILE_PARAM=" runtime-c)
++                    (string-append
++                     "BUILD_DYN_LD_OPTIONS_PARAM="
++                     (string-join
++                      (append (gcc-ld-options) [alias-option]) "\n"))
++                    (path-expand "gambuild-C" (path-directory (gerbil-gsc)))
++                    "dyn"])
++           (unless (file-exists? dynamic-o)
++             (error "dynamic bundle was not produced" dynamic-o)))
++         (invoke (gerbil-gsc)
++                 [gsc-cc-opts ... gsc-ld-opts ... gsc-link-opts ... path])))
++      (else
++       (invoke (gerbil-gsc)
++               [gsc-cc-opts ... gsc-ld-opts ... gsc-link-opts ... path])))))
+ 
+ (def (compile-output-file ctx n ext)
+   (def (module-relative-path ctx)
+diff --git a/src/std/make.ss b/src/std/make.ss
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -207,6 +207,10 @@
+ (def (make-build buildspec-in settings)
+   (parameterize ((current-compilation-target (settings-target settings)))
+     (def buildspec (normalize-buildspec buildspec-in))
++    (def compile-static-runtime-objects?
++      (ormap (lambda (spec)
++               (memq (spec-type spec) '(exe: static-exe:)))
++             buildspec))
+     ;; detect and report duplicate files in the buildspec up front
+     (let (file-counts (make-hash-table))
+       (for (spec buildspec)
+@@ -292,7 +296,7 @@
+     (def (build-worker)
+       (try
+        (for (spec workch)
+-         (build spec settings)
++         (build spec settings compile-static-runtime-objects?)
+          (completion-post! (hash-ref completions (module-id spec)) 'done))
+        (catch (e)
+          (barrier-error! build-barrier e)
+@@ -460,19 +464,19 @@
+      (else
+       `("-e" ,include-gambit-sharp)))))
+ 
+-(def (build spec settings)
++(def (build spec settings (compile-static-runtime-objects? #f))
+   (match spec
+     ((? string? modf)
+-     (gxc-compile modf #f settings #t))
+-    ([gxc: modf [submodules: submodules . _] . opts]
+-     (for-each (cut build <> settings) submodules)
+-     (gxc-compile modf opts settings #t))
++     (gxc-compile modf #f settings #t compile-static-runtime-objects?))
++    ([gxc: modf [submodules: submodules . _] . opts]
++     (for-each (cut build <> settings compile-static-runtime-objects?) submodules)
++     (gxc-compile modf opts settings #t compile-static-runtime-objects?))
+     ([gxc: modf . opts]
+-     (gxc-compile modf opts settings #t))
++     (gxc-compile modf opts settings #t compile-static-runtime-objects?))
+     ([gsc: modf . opts]
+      (gsc-compile modf opts settings))
+     ([ssi: modf . submodules]
+-     (for-each (cut build <> settings) submodules)
++     (for-each (cut build <> settings compile-static-runtime-objects?) submodules)
+      (compile-ssi modf '() settings))
+     ([exe:  modf . opts]
+      (compile-exe/context modf opts settings))
+@@ -500,12 +504,13 @@
+     (_ (listify opts))))
+ 
+ ;; TODO: split that (and more?) into many action. See :gerbil/compiler/driver
+-(def (gxc-compile mod opts settings (invoke-gsc? #t))
++(def (gxc-compile mod opts settings (invoke-gsc? #t) (compile-static-runtime-objects? #f))
+   (message "... compile " mod)
+   (def gsc-opts (gsc-compile-opts opts))
+   (def srcpath (source-path mod ".ss" settings))
+   (let (gxc-opts
+         [invoke-gsc: invoke-gsc?
++         static: compile-static-runtime-objects?
+          target: (settings-target settings)
+          keep-scm: (not invoke-gsc?)
+          output-dir: (settings-libdir settings)

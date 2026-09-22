@@ -1,0 +1,46 @@
+From: tao3k team and Contributors
+Subject: [PATCH] std/make: use supported Darwin linkage for release executables
+
+Darwin does not support fully static executables. Preserve release and
+optimized executable generation while selecting ordinary dynamic native
+linkage on Darwin. Other systems retain the existing static release contract.
+---
+ src/std/make.ss | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/std/make.ss b/src/std/make.ss
+index a90d427..647eca9 100644
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -587,9 +587,9 @@ TODO:
+     (cond
+      ((or (settings-build-optimized settings)
+           (getenv "GERBIL_BUILD_OPTIMIZED" #f))
+-      (compile-optimized-exe/static-linkage mod opts settings))
++      (compile-optimized-exe/release mod opts settings))
+       (else
+-       (compile-exe/static-linkage mod opts settings))))
++       (compile-exe/release mod opts settings))))
+    ((or (settings-build-optimized settings)
+         (getenv "GERBIL_BUILD_OPTIMIZED" #f))
+     (compile-optimized-exe mod opts settings))
+@@ -632,6 +632,19 @@ TODO:
+ (def (compile-optimized-exe/static-linkage mod opts settings)
+   (compile/static-linkage mod opts settings compile-optimized-exe))
+ 
++;; Darwin does not support fully static executables.  Release mode still
++;; preserves executable optimization, but must not inject -Bstatic/-static
++;; into the native link.  Other systems retain the existing release contract.
++(def (compile-exe/release mod opts settings)
++  (cond-expand
++   (darwin (compile-exe mod opts settings))
++   (else (compile-exe/static-linkage mod opts settings))))
++
++(def (compile-optimized-exe/release mod opts settings)
++  (cond-expand
++   (darwin (compile-optimized-exe mod opts settings))
++   (else (compile-optimized-exe/static-linkage mod opts settings))))
++
+ (def (copy-static file settings)
+   (def spath (static-file-path file settings))
+   (message "... copy static include " file)

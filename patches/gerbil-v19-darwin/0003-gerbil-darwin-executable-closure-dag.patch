@@ -1,0 +1,141 @@
+From: tao3k team and Contributors
+Subject: [PATCH 3/4] compiler: parallelize Darwin executable object closure
+
+Darwin cold executable builds spend their dominant tail compiling the second,
+static object family serially inside one executor job. Submit those independent
+objects to the existing compiler executor and queue one dependency-barrier link.
+Keep the official V19 closure job unchanged on non-Darwin platforms.
+Track object-job success explicitly because a Scheme exception can be #f.
+---
+ src/gerbil/compiler/driver.ss | 115 ++++++++++++++++++++++++++--------
+ 1 file changed, 90 insertions(+), 25 deletions(-)
+
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+index ab45133..f124e83 100644
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -310,32 +310,97 @@ namespace: gxc
+       (with-output-to-scheme-file output-scm
+                                   (cut generate-stub builtin-modules))
+       (when (current-compile-invoke-gsc)
+-        (let (compile-it
+-              (lambda ()
+-                (invoke (gerbil-gsc)
+-                        ["-link"
+-                         gsc-link-opts ...
+-                         libgerbil-c ...
+-                         src-deps-scm ...
+-                         src-bin-scm
+-                         output-scm])
+-                (for-each compile-obj
+-                          [src-deps-scm ... src-bin-scm output-scm #f]
+-                          [src-deps-c ...   src-bin-c   output-c   output_-c])
+-                (invoke (gerbil-gcc)
+-                        ["-w" "-o" output-bin
+-                         src-deps-o ...
+-                         src-bin-o
+-                         output-o output_-o
+-                         libgerbil-o ...
+-                         output-ld-opts ...
+-                         (if (gerbil-enable-shared?) [rpath] []) ...
+-                         "-L" gerbil-libdir "-lgambit"
+-                         libgerbil-ld-opts ...])
+-                ;; clean up
+-                (for-each delete-file [output-c output_-c output-o output_-o])))
++        (let ((scm-paths [src-deps-scm ... src-bin-scm output-scm #f])
++              (c-paths [src-deps-c ... src-bin-c output-c output_-c]))
++          (def (prepare-link)
++            (invoke (gerbil-gsc)
++                    ["-link"
++                     gsc-link-opts ...
++                     libgerbil-c ...
++                     src-deps-scm ...
++                     src-bin-scm
++                     output-scm]))
++          (def (link-executable)
++            (invoke (gerbil-gcc)
++                    ["-w" "-o" output-bin
++                     src-deps-o ...
++                     src-bin-o
++                     output-o output_-o
++                     libgerbil-o ...
++                     output-ld-opts ...
++                     (if (gerbil-enable-shared?) [rpath] []) ...
++                     "-L" gerbil-libdir "-lgambit"
++                     libgerbil-ld-opts ...])
++            ;; clean up
++            (for-each delete-file [output-c output_-c output-o output_-o]))
++          (def (object-jobs scm-paths c-paths result)
++            (if (null? scm-paths)
++              (reverse! result)
++              (object-jobs
++               (cdr scm-paths)
++               (cdr c-paths)
++               (cons [(cut compile-obj (car scm-paths) (car c-paths))
++                      `(compile-executable-object ,(car c-paths))]
++                     result))))
++          (def jobs (object-jobs scm-paths c-paths []))
++          (def (compile-it)
++            (prepare-link)
++            (for-each (lambda (job) ((car job))) jobs)
++            (link-executable))
++          (cond-expand
++            (darwin
++             (def (schedule-darwin-objects-and-link)
++               ;; Submit the complete static closure before returning. The
++               ;; final queued job is the dependency barrier and links only
++               ;; after every object completed successfully.
++               (let ((mx (make-mutex 'darwin-executable-objects))
++                     (cv (make-condition-variable 'darwin-executable-objects))
++                     (remaining (length jobs))
++                     (failed? #f))
++                 (def (complete! succeeded?)
++                   (mutex-lock! mx)
++                   (unless succeeded? (set! failed? #t))
++                   (set! remaining (fx1- remaining))
++                   (condition-variable-broadcast! cv)
++                   (mutex-unlock! mx))
++                 (def (wait-for-objects)
++                   (mutex-lock! mx)
++                   (let wait ()
++                     (if (fxzero? remaining)
++                       (let (result failed?)
++                         (mutex-unlock! mx)
++                         result)
++                       (begin
++                         (mutex-unlock! mx cv)
++                         (mutex-lock! mx)
++                         (wait)))))
++                 (for-each
++                  (lambda (job)
++                    (match job
++                      ([thunk job-name]
++                       (add-compile-job!
++                        (lambda ()
++                          (with-catch
++                           (lambda (error)
++                             (complete! #f)
++                             (raise error))
++                           (lambda ()
++                             (thunk)
++                             (complete! #t))))
++                        job-name))))
++                  jobs)
++                 (add-compile-job!
++                  (lambda ()
++                    (unless (wait-for-objects)
++                      (link-executable)))
++                  `(link-executable ,output-bin))))))
+           (if (current-compile-parallel)
+-            (add-compile-job! compile-it)
++            (cond-expand
++              (darwin
++               (prepare-link)
++               (schedule-darwin-objects-and-link))
++              (else
++               (add-compile-job! compile-it)))
+             (compile-it))))))
+ 
+   (let* ((output-bin (compile-exe-output-file ctx opts))
+-- 
+2.51.0

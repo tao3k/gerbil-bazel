@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: f0badc77836ef6f4b83d8d222a4a159f71b9c592
+        default: 66542a3ca585af9b99a177927f4b4e940a1112ec
         required: true
         type: string
       platform:
@@ -40,10 +40,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ensemble_sha=76968e6d3987a42d613f183317f98f4c024fb180
           git init upstream-gerbil
           git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
-          git -C upstream-gerbil fetch --depth=1 origin "$UPSTREAM_REF"
+          git -C upstream-gerbil fetch --depth=256 origin "$UPSTREAM_REF"
           upstream_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
+          git -C upstream-gerbil fetch --depth=256 origin refs/pull/1493/head
+          fetched_ensemble_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
+          [[ "$fetched_ensemble_sha" == "$ensemble_sha" ]]
+          git -C upstream-gerbil checkout --detach "$ensemble_sha"
+          git -C upstream-gerbil \
+            -c user.name=gerbil-bazel \
+            -c user.email=gerbil-bazel@users.noreply.github.com \
+            rebase --committer-date-is-author-date "$upstream_sha"
+          source_sha="$(git -C upstream-gerbil rev-parse HEAD)"
+          patchset_sha="$({
+            for patch in \
+              .github/workflows/publish-v19.yml \
+              patches/gerbil-v19-bio-integer-growth-upstream.patch \
+              patches/gerbil-v19-ffi-release-pkey-once.patch \
+              patches/gerbil-v19-darwin-aot-tools.patch \
+              patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
+              patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
+              patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
+              patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch \
+              patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch \
+              patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch \
+              patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
+              printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
+            done
+          } | git hash-object --stdin)"
           case "$TARGET_PLATFORM" in
             linux-x86_64)
               release_os=linux
@@ -60,10 +86,13 @@ jobs:
               exit 64
               ;;
           esac
-          release_tag="gerbil-v0.19-$upstream_sha-$TARGET_PLATFORM-$build_profile"
+          release_tag="gerbil-v0.19-$source_sha-$TARGET_PLATFORM-$build_profile-patch${patchset_sha:0:12}"
           archive="$release_tag.tar.gz"
           {
-            echo "sha=$upstream_sha"
+            echo "sha=$source_sha"
+            echo "staging_sha=$upstream_sha"
+            echo "ensemble_sha=$ensemble_sha"
+            echo "patchset_sha=$patchset_sha"
             echo "os=$release_os"
             echo "arch=$release_arch"
             echo "release_tag=$release_tag"
@@ -74,6 +103,7 @@ jobs:
             echo "RELEASE_TAG=$release_tag"
             echo "RELEASE_ARCHIVE=$archive"
             echo "GERBIL_BUILD_PROFILE=$build_profile"
+            echo "GERBIL_PATCHSET_SHA=$patchset_sha"
           } >> "$GITHUB_ENV"
 
       - name: Restore exact release toolchain
@@ -81,7 +111,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v3-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}-${{ steps.upstream.outputs.patchset_sha }}
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux'
@@ -130,8 +160,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git -C upstream-gerbil checkout --detach FETCH_HEAD
           git -C upstream-gerbil submodule update --init --depth=1
+
+      - name: Apply the remaining v0.19 buffered integer writer fix
+        if: steps.gerbil-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
 
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
@@ -139,6 +175,10 @@ jobs:
         run: |
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
@@ -150,7 +190,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+            PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+            export PATH
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
             export CC="$cc" CXX="$cxx" GERBIL_GCC="$cc"
@@ -182,10 +223,30 @@ jobs:
             cc="${CC:-$(command -v cc)}"
             cxx="${CXX:-$(command -v c++)}"
             linker="$(command -v ld) $(ld --version 2>&1)"
-            configure_args=("--prefix=$GERBIL_PREFIX")
+            configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
           configure_args+=(--enable-single-host=0)
           ./configure "${configure_args[@]}"
+          if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
+            echo "release build must not use runner-specific -march=native" >&2
+            exit 1
+          fi
+          # Gerbil configure resets the integrated Gambit submodule to the
+          # configured revision. Apply Darwin Gambit patches afterwards, then
+          # recheck configure so compiler capability flags reach gambuild-C.
+          if [[ "${{ runner.os }}" == macOS ]]; then
+            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
+            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch"
+            # Both generated configure and configure.ac are carried in the
+            # audited patch. Keep configure newest so Gambit's make rules do
+            # not regenerate it with an arbitrary host Autoconf version.
+            touch src/gambit/configure
+            # --recheck runs configure with --no-create, so explicitly
+            # regenerate the configured templates before checking the flag.
+            (cd src/gambit && ./config.status --recheck && ./config.status)
+            # The executable gambuild-C is created later by make.
+            grep -F -- '-ftrack-macro-expansion=0' src/gambit/bin/gambuild-C.unix
+          fi
           gambit_config_header=src/gambit/include/config.h
           gambit_public_header=src/gambit/include/gambit.h
           grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
@@ -194,9 +255,6 @@ jobs:
             > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
             target_cores="$GERBIL_BUILD_CORES"
-            if [[ "$target" == gambit ]]; then
-              target_cores=1
-            fi
             target_started=$SECONDS
             GERBIL_BUILD_FLAGS="-j$target_cores" ./build.sh "$target"
             target_seconds=$((SECONDS - target_started))
@@ -204,12 +262,21 @@ jobs:
               | tee -a "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
             echo "::notice title=Gerbil build timing::$target completed in ${target_seconds}s with ${target_cores} core(s)"
           done
+          if [[ "${{ runner.os }}" == macOS ]]; then
+            (cd src/gambit/tests && \
+              ../gsi/gsi -:=.. run-unit-tests.scm \
+                unit-tests/12-os/process_spawn.scm)
+          fi
           ./install.sh
           cp "$RUNNER_TEMP/gerbil-v19-build-timings.txt" \
             "$GERBIL_PREFIX/gerbil-build-timings.txt"
           jq -n \
             --arg schema gerbil-bazel.build-receipt.v1 \
+            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
+            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
+            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
             --arg profile "$GERBIL_BUILD_PROFILE" \
+            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
             --arg compiler "$cc $("$cc" -dumpfullversion)" \
             --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
             --arg linker "$linker" \
@@ -218,7 +285,12 @@ jobs:
             --arg cFlags "${CFLAGS:-}" \
             --arg pkgConfigPath "${PKG_CONFIG_PATH:-}" \
             --argjson cores "$GERBIL_BUILD_CORES" \
-            '{schema: $schema, profile: $profile, compiler: $compiler,
+            '{schema: $schema,
+              sourceRevision: $sourceRevision,
+              stagingRevision: $stagingRevision,
+              ensembleRevision: $ensembleRevision,
+              profile: $profile, patchsetSha: $patchsetSha,
+              compiler: $compiler,
               cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
               singleHostMode: $singleHostMode,
               toolLinkage: $toolLinkage,
@@ -230,12 +302,33 @@ jobs:
             --args -- "${configure_args[@]}" \
             > "$GERBIL_PREFIX/gerbil-build-receipt.json"
 
+      - name: Verify focused upstream runtime contracts
+        if: steps.gerbil-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_log="$RUNNER_TEMP/gerbil-v19-focused-tests.log"
+          export GERBIL_HOME="$GITHUB_WORKSPACE/upstream-gerbil/build"
+          export GERBIL_LOADPATH="$GERBIL_HOME/lib"
+          export PATH="$GERBIL_HOME/bin:$PATH"
+          gxtest -v 3 \
+            upstream-gerbil/src/std/io/bio/bio-test.ss \
+            upstream-gerbil/src/std/encoding/json/json-test.ss \
+            upstream-gerbil/src/std/os/socket-test.ss \
+            upstream-gerbil/src/std/ensemble/ucan/did-test.ss \
+            upstream-gerbil/src/std/ensemble/ucan/context-test.ss \
+            upstream-gerbil/src/std/ensemble/network/auth-test.ss \
+            | tee "$test_log"
+          [[ "$(grep -c '^MODULE-OK ' "$test_log")" -eq 6 ]]
+          [[ "$(grep -c '^HARNESS-OK ' "$test_log")" -eq 1 ]]
+          ! grep -F 'ERROR' "$test_log"
+
       - name: Save exact release toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v3-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}
+          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}-${{ steps.upstream.outputs.patchset_sha }}
 
       - name: Verify source toolchain
         shell: bash
@@ -249,9 +342,17 @@ jobs:
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           jq -e \
+            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
+            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
+            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
             --arg profile "$GERBIL_BUILD_PROFILE" \
+            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
             '.schema == "gerbil-bazel.build-receipt.v1" and
+             .sourceRevision == $sourceRevision and
+             .stagingRevision == $stagingRevision and
+             .ensembleRevision == $ensembleRevision and
              .profile == $profile and
+             .patchsetSha == $patchsetSha and
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
@@ -276,6 +377,14 @@ jobs:
             '.singleHostMode == "unlimited" and
              (.configureArguments | any(. == "--enable-single-host=0"))' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
+          if [[ "$GERBIL_BUILD_PROFILE" == portable-* ]]; then
+            jq -e '(.configureArguments | any(. == "--enable-march="))' \
+              "$GERBIL_PREFIX/gerbil-build-receipt.json"
+            if grep -F -- '-march=native' "$GERBIL_HOME/bin/gambuild-C"; then
+              echo "installed Linux toolchain contains runner-specific -march=native" >&2
+              exit 1
+            fi
+          fi
           if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
             jq -e '.toolLinkage == "whole-program-aot"' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
@@ -287,6 +396,23 @@ jobs:
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
+          gxi -e '(begin
+            (import :std/encoding/json)
+            (##set-max-heap! 134217728)
+            (let* ((value (make-string 100000 #\a))
+                   (encoded (json->string value)))
+              (unless (and (= (string-length encoded) 100002)
+                           (equal? (string->json encoded) value))
+                (error "buffered JSON memory writer regression")))
+            (displayln "buffered JSON memory writer ready"))'
+          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
+            for cores in 1 3; do
+              GERBIL_BUILD_CORES="$cores" \
+                gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+            done
+            env -u GERBIL_BUILD_CORES \
+              gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+          fi
 
       - name: Package relocatable capability
         shell: bash
@@ -305,11 +431,17 @@ jobs:
             --arg schema gerbil-bazel.toolchain-release.v1 \
             --arg version "$version" \
             --arg upstreamRevision "${{ steps.upstream.outputs.sha }}" \
+            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
+            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
             --arg os "${{ steps.upstream.outputs.os }}" \
             --arg arch "${{ steps.upstream.outputs.arch }}" \
             --arg buildProfile "$GERBIL_BUILD_PROFILE" \
+            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
             '{schema: $schema, version: $version,
               upstreamRevision: $upstreamRevision,
+              stagingRevision: $stagingRevision,
+              ensembleRevision: $ensembleRevision,
+              patchsetSha: $patchsetSha,
               platform: {os: $os, arch: $arch},
               buildProfile: $buildProfile,
               activation: "source ./activate"}' \
@@ -335,8 +467,16 @@ jobs:
           expected_sha="${{ steps.upstream.outputs.sha }}"
           [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
           jq -e \
+            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
+            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
+            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
             --arg profile "$GERBIL_BUILD_PROFILE" \
-            '.profile == $profile' \
+            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
+            '.sourceRevision == $sourceRevision and
+             .stagingRevision == $stagingRevision and
+             .ensembleRevision == $ensembleRevision and
+             .profile == $profile and
+             .patchsetSha == $patchsetSha' \
             "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
           /usr/bin/time -p gxpkg version

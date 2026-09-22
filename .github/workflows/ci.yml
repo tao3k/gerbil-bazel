@@ -20,7 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GERBIL_VERSION_LABEL: v0.18.2-07c84815
+  GERBIL_FORMULA_REF: refs/heads/v0.19
+  GERBIL_FORMULA_REVISION: 20e7bc74a780e04a78798d21516a924249483895
 
 jobs:
   bazel:
@@ -33,16 +34,42 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            gerbil_provider: immutable-prebuilt
+            gerbil_provider: released-host
+            gerbil_version_label: v0.19-f0badc7
           - runner: macos-26
-            gerbil_provider: v19-release
+            gerbil_provider: homebrew-host
+            gerbil_version_label: v0.19-f0badc7
 
     steps:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Validate the pinned v0.19 staging and Ensemble composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_dir="$RUNNER_TEMP/gerbil-v19-patch-check"
+          staging_sha=66542a3ca585af9b99a177927f4b4e940a1112ec
+          ensemble_sha=76968e6d3987a42d613f183317f98f4c024fb180
+          git init "$upstream_dir"
+          git -C "$upstream_dir" remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
+          git -C "$upstream_dir" fetch --depth=256 origin "$staging_sha"
+          [[ "$(git -C "$upstream_dir" rev-parse FETCH_HEAD)" == "$staging_sha" ]]
+          git -C "$upstream_dir" fetch --depth=256 origin refs/pull/1493/head
+          [[ "$(git -C "$upstream_dir" rev-parse FETCH_HEAD)" == "$ensemble_sha" ]]
+          git -C "$upstream_dir" checkout --detach "$ensemble_sha"
+          git -C "$upstream_dir" \
+            -c user.name=gerbil-bazel \
+            -c user.email=gerbil-bazel@users.noreply.github.com \
+            rebase --committer-date-is-author-date "$staging_sha"
+          git -C "$upstream_dir" diff --quiet "$staging_sha" -- src/std/net/http
+          git -C "$upstream_dir" apply --check \
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch" \
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch" \
+            "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
+
       - name: Install Linux consumer dependencies
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -57,26 +84,86 @@ jobs:
             sqlite3 \
             zlib1g-dev
 
+      - name: Install pinned v0.19 Linux release
+        if: matrix.gerbil_provider == 'released-host'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full
+          archive="$RUNNER_TEMP/$release.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/tao3k/gerbil-bazel/releases/download/$release/$release.tar.gz"
+          printf '%s  %s\n' \
+            81734f52334e514296955e577a23011663097482261698272da3136a9e628a9f \
+            "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
+          printf 'Activated Gerbil release at %s\n' "$GERBIL_PREFIX"
+          ls -l "$GERBIL_PREFIX/bin/gxi"
+          echo "$GERBIL_PREFIX/bin" >> "$GITHUB_PATH"
+          {
+            echo "GERBIL_PREFIX=$GERBIL_PREFIX"
+            echo "GERBIL_HOME=$GERBIL_HOME"
+            echo "GAMBOPT=$GAMBOPT"
+          } >> "$GITHUB_ENV"
+          set +e
+          version_output="$(gxi -v 2>&1)"
+          version_status=$?
+          set -e
+          printf 'Gerbil version exit=%s output=%s\n' "$version_status" "$version_output"
+          if (( version_status != 0 )); then
+            ldd "$GERBIL_PREFIX/bin/gerbil" || true
+            exit "$version_status"
+          fi
+          grep -F 'Gerbil f0badc7' <<< "$version_output"
+
       - name: Set up Homebrew
-        if: matrix.gerbil_provider == 'v19-release'
+        if: matrix.gerbil_provider == 'homebrew-host'
         uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
 
       - name: Install macOS V19 provider dependencies
-        if: matrix.gerbil_provider == 'v19-release'
+        if: matrix.gerbil_provider == 'homebrew-host'
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: brew install gcc jq openssl pkg-config sqlite zlib
+
+      - name: Install the tao3k Gerbil bottle
+        if: matrix.gerbil_provider == 'homebrew-host'
+        timeout-minutes: 2
+        env:
+          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme@0.19
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew tap tao3k/gerbil
+          tap_repository="$(brew --repository tao3k/gerbil)"
+          git -C "$tap_repository" fetch --depth=1 origin "$GERBIL_FORMULA_REF"
+          [[ "$(git -C "$tap_repository" rev-parse FETCH_HEAD)" == "$GERBIL_FORMULA_REVISION" ]]
+          git -C "$tap_repository" checkout --detach "$GERBIL_FORMULA_REVISION"
+          brew install "$GERBIL_FORMULA"
+          brew test "$GERBIL_FORMULA"
+          "$(brew --prefix "$GERBIL_FORMULA")/bin/gxi" -v 2>&1 \
+            | grep -F f0badc7
+
+      - name: Activate the Homebrew host capability
+        if: matrix.gerbil_provider == 'homebrew-host'
+        env:
+          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme@0.19
+        run: |
+          gerbil_prefix="$(brew --prefix "$GERBIL_FORMULA")"
+          echo "$gerbil_prefix/bin" >> "$GITHUB_PATH"
+          echo "GERBIL_PREFIX=$gerbil_prefix" >> "$GITHUB_ENV"
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.gerbil_provider }}
+          disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.gerbil_version_label }}
 
       - name: Validate the prebuilt repository provider
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: |
           tools/ci/test_repository_provider.sh prebuilt
           GERBIL_EXPECT_INSTALL_DIGEST_MISMATCH=1 \
@@ -84,21 +171,17 @@ jobs:
             tools/ci/test_repository_provider.sh prebuilt
 
       - name: Validate the platform-adaptive repository provider
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: tools/ci/test_repository_provider.sh auto
 
       - name: Validate fail-closed source package repositories
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: tools/ci/test_source_package_repository.sh
 
       - name: Validate the public Bazel API
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
         env:
           RECEIPT_PATH: .ci/receipts/${{ runner.os }}-${{ runner.arch }}.json
         run: tools/ci/validate.sh
 
       - name: Validate build scenario frontiers
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: |
           receipt=.ci/receipts/build-scenarios-${{ runner.os }}-${{ runner.arch }}.json
           tools/bench/run_build_scenarios.py --receipt "$receipt"
@@ -111,7 +194,7 @@ jobs:
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
 
       - name: Upload validation receipt
-        if: always() && matrix.gerbil_provider == 'immutable-prebuilt'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-receipt
@@ -121,7 +204,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Validate V19 Darwin release provider
-        if: matrix.gerbil_provider == 'v19-release'
+        if: runner.os == 'macOS'
         working-directory: tests/v19-release
         run: bazelisk --batch build //:smoke
 

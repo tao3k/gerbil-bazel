@@ -1,0 +1,120 @@
+{
+  "schema": "gerbil-v19-darwin-gcc-frontend-v1",
+  "platform": "darwin-arm64",
+  "compiler": "Homebrew GCC 16.2.0",
+  "consumer": {
+    "name": "gerbil-mcp",
+    "revision": "9a5c35e",
+    "source_modified": false
+  },
+  "artifact": {
+    "module": "gerbil-mcp__data__embedded",
+    "generated_c_mib": 11,
+    "preprocessed_mib": 97,
+    "baseline_object_sha256": "bdb36b36ed22c286a7ca45898db3fde8bbd97d943cb39745a2ad01ec572cb536",
+    "candidate_object_sha256": "bdb36b36ed22c286a7ca45898db3fde8bbd97d943cb39745a2ad01ec572cb536",
+    "byte_identical": true
+  },
+  "baseline": {
+    "integrated_object_wall_seconds": 15.45,
+    "gcc_reported_total_seconds": 17.19,
+    "parsing_seconds": 16.95,
+    "preprocessing_seconds": 11.29,
+    "lexical_analysis_seconds": 1.94,
+    "global_parser_seconds": 3.52,
+    "optimization_and_generation_seconds": 0.23,
+    "gcc_ggc_mebibytes": 8915
+  },
+  "candidate": {
+    "flag": "-ftrack-macro-expansion=0",
+    "integrated_gsc_object_wall_seconds": 10.37,
+    "delta_percent": -32.88,
+    "gcc_reported_total_seconds": 12.24,
+    "parsing_seconds": 12.00,
+    "preprocessing_seconds": 6.76,
+    "optimization_and_generation_seconds": 0.23,
+    "gcc_ggc_mebibytes": 97
+  },
+  "preserved_flags": [
+    "-O1",
+    "-pipe",
+    "-fmodulo-sched",
+    "-freschedule-modulo-scheduled-loops",
+    "-fschedule-insns2"
+  ],
+  "scope": {
+    "darwin_only": true,
+    "gnu_gcc_only": true,
+    "linux_changed": false,
+    "apple_llvm_changed": false
+  },
+  "real_consumer_correctness": {
+    "cold_build_wall_seconds": 518.65,
+    "performance_comparable_to_full_patch_stack": false,
+    "reason": "installed AOT compiler lacks the local streaming executor and Darwin executable DAG",
+    "mach_o_arm64": true,
+    "version_passed": true,
+    "initialize_passed": true,
+    "source_tree_clean": true
+  },
+  "toolchain_qualification": {
+    "gerbil_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+    "gerbil_version": "v0.19-dev-60-gd801e7a",
+    "gambit_version": "v4.9.8-18-gdcd677cd",
+    "git_metadata_present": true,
+    "prefix": "/private/tmp/gerbil-v19-d801-four-patch/v0.19-dev-60-gd801e7a",
+    "host_derived_workers": 12,
+    "stages_wall_seconds": {
+      "prepare": 1.08,
+      "gambit": 294.98,
+      "boot_gxi": 0.23,
+      "stage0": 55.24,
+      "stage1": 215.94,
+      "stdlib": 222.62,
+      "libgerbil": 217.57,
+      "lang": 2.19,
+      "tools_with_general_aot": 313.35
+    },
+    "aot_warm_start_seconds": {
+      "gxtest_help": 0.88,
+      "gxpkg_help": 0.69
+    },
+    "first_access_gxtest_wall_seconds_excluded": 69.77,
+    "macro_flag_observed_in_real_gcc_commands": true,
+    "stage1_streaming_executor_observed": true,
+    "stage1_darwin_closure_dag_observed": true,
+    "max_frontend_silence_seconds_observed_at_least": 120,
+    "frontend_silence_owner": "Gerbil whole-closure expansion and Scheme-to-C materialization before native jobs are submitted",
+    "qualified": true
+  },
+  "real_poo_consumer": {
+    "repository": "/Users/guangtao/ghq/github.com/tao3k/gerbil-poo-v19",
+    "source_state": "preexisting dirty worktree; no consumer source edits made by this qualification run",
+    "clean_consumer_build_first_access_wall_seconds_excluded": 37.24,
+    "clean_consumer_build_wall_seconds": 12.01,
+    "previous_same_consumer_candidate_wall_seconds": 13.49,
+    "delta_percent": -10.97,
+    "parallel_native_jobs_observed": true,
+    "build_passed": true
+  },
+  "real_mcp_consumer": {
+    "repository": "/private/tmp/gerbil-mcp",
+    "revision": "9a5c35e",
+    "source_modified": false,
+    "clean_build_wall_seconds": 393.33,
+    "performance_comparable": false,
+    "excluded_from_ab": true,
+    "excluded_reason": "direct Make invocation omitted GERBIL_BUILD_CORES, so std/make used one Gerbil producer",
+    "previous_admitted_candidate_wall_seconds": 79.58,
+    "performance_gate_passed": false,
+    "mach_o_arm64": true,
+    "version_passed": true,
+    "initialize_passed": true,
+    "observation": "retained as a serialization diagnostic only; the valid host-derived 12-worker rerun is recorded in d803-frontend-dual-consumer.json"
+  },
+  "decision": {
+    "admit_atomic_frontend_candidate": true,
+    "claim_end_to_end_closure": false,
+    "next_gate": "use d803 phase evidence to split executable closure enumeration, prepare-link, object-job submission, and final link; do not repeat the excluded 393.33-second serial diagnostic"
+  }
+}

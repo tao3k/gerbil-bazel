@@ -2,7 +2,7 @@
 
 (export main)
 
-(import :std/text/json)
+(import :std/encoding/json)
 
 (def (main json-file)
   (call-with-input-file

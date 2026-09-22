@@ -1,0 +1,10 @@
+{
+  "schema": "gerbil-v19-darwin-release-config-status-correction-v1",
+  "failed_run": "https://github.com/tao3k/gerbil-bazel/actions/runs/35567679867",
+  "upstream_revision": "d801e7a1c7f77df421f638e62aaebe370f193c97",
+  "failure_phase": "Build exact v0.19 toolchain, before prepare/gambit build targets",
+  "observed": "patched Gambit configure accepted -ftrack-macro-expansion=0 and recreated config.status, then the gambuild-C.unix flag assertion exited 1",
+  "root_cause": "config.status --recheck invokes configure with --no-create; the configured gambuild-C.unix template was not regenerated after the patched compiler probe",
+  "correction": "run config.status after config.status --recheck, then assert the generated gambuild-C.unix flag",
+  "release_state": "failed run published no asset and did not change Homebrew"
+}

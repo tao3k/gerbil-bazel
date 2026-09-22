@@ -1,0 +1,161 @@
+From: tao3k team and Contributors
+Subject: [PATCH] std: complete Darwin socket address and accept contracts
+
+Darwin sockaddr values carry a leading native length byte, and outbound
+syscalls require the explicit socklen_t to agree with it. Initialize both
+fields together and use the native length for bind, connect, and sendto.
+
+Also keep a nonblocking accept EAGAIN sentinel out of the accepted-fd setup
+path. The previous non-Linux branch attempted close(-EAGAIN), terminating the
+server accept thread before it could serve a request.
+
+All ABI-specific changes are Darwin-only. The accepted-fd control-flow repair
+applies to the existing non-Linux branch and leaves Linux accept4 unchanged.
+---
+ src/std/os/sockaddr.ss    | 24 ++++++++++++++++++++----
+ src/std/os/socket-test.ss | 10 ++++++++++
+ src/std/os/socket.ss      | 61 ++++++++++++++++++++++++++++++++++-------------
+ 3 files changed, 74 insertions(+), 21 deletions(-)
+
+diff --git a/src/std/os/sockaddr.ss b/src/std/os/sockaddr.ss
+index 73e3136..edb8764 100644
+--- a/src/std/os/sockaddr.ss
++++ b/src/std/os/sockaddr.ss
+@@ -28,10 +28,26 @@
+   => :fixnum
+   "___arg1->sa_family")
+ 
+-(def-C (sockaddr-family-set! (sa     : sockaddr)
+-                             (family : :fixnum))
+-  => :void
+-  "___arg1->sa_family = ___arg2")
++(cond-expand
++ (darwin
++  ;; Darwin sockaddr structures carry their native size in the leading
++  ;; sa_len byte.  Leaving it zero produces EINVAL from bind/connect even
++  ;; when sa_family and the address payload are otherwise valid.
++  (def-C (sockaddr-family-set! (sa     : sockaddr)
++                               (family : :fixnum))
++    => :void
++    "___arg1->sa_family = ___arg2;
++     switch (___arg2) {
++       case AF_INET:  ___arg1->sa_len = sizeof(struct sockaddr_in); break;
++       case AF_INET6: ___arg1->sa_len = sizeof(struct sockaddr_in6); break;
++       case AF_UNIX:  ___arg1->sa_len = sizeof(struct sockaddr_un); break;
++       default:       ___arg1->sa_len = sizeof(struct sockaddr); break;
++     }"))
++ (else
++  (def-C (sockaddr-family-set! (sa     : sockaddr)
++                               (family : :fixnum))
++    => :void
++    "___arg1->sa_family = ___arg2")))
+ 
+ (def-C (sockaddr_in-port (sa : sockaddr_in))
+   => :fixnum
+diff --git a/src/std/os/socket-test.ss b/src/std/os/socket-test.ss
+index 57cfa5d..fae0e5a 100644
+--- a/src/std/os/socket-test.ss
++++ b/src/std/os/socket-test.ss
+@@ -34,6 +34,16 @@
+           (check (OSError-errno error) => ECONNREFUSED)
+           (check (car (Error-irritants error)) => 'connect)
+           (check (Error-where error) ? string?))))
++    (test-case "nonblocking accept pending survives until a client connects"
++      (let* ((listener (tcp-listen (InetAddress localhost4 0)))
++             (address (ServerSocket-address listener))
++             (server (spawn (lambda () (ServerSocket-accept listener))))
++             (_ (thread-sleep! 0.01))
++             (client (tcp-connect address (IOTimeout 2)))
++             (peer (thread-join! server)))
++        (Socket-close peer)
++        (Socket-close client)
++        (Socket-close listener)))
+     (test-case "custom syscall raiser preserves EINTR and pending handling"
+       (for-each
+        (lambda (pending)
+diff --git a/src/std/os/socket.ss b/src/std/os/socket.ss
+index a72cf51..32d8722 100644
+--- a/src/std/os/socket.ss
++++ b/src/std/os/socket.ss
+@@ -99,9 +99,13 @@
+               (else
+                (let (fd (do-syscall (__accept sock.fd sa)
+                                     EAGAIN EWOULDBLOCK))
+-                 (with-error (__close-fd fd)
+-                   (fcntl-setfl! fd O_NONBLOCK)
+-                   (fcntl-setfd! fd FD_CLOEXEC))
++                 ;; A nonblocking accept may report EAGAIN as a negative
++                 ;; pending result.  Do not pass that sentinel through the
++                 ;; accepted-fd setup/cleanup path.
++                 (unless (fx< fd 0)
++                   (with-error (__close-fd fd)
++                     (fcntl-setfl! fd O_NONBLOCK)
++                     (fcntl-setfd! fd FD_CLOEXEC)))
+                  fd)))))
+       (if (fx< fd 0)
+         fd
+@@ -205,13 +209,26 @@
+                            (how :- :fixnum))
+   "shutdown(___arg1, ___arg2)")
+ 
+-(def-C-syscall (__bind (fd   :- :fixnum)
+-                       (addr :- sockaddr))
+-  "bind(___arg1, ___arg2, (socklen_t)___U8VECTORSIZE(___ARG2))")
+-
+-(def-C-syscall (__connect (fd   :- :fixnum)
+-                          (addr :- sockaddr))
+-  "connect(___arg1, ___arg2, (socklen_t)___U8VECTORSIZE(___ARG2))")
++(cond-expand
++ (darwin
++  ;; Darwin rejects an outbound sockaddr when socklen_t disagrees with the
++  ;; structure's leading sa_len byte.  The FFI value is a max-sized union, so
++  ;; its backing u8vector length is not the native endpoint length.
++  (def-C-syscall (__bind (fd   :- :fixnum)
++                         (addr :- sockaddr))
++    "bind(___arg1, ___arg2, (socklen_t)___arg2->sa_len)")
++
++  (def-C-syscall (__connect (fd   :- :fixnum)
++                            (addr :- sockaddr))
++    "connect(___arg1, ___arg2, (socklen_t)___arg2->sa_len)"))
++ (else
++  (def-C-syscall (__bind (fd   :- :fixnum)
++                         (addr :- sockaddr))
++    "bind(___arg1, ___arg2, (socklen_t)___U8VECTORSIZE(___ARG2))")
++
++  (def-C-syscall (__connect (fd   :- :fixnum)
++                            (addr :- sockaddr))
++    "connect(___arg1, ___arg2, (socklen_t)___U8VECTORSIZE(___ARG2))")))
+ 
+ (def-C-syscall (__listen (fd      :- :fixnum)
+                          (backlog :- :fixnum))
+@@ -242,13 +259,23 @@
+                        (flags   :- :fixnum))
+   "recv(___arg1, (void*)(___arg2 + ___arg3), ___arg4, ___arg5)")
+ 
+-(def-C-syscall (__sendto (fd      :- :fixnum)
+-                         (input   :- :u8vector)
+-                         (start   :- :fixnum)
+-                         (count   :- :fixnum)
+-                         (flags   :- :fixnum)
+-                         (dest    :- sockaddr))
+-  "sendto(___arg1, (void*)(___arg2 + ___arg3), ___arg4, ___arg5, ___arg6, (socklen_t)___U8VECTORSIZE(___ARG6))")
++(cond-expand
++ (darwin
++  (def-C-syscall (__sendto (fd      :- :fixnum)
++                           (input   :- :u8vector)
++                           (start   :- :fixnum)
++                           (count   :- :fixnum)
++                           (flags   :- :fixnum)
++                           (dest    :- sockaddr))
++    "sendto(___arg1, (void*)(___arg2 + ___arg3), ___arg4, ___arg5, ___arg6, (socklen_t)___arg6->sa_len)"))
++ (else
++  (def-C-syscall (__sendto (fd      :- :fixnum)
++                           (input   :- :u8vector)
++                           (start   :- :fixnum)
++                           (count   :- :fixnum)
++                           (flags   :- :fixnum)
++                           (dest    :- sockaddr))
++    "sendto(___arg1, (void*)(___arg2 + ___arg3), ___arg4, ___arg5, ___arg6, (socklen_t)___U8VECTORSIZE(___ARG6))")))
+ 
+ (def-C-syscall (__recvfrom (fd      :- :fixnum)
+                            (input   :- :u8vector)
