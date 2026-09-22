@@ -65,3 +65,5 @@ then rebuild the exact AOT toolchain and run adjacent strict package A/B with
 12 native workers and the 10-second silence gate. Keep D851 held until both
 consumers pass their own non-regression gates. This receipt alone warrants an
 upstream emitter investigation, not inclusion in the release patch set.
+The narrower header-only follow-up and its negative full-package result are
+recorded in `d858-str8-header-package-rejection.md`.

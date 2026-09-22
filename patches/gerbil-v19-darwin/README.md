@@ -70,6 +70,9 @@ not an additional release patch or an uninstrumented A/B result.
 The follow-up real generated-C atomic experiment is in
 `receipts/d857-embedded-string-lowering-atomic.md`; its identical object
 hashes and local GCC speedup do not yet qualify an end-to-end release patch.
+The adjacent real MCP package gate for a smaller header-only variant is in
+`receipts/d858-str8-header-package-rejection.md`; that variant was rejected
+and was removed from the isolated installation after the measurement.
 
 ## Convergence decision
 
