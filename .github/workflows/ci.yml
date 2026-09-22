@@ -85,13 +85,15 @@ jobs:
             "$archive" | sha256sum --check -
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
+          printf 'Activated Gerbil release at %s\n' "$GERBIL_PREFIX"
+          ls -l "$GERBIL_PREFIX/bin/gxi"
           echo "$GERBIL_PREFIX/bin" >> "$GITHUB_PATH"
           {
             echo "GERBIL_PREFIX=$GERBIL_PREFIX"
             echo "GERBIL_HOME=$GERBIL_HOME"
             echo "GAMBOPT=$GAMBOPT"
           } >> "$GITHUB_ENV"
-          gxi -v 2>&1 | grep -F 'Gerbil f0badc7'
+          gxi -v 2>&1 | tee /dev/stderr | grep -F 'Gerbil f0badc7'
 
       - name: Set up Homebrew
         if: matrix.gerbil_provider == 'homebrew-host'
