@@ -1,6 +1,6 @@
 #!/usr/bin/env gxi
 
-(import :std/text/json
+(import :std/encoding/json
         :source-root-support)
 
 (unless (eq? source-root-ready 'ready)

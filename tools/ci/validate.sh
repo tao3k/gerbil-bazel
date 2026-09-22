@@ -62,12 +62,12 @@ verify_gerbil_toolchain() {
   mkdir -p "$(dirname "$version_path")"
   "$bazel_bin" run @local_gerbil//:gxi -- --version \
     | tee "$version_path"
-  grep -E 'Gerbil (v0\.18\.2|07c8481)' "$version_path" >/dev/null
+  grep -E 'Gerbil (f0badc7|d801e7a)' "$version_path" >/dev/null
 }
 
 run_phase gerbil-toolchain verify_gerbil_toolchain
 gerbil_version="$(
-  grep -E 'Gerbil (v0\.18\.2|07c8481)' .ci/gerbil-version.txt | head -n 1
+  grep -E 'Gerbil (f0badc7|d801e7a)' .ci/gerbil-version.txt | head -n 1
 )"
 run_phase query "$bazel_bin" query //...
 run_phase build "$bazel_bin" build //tests/smoke:compile

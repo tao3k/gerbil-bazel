@@ -1,0 +1,75 @@
+diff --git a/src/std/io/bio/bio-test.ss b/src/std/io/bio/bio-test.ss
+index 296896c..2ed5967 100644
+--- a/src/std/io/bio/bio-test.ss
++++ b/src/std/io/bio/bio-test.ss
+@@ -252,6 +252,20 @@
+         (check (BufferedWriter-write-varint bwr -314159) => 3)
+         (check (get-memory-output-u8vector bwr) => u8v)))
+ 
++    (test-case "integer output refreshes a grown memory buffer"
++      (let (bwr (open-buffered-writer #f 16))
++        (for (i (in-range 15))
++          (BufferedWriter-write-u8 bwr 0))
++        (check (BufferedWriter-write-u16 bwr #x0102) => 2)
++        (check (get-memory-output-u8vector bwr)
++               => (u8vector 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 2)))
++      (let (bwr (open-buffered-writer #f 16))
++        (for (i (in-range 16))
++          (BufferedWriter-write-u8 bwr 0))
++        (check (BufferedWriter-write-varuint bwr 300) => 2)
++        (check (get-memory-output-u8vector bwr)
++               => (u8vector 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 #xac #x02))))
++
+     (test-case "char output"
+       (let* ((input "the quick brown fox jumped over the lazy dog")
+              (bwr (open-buffered-writer #f)))
+diff --git a/src/std/io/bio/writer.ss b/src/std/io/bio/writer.ss
+index 86649a7..2b266a6 100644
+--- a/src/std/io/bio/writer.ss
++++ b/src/std/io/bio/writer.ss
+@@ -29,14 +29,15 @@
+    (syntax-error "unsupported target")))
+ 
+ 
++;; A memory output drain can replace bio.buf. Reload it on every retry.
+ (def (bio-write-uint (bio : basic-output-buffer) (uint : :integer) (len : :fixnum))
+   => :fixnum
+-  (let* ((buf bio.buf)
+-         (buflen (u8vector-length buf)))
+-    (let again ()
+-      => :fixnum
+-      (let* ((whi bio.whi)
+-             (whi+len (fx+ whi len)))
++  (let again ()
++    => :fixnum
++    (let* ((buf bio.buf)
++           (buflen (u8vector-length buf))
++           (whi bio.whi)
++           (whi+len (fx+ whi len)))
+         (cond
+          ((fx< whi+len buflen)
+           (let loop ((whi whi :- :fixnum)
+@@ -51,7 +52,7 @@
+                 len))))
+          (else
+           (__bio-output-buffer-drain! bio buf whi)
+-          (again)))))))
++          (again))))))
+ 
+ (def (bio-write-uint-generic (writer : BufferedWriter) (uint : :integer) (len : :fixnum))
+   => :fixnum
+@@ -112,10 +113,10 @@
+ 
+ (def (bio-write-varuint (bio : basic-output-buffer) (uint : :integer) (max-bits : :fixnum))
+   => :fixnum
+-  (let* ((buf bio.buf)
+-         (buflen (u8vector-length buf)))
+-    (let loop ((whi bio.whi :- :fixnum) (uint uint :- :integer) (wrote 0 :- :fixnum))
+-      => :fixnum
++  (let loop ((whi bio.whi :- :fixnum) (uint uint :- :integer) (wrote 0 :- :fixnum))
++    => :fixnum
++    (let* ((buf bio.buf)
++           (buflen (u8vector-length buf)))
+       (cond
+        ((fx< whi buflen)
+         (if (> uint #x7f)

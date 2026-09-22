@@ -34,8 +34,8 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            gerbil_provider: immutable-prebuilt
-            gerbil_version_label: v0.18.2-07c84815
+            gerbil_provider: released-host
+            gerbil_version_label: v0.19-f0badc7
           - runner: macos-26
             gerbil_provider: homebrew-host
             gerbil_version_label: v0.19-f0badc7
@@ -44,8 +44,19 @@ jobs:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Validate pinned v0.19 buffered writer patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_dir="$RUNNER_TEMP/gerbil-v19-patch-check"
+          git init "$upstream_dir"
+          git -C "$upstream_dir" remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
+          git -C "$upstream_dir" fetch --depth=1 origin d801e7a1c7f77df421f638e62aaebe370f193c97
+          git -C "$upstream_dir" checkout --detach FETCH_HEAD
+          git -C "$upstream_dir" apply --check "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-memory-writer.patch"
+
       - name: Install Linux consumer dependencies
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -59,6 +70,39 @@ jobs:
             pkg-config \
             sqlite3 \
             zlib1g-dev
+
+      - name: Install pinned v0.19 Linux release
+        if: matrix.gerbil_provider == 'released-host'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full
+          archive="$RUNNER_TEMP/$release.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/tao3k/gerbil-bazel/releases/download/$release/$release.tar.gz"
+          printf '%s  %s\n' \
+            81734f52334e514296955e577a23011663097482261698272da3136a9e628a9f \
+            "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
+          printf 'Activated Gerbil release at %s\n' "$GERBIL_PREFIX"
+          ls -l "$GERBIL_PREFIX/bin/gxi"
+          echo "$GERBIL_PREFIX/bin" >> "$GITHUB_PATH"
+          {
+            echo "GERBIL_PREFIX=$GERBIL_PREFIX"
+            echo "GERBIL_HOME=$GERBIL_HOME"
+            echo "GAMBOPT=$GAMBOPT"
+          } >> "$GITHUB_ENV"
+          set +e
+          version_output="$(gxi -v 2>&1)"
+          version_status=$?
+          set -e
+          printf 'Gerbil version exit=%s output=%s\n' "$version_status" "$version_output"
+          if (( version_status != 0 )); then
+            ldd "$GERBIL_PREFIX/bin/gerbil" || true
+            exit "$version_status"
+          fi
+          grep -F 'Gerbil f0badc7' <<< "$version_output"
 
       - name: Set up Homebrew
         if: matrix.gerbil_provider == 'homebrew-host'
