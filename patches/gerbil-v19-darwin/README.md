@@ -62,6 +62,8 @@ and one MCP attempt tripped the strict 10-second silence gate. The source,
 test conditions, and failed admission gates are recorded in
 `receipts/d851-executable-graph-scoped-runtime-object-reuse.md`; Git retention
 does not imply release qualification.
+The subsequent strict cold-build replay and the unresolved pre-build silence
+boundary are recorded in `receipts/d853-mcp-silence-boundary-investigation.md`.
 
 ## Convergence decision
 
