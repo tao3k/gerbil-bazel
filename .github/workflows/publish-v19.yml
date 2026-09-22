@@ -47,6 +47,7 @@ jobs:
           patchset_sha="$({
             for patch in \
               .github/workflows/publish-v19.yml \
+              patches/gerbil-v19-bio-memory-writer.patch \
               patches/gerbil-v19-ffi-release-pkey-once.patch \
               patches/gerbil-v19-darwin-aot-tools.patch \
               patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
@@ -148,6 +149,13 @@ jobs:
           git -C upstream-gerbil checkout --detach FETCH_HEAD
           git -C upstream-gerbil submodule update --init --depth=1
 
+      - name: Apply v0.19 buffered memory writer fix
+        if: steps.gerbil-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-memory-writer.patch"
+
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
         shell: bash
@@ -167,7 +175,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            export PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+            PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+            export PATH
             cc="$(command -v gcc-16)"
             cxx="$(command -v g++-16)"
             export CC="$cc" CXX="$cxx" GERBIL_GCC="$cc"
@@ -326,6 +335,15 @@ jobs:
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
+          gxi -e '(begin
+            (import :std/encoding/json)
+            (##set-max-heap! 134217728)
+            (let* ((value (make-string 100000 #\a))
+                   (encoded (json->string value)))
+              (unless (and (= (string-length encoded) 100002)
+                           (equal? (string->json encoded) value))
+                (error "buffered JSON memory writer regression")))
+            (displayln "buffered JSON memory writer ready"))'
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
             for cores in 1 3; do
               GERBIL_BUILD_CORES="$cores" \
