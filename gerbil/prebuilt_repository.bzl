@@ -6,6 +6,7 @@ load(
     "resolve_gerbil_build_cores",
     "resolve_host_environment",
 )
+load(":repository.bzl", "native_abi_fingerprint")
 
 _ARCH_ALIASES = {
     "aarch64": "aarch64",
@@ -26,6 +27,7 @@ _OS_CONSTRAINTS = {
 
 _REQUIRED_TOOLS = ["gxc", "gxi", "gxpkg", "gxtest"]
 _MANIFEST_SCHEMA = "gerbil-bazel.prebuilt-capability-manifest.v1"
+_RELEASE_SCHEMA = "gerbil-bazel.toolchain-release.v1"
 
 def _shell_quote(value):
     return "'{}'".format(value.replace("'", "'\"'\"'"))
@@ -171,9 +173,27 @@ def _manifest(repository_ctx):
         "Gerbil capability manifest",
     )
     schema = _require_string(manifest, "schema", "manifest schema")
-    if schema != _MANIFEST_SCHEMA:
+    if schema not in [_MANIFEST_SCHEMA, _RELEASE_SCHEMA]:
         fail("unsupported Gerbil capability manifest schema: {}".format(schema))
     return manifest
+
+def _release_manifest(repository_ctx, release, archive_sha256):
+    revision = _require_string(release, "upstreamRevision", "release upstreamRevision")
+    if not repository_ctx.attr.release_revision or revision != repository_ctx.attr.release_revision:
+        fail("Gerbil release revision mismatch: expected {}, manifest declares {}".format(
+            repository_ctx.attr.release_revision,
+            revision,
+        ))
+    return {
+        "capabilityId": "release-{}".format(revision),
+        "dependencyRoots": ["current/lib"],
+        "environment": {},
+        "gerbilHome": "current",
+        "installDigest": archive_sha256,
+        "platform": _require_type(release.get("platform"), "dict", "release platform"),
+        "tools": {name: "current/bin/{}".format(name) for name in _REQUIRED_TOOLS},
+        "version": _require_string(release, "version", "release version"),
+    }
 
 def _payload_path(repository_ctx, relative, description):
     relative = _safe_relative_path(relative, description)
@@ -237,9 +257,9 @@ def _version(repository_ctx, manifest, tools, environment):
         fail("prebuilt Gerbil version probe failed: {}".format(result.stderr.strip()))
     observed = result.stdout.strip()
     if observed != declared:
-        fail("prebuilt Gerbil version mismatch: manifest={!r}, observed={!r}".format(
-            declared,
-            observed,
+        fail("prebuilt Gerbil version mismatch: manifest={}, observed={}".format(
+            repr(declared),
+            repr(observed),
         ))
     expected = repository_ctx.attr.expected_version_prefixes
     if expected:
@@ -249,8 +269,8 @@ def _version(repository_ctx, manifest, tools, environment):
                 accepted = True
                 break
         if not accepted:
-            fail("Gerbil version {!r} does not match accepted prefixes {}".format(
-                observed,
+            fail("Gerbil version {} does not match accepted prefixes {}".format(
+                repr(observed),
                 expected,
             ))
     return observed
@@ -345,8 +365,11 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
     )
 
     manifest = _manifest(repository_ctx)
+    release = manifest.get("schema") == _RELEASE_SCHEMA
+    if release:
+        manifest = _release_manifest(repository_ctx, manifest, archive_sha256)
     expected_install_digest = _hex_digest(
-        repository_ctx.attr.install_digest,
+        archive_sha256 if release else repository_ctx.attr.install_digest,
         64,
         "expected install digest",
     )
@@ -375,11 +398,6 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         gerbil_home_relative,
         "Gerbil home",
     ))
-    native_abi = _hex_digest(
-        manifest.get("nativeAbiFingerprint"),
-        40,
-        "manifest nativeAbiFingerprint",
-    )
     capability_id = _require_string(manifest, "capabilityId", "manifest capabilityId")
     declared_environment = _require_type(
         manifest.get("environment", {}),
@@ -396,6 +414,18 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         environment,
         gambit_dynamic_link_options = host.gambit_dynamic_link_options,
         gambit_executable_linker = host.gerbil_cc if host.system == "darwin" else "",
+    )
+    native_abi = native_abi_fingerprint(
+        repository_ctx,
+        host,
+        tools.absolute,
+        str(runtime.compiler_path),
+        str(runtime.compiler_identity_path),
+        runtime.environment,
+    ) if release else _hex_digest(
+        manifest.get("nativeAbiFingerprint"),
+        40,
+        "manifest nativeAbiFingerprint",
     )
     build_cores = resolve_gerbil_build_cores(
         repository_ctx,
@@ -429,7 +459,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "{{GXPKG}}": _shell_quote(tools.absolute["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(native_abi),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
-        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
+        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard_v19 if release else repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -496,6 +526,7 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINTS}}": _string_list(platform.constraints),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
+            "{{RUNTIME_API}}": repr("v19" if release else "legacy"),
             "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_GCC}}": repr("gerbil-gcc"),
             "{{GERBIL_LD}}": repr(host.gerbil_ld),
@@ -516,8 +547,9 @@ prebuilt_gerbil_repository = repository_rule(
         ]),
         "environment": attr.string_dict(),
         "expected_version_prefixes": attr.string_list(),
-        "install_digest": attr.string(mandatory = True),
+        "install_digest": attr.string(),
         "manifest_path": attr.string(default = "gerbil-bazel-capability.json"),
+        "release_revision": attr.string(),
         "project_library_relative_path": attr.string(default = ".gerbil/lib"),
         "project_root_marker": attr.label(allow_single_file = True),
         "sha256": attr.string(mandatory = True),
@@ -531,9 +563,17 @@ prebuilt_gerbil_repository = repository_rule(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:install_gerbil_dependencies.sh.tpl",
         ),
+        "_native_abi_probe": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:native_abi_fingerprint.sh",
+        ),
         "_resource_guard": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:resource_guard.ss",
+        ),
+        "_resource_guard_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard_v19.ss",
         ),
         "_native_scheme_env_template": attr.label(
             allow_single_file = True,

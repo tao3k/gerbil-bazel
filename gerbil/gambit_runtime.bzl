@@ -36,7 +36,7 @@ def discover_gambit_home(repository_ctx, gxi):
         fail("Gambit home discovery failed: {}".format(result.stderr.strip()))
     home = result.stdout.strip()
     if not home or not home.startswith("/"):
-        fail("Gambit home must be an absolute path; got {!r}".format(home))
+        fail("Gambit home must be an absolute path; got {}".format(repr(home)))
     return home.rstrip("/")
 
 def discover_gambit_compiler_command(repository_ctx, gerbil_home):
@@ -72,8 +72,8 @@ def _materialized_compiler(repository_ctx, compiler_command):
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:+-=, "
     for character in compiler_command.elems():
         if character not in allowed:
-            fail("Gambit producer compiler command contains an unsafe character: {!r}".format(
-                character,
+            fail("Gambit producer compiler command contains an unsafe character: {}".format(
+                repr(character),
             ))
 
     wrapper = "gerbil-cc"
@@ -90,8 +90,8 @@ def _materialized_compiler(repository_ctx, compiler_command):
         quiet = True,
     )
     if identity_result.return_code != 0:
-        fail("Gambit producer compiler identity probe failed for {!r}: {}".format(
-            compiler_command,
+        fail("Gambit producer compiler identity probe failed for {}: {}".format(
+            repr(compiler_command),
             identity_result.stderr.strip(),
         ))
     identity = "gerbil-cc.identity.txt"

@@ -108,6 +108,13 @@ jobs:
         if: matrix.gerbil_provider == 'homebrew-host'
         uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
 
+      - name: Install macOS V19 provider dependencies
+        if: matrix.gerbil_provider == 'homebrew-host'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: brew install gcc jq openssl pkg-config sqlite zlib
+
       - name: Install the tao3k Gerbil bottle
         if: matrix.gerbil_provider == 'homebrew-host'
         timeout-minutes: 2
@@ -182,6 +189,11 @@ jobs:
             .ci/gerbil-version.txt
             .ci/receipts/*.json
           if-no-files-found: warn
+
+      - name: Validate V19 Darwin release provider
+        if: runner.os == 'macOS'
+        working-directory: tests/v19-release
+        run: bazelisk --batch build //:smoke
 
   lock-linux-seed:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_lock }}

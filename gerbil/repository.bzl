@@ -55,8 +55,8 @@ def _gerbil_version(repository_ctx, tools):
                 accepted = True
                 break
         if not accepted:
-            fail("Gerbil version {!r} does not match accepted prefixes {}".format(
-                version,
+            fail("Gerbil version {} does not match accepted prefixes {}".format(
+                repr(version),
                 expected,
             ))
     return version
@@ -95,7 +95,7 @@ def _tool_rules():
         ))
     return "\n\n".join(rules)
 
-def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
+def native_abi_fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity, environment):
     override = repository_ctx.os.environ.get("GERBIL_NATIVE_ABI", "")
     if override:
         return override
@@ -118,6 +118,7 @@ def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
             "linker",
             host.gerbil_ld,
         ],
+        environment = environment,
         quiet = True,
     )
     if result.return_code != 0:
@@ -274,12 +275,13 @@ def _local_gerbil_repository_impl(repository_ctx):
     )
     gerbil_cc = str(runtime.compiler_path)
     version = _gerbil_version(repository_ctx, tools)
-    fingerprint = _fingerprint(
+    fingerprint = native_abi_fingerprint(
         repository_ctx,
         host,
         tools,
         gerbil_cc,
         str(runtime.compiler_identity_path),
+        runtime.environment,
     )
     environment = runtime.environment
     environment["GERBIL_BUILD_CORES"] = build_cores.value
@@ -303,7 +305,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
-        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
+        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard_v19 if version.startswith("Gerbil d") or version.startswith("Gerbil v0.19") else repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -364,6 +366,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
+            "{{RUNTIME_API}}": repr("v19" if version.startswith("Gerbil d") or version.startswith("Gerbil v0.19") else "legacy"),
             "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_GCC}}": repr("gerbil-gcc"),
             "{{GERBIL_LD}}": repr(host.gerbil_ld),
@@ -411,6 +414,10 @@ local_gerbil_repository = repository_rule(
         "_resource_guard": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:resource_guard.ss",
+        ),
+        "_resource_guard_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard_v19.ss",
         ),
     },
     environ = [

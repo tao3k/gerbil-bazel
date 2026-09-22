@@ -44,6 +44,7 @@ gerbil_toolchain(
     native_abi_fingerprint_file = "native_abi.txt",
     native_scheme_env = ":native_scheme_env",
     receipt = "toolchain.receipt.json",
+    runtime_api = {{RUNTIME_API}},
     system_cpu_count = {{SYSTEM_CPU_COUNT}},
     system_memory_bytes = {{SYSTEM_MEMORY_BYTES}},
 )
