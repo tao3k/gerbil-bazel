@@ -44,25 +44,17 @@ jobs:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Validate the pinned v0.19 staging and Ensemble composition
+      - name: Validate the pinned merged v0.19 staging revision
         shell: bash
         run: |
           set -euo pipefail
           upstream_dir="$RUNNER_TEMP/gerbil-v19-patch-check"
-          staging_sha=66542a3ca585af9b99a177927f4b4e940a1112ec
-          ensemble_sha=76968e6d3987a42d613f183317f98f4c024fb180
+          staging_sha=2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb
           git init "$upstream_dir"
           git -C "$upstream_dir" remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
           git -C "$upstream_dir" fetch --depth=256 origin "$staging_sha"
           [[ "$(git -C "$upstream_dir" rev-parse FETCH_HEAD)" == "$staging_sha" ]]
-          git -C "$upstream_dir" fetch --depth=256 origin refs/pull/1493/head
-          [[ "$(git -C "$upstream_dir" rev-parse FETCH_HEAD)" == "$ensemble_sha" ]]
-          git -C "$upstream_dir" checkout --detach "$ensemble_sha"
-          git -C "$upstream_dir" \
-            -c user.name=gerbil-bazel \
-            -c user.email=gerbil-bazel@users.noreply.github.com \
-            rebase --committer-date-is-author-date "$staging_sha"
-          git -C "$upstream_dir" diff --quiet "$staging_sha" -- src/std/net/http
+          git -C "$upstream_dir" checkout --detach "$staging_sha"
           git -C "$upstream_dir" apply --check \
             "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch" \
             "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch" \
