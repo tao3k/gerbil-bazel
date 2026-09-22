@@ -75,6 +75,10 @@ The adjacent real MCP package gate for a smaller header-only variant is in
 and was removed from the isolated installation after the measurement.
 The following broad-tail/official-batch investigation is in
 `receipts/d859-mcp-broad-tail-and-gsc-batch.md`; it also admits no new patch.
+The representative GCC pass breakdown and constant-lowering rejection are in
+`receipts/d860-gambit-ifd-constant-lowering-rejection.md`.
+The GCC precompiled-header feasibility gate is in
+`receipts/d861-gambit-header-pch-rejection.md`.
 
 ## Convergence decision
 
