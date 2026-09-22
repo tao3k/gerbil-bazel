@@ -193,6 +193,29 @@ def measurement_timeout_seconds(
     return build_timeout
 
 
+def host_load_observation(
+    build_cores: int, max_load_per_core: float | None
+) -> dict[str, Any]:
+    """Capture a comparable host-load boundary before expensive qualification."""
+    one, five, fifteen = os.getloadavg()
+    gated = (one, five)
+    limit = (
+        build_cores * max_load_per_core
+        if max_load_per_core is not None
+        else None
+    )
+    return {
+        "loadAverage1Minute": one,
+        "loadAverage5Minutes": five,
+        "loadAverage15Minutes": fifteen,
+        "buildCores": build_cores,
+        "maxLoadPerCore": max_load_per_core,
+        "maxAllowedLoad": limit,
+        "gatedWindowsMinutes": [1, 5],
+        "passed": limit is None or all(load <= limit for load in gated),
+    }
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -575,6 +598,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--max-regression-percent", type=float, default=0.0)
     parser.add_argument("--max-candidate-seconds", type=float)
     parser.add_argument(
+        "--max-host-load-per-core",
+        type=float,
+        help="reject before qualification when 1m or 5m load exceeds this ratio",
+    )
+    parser.add_argument(
         "--build-state", choices=("cold", "native-warm"), default="cold"
     )
     parser.add_argument("--receipt", type=Path, required=True)
@@ -592,9 +620,22 @@ def main(argv: Sequence[str]) -> int:
         raise RuntimeError("--max-candidate-seconds must be positive")
     if args.candidate_timeout is not None and args.candidate_timeout <= 0:
         raise RuntimeError("--candidate-timeout must be positive")
+    if args.max_host_load_per_core is not None and args.max_host_load_per_core <= 0:
+        raise RuntimeError("--max-host-load-per-core must be positive")
     source = args.repository.expanduser().resolve()
     if git_output(source, "status", "--porcelain"):
         raise RuntimeError(f"source repository is dirty: {source}")
+    host_load = host_load_observation(
+        args.build_cores, args.max_host_load_per_core
+    )
+    if not host_load["passed"]:
+        write_qualification_failure(
+            args.receipt,
+            consumer=args.consumer,
+            phase="host-load-preflight",
+            run=host_load,
+        )
+        raise RuntimeError("host load preflight failed")
     gcc = args.gcc
     if gcc is None and platform.system() == "Darwin":
         gcc = framework.resolve_executable(None, ("gcc-16",), name="Darwin GCC")
@@ -775,6 +816,7 @@ def main(argv: Sequence[str]) -> int:
                 "system": platform.system().lower(),
                 "architecture": platform.machine().lower(),
                 "availableLogicalCpuCount": framework.available_cpu_count(),
+                "loadPreflight": host_load,
             },
             "configuration": {
                 "buildCores": args.build_cores,
@@ -789,6 +831,7 @@ def main(argv: Sequence[str]) -> int:
                 "candidateCanonicalRuntimeObjects": args.candidate_canonical_runtime_objects,
                 "maxRegressionPercent": args.max_regression_percent,
                 "maxCandidateSeconds": args.max_candidate_seconds,
+                "maxHostLoadPerCore": args.max_host_load_per_core,
             },
             "runs": runs,
             "firstAccessExcluded": first_access,

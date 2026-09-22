@@ -154,6 +154,11 @@ Real-consumer A/B admission is fail-closed: by default a candidate may not be
 slower than its adjacent same-state baseline (`--max-regression-percent=0`).
 For the POO native-warm lane, pass `--max-candidate-seconds=13.13` as the
 absolute anti-drift gate; 12.01 seconds remains the best qualified milestone.
+For strict local Darwin qualification, also pass
+`--max-host-load-per-core=1.0`; this opt-in preflight rejects before any build
+when either the 1- or 5-minute load exceeds the selected build-core budget.
+It prevents an invalid sample but cannot turn a performance failure into a
+pass. See `receipts/d876-host-load-preflight.md`.
 An empty-`.gerbil` first-access run or an unrefactored POO source tree cannot
 replace this baseline.
 

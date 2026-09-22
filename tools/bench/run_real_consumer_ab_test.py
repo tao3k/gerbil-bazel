@@ -11,6 +11,25 @@ import run_real_consumer_ab as subject
 
 
 class RealConsumerABTest(unittest.TestCase):
+    def test_host_load_gate_uses_one_and_five_minute_windows(self) -> None:
+        with mock.patch.object(subject.os, "getloadavg", return_value=(11.5, 12.0, 30.0)):
+            observation = subject.host_load_observation(12, 1.0)
+
+        self.assertTrue(observation["passed"])
+        self.assertEqual(observation["gatedWindowsMinutes"], [1, 5])
+        self.assertEqual(observation["maxAllowedLoad"], 12.0)
+
+        with mock.patch.object(subject.os, "getloadavg", return_value=(12.1, 11.0, 1.0)):
+            observation = subject.host_load_observation(12, 1.0)
+        self.assertFalse(observation["passed"])
+
+    def test_host_load_gate_is_opt_in(self) -> None:
+        with mock.patch.object(subject.os, "getloadavg", return_value=(100.0, 100.0, 100.0)):
+            observation = subject.host_load_observation(12, None)
+
+        self.assertTrue(observation["passed"])
+        self.assertIsNone(observation["maxAllowedLoad"])
+
     def test_candidate_timeout_only_bounds_measured_candidate(self) -> None:
         self.assertEqual(
             subject.measurement_timeout_seconds("baseline", 180.0, 65.35),

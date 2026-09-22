@@ -17,6 +17,13 @@ the drift. Stop before revised-binary POO/MCP A/B and retry the same control
 only in a stable host window. See
 `receipts/d875-revised-candidate-aot-and-aa-gate.md`.
 
+D876 makes that stop condition executable: strict local Darwin runs opt into
+`--max-host-load-per-core=1.0`, gating the 1- and 5-minute load before any
+clone or build. The current host was rejected immediately at 29.997/23.626
+against a 12.0 limit. This is qualification-only; it neither changes the
+candidate nor supplies missing A/B evidence. See
+`receipts/d876-host-load-preflight.md`.
+
 ## D873 decision
 
 The four-patch release stack is unchanged. D866 (0007+0008) repeated a
