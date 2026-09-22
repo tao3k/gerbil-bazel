@@ -2,6 +2,7 @@
 
 import tempfile
 import sys
+import subprocess
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -181,6 +182,22 @@ class SchedulerObservationTest(unittest.TestCase):
 
 
 class FixtureTest(unittest.TestCase):
+    def test_timeout_falls_back_when_process_group_signal_is_denied(self) -> None:
+        process = mock.Mock(pid=123)
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="build", timeout=0.5),
+            None,
+        ]
+        with mock.patch.object(
+            subject.os, "killpg", side_effect=PermissionError
+        ) as kill_group:
+            subject.terminate_process_group(process)
+
+        self.assertEqual(kill_group.call_count, 2)
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+
     def test_timed_runner_reads_pseudo_terminal_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = subject.run_timed(

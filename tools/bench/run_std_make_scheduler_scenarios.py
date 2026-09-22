@@ -130,10 +130,15 @@ def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         return
+    except PermissionError:
+        process.terminate()
     try:
         process.wait(timeout=0.5)
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except PermissionError:
+            process.kill()
         process.wait()
 
 
