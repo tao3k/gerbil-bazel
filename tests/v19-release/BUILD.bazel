@@ -1,0 +1,7 @@
+filegroup(
+    name = "smoke",
+    srcs = [
+        "@v19_release//:native_abi.txt",
+        "@v19_release//:toolchain.receipt.json",
+    ],
+)

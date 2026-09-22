@@ -1,0 +1,29 @@
+module(
+    name = "gerbil_bazel_v19_release_smoke",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "gerbil_bazel", version = "0.1.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
+local_path_override(
+    module_name = "gerbil_bazel",
+    path = "../..",
+)
+
+gerbil = use_extension("@gerbil_bazel//gerbil:extensions.bzl", "gerbil")
+gerbil.prebuilt(
+    name = "v19_release",
+    expected_version_prefixes = ["Gerbil d801e7a"],
+    manifest_path = "gerbil-toolchain-release.json",
+    release_revision = "d801e7a1c7f77df421f638e62aaebe370f193c97",
+    sha256 = "c6a4bc783311670ea56d0c384ebdffae491112ba9bdd253cd763a260a5793d6b",
+    strip_prefix = "gerbil-v0.19-darwin-aarch64",
+    urls = [
+        "https://github.com/tao3k/gerbil-bazel/releases/download/gerbil-v0.19-d801e7a1c7f77df421f638e62aaebe370f193c97-darwin-aarch64-gcc16-arm64-aot-tools-single-host-unlimited-patch16675e99f856/gerbil-v0.19-d801e7a1c7f77df421f638e62aaebe370f193c97-darwin-aarch64-gcc16-arm64-aot-tools-single-host-unlimited-patch16675e99f856.tar.gz",
+    ],
+)
+use_repo(gerbil, "v19_release")
+
+register_toolchains("@v19_release//:registered_toolchain")
