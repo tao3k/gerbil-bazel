@@ -328,6 +328,14 @@ jobs:
             '.singleHostMode == "unlimited" and
              (.configureArguments | any(. == "--enable-single-host=0"))' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
+          if [[ "$GERBIL_BUILD_PROFILE" == portable-* ]]; then
+            jq -e '(.configureArguments | any(. == "--enable-march="))' \
+              "$GERBIL_PREFIX/gerbil-build-receipt.json"
+            if grep -F -- '-march=native' "$GERBIL_HOME/bin/gambuild-C"; then
+              echo "installed Linux toolchain contains runner-specific -march=native" >&2
+              exit 1
+            fi
+          fi
           if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
             jq -e '.toolLinkage == "whole-program-aot"' \
               "$GERBIL_PREFIX/gerbil-build-receipt.json"
