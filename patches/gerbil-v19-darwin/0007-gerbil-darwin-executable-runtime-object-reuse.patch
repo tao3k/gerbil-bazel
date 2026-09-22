@@ -1,10 +1,10 @@
 From: tao3k team and Contributors
 Subject: [PATCH 7/7] compiler: reuse Darwin runtime objects in executable graphs
 
-Freeze the measured D851 executable-graph-scoped candidate on staging V19.
-This patch layers after 0002 and 0003. It is an investigation candidate,
-not part of the four-patch release workflow; see the D851 receipt for the
-real-consumer A/B and remaining admission failures.
+Preserve the executable-graph-scoped candidate on staging V19. This patch
+layers after 0002 and 0003. D874 corrected output-dependency failure and
+unknown-output handling; earlier performance receipts predate that change.
+It is an investigation candidate, not part of the four-patch release workflow.
 
 ---
 diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
@@ -17,7 +17,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 -(defstruct compile-executor (submit close))
 +(defstruct compile-executor
 +  (submit close register-output publish-output after-outputs output-produced?))
-+(defstruct compile-output-result (completed? error callbacks))
++(defstruct compile-output-result (completed? failed? callbacks))
  (def __compile-executor #f)
  (def __compile-executor-mx (make-mutex 'compile-executor-lifecycle))
  
@@ -29,7 +29,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
    (def worker-count (max 1 __available-cores))
  
    (def (submit! job)
-@@ -314,6 +317,63 @@
+@@ -314,6 +317,68 @@
      (set! back (cons job back))
      (condition-variable-signal! cv)
      (mutex-unlock! mx))
@@ -45,7 +45,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 +  (def (output-produced? output)
 +    (with-lock mx (lambda () (and (hash-get output-results output) #t))))
 +
-+  (def (publish-output! output error)
++  (def (publish-output! output failed?)
 +    (def callbacks
 +      (with-lock mx
 +        (lambda ()
@@ -54,21 +54,21 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 +            (when (compile-output-result-completed? result)
 +              (error "compile output published twice" output))
 +            (set! (compile-output-result-completed? result) #t)
-+            (set! (compile-output-result-error result) error)
++            (set! (compile-output-result-failed? result) failed?)
 +            (let (callbacks (compile-output-result-callbacks result))
 +              (set! (compile-output-result-callbacks result) [])
 +              callbacks)))))
-+    (for-each (lambda (callback) (callback error)) callbacks))
++    (for-each (lambda (callback) (callback failed?)) callbacks))
 +
 +  (def (after-outputs! outputs job)
 +    (def remaining 0)
 +    (def failed? #f)
 +    (def ready? #f)
-+    (def (complete-one! error)
++    (def (complete-one! failed-output?)
 +      (def submit-now? #f)
 +      (with-lock mx
 +        (lambda ()
-+          (when error (set! failed? #t))
++          (when failed-output? (set! failed? #t))
 +          (set! remaining (fx1- remaining))
 +          (when (and (fxzero? remaining) (not failed?))
 +            (set! submit-now? #t))))
@@ -77,9 +77,14 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 +      (lambda ()
 +        (for-each
 +         (lambda (output)
-+           (alet (result (hash-get output-results output))
++           (unless (hash-get output-results output)
++             (error "unknown compile output dependency" output)))
++         outputs)
++        (for-each
++         (lambda (output)
++           (let (result (hash-get output-results output))
 +             (if (compile-output-result-completed? result)
-+               (when (compile-output-result-error result)
++               (when (compile-output-result-failed? result)
 +                 (set! failed? #t))
 +               (begin
 +                 (set! remaining (fx1+ remaining))
@@ -93,7 +98,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
  
    (def (next-job)
      (mutex-lock! mx)
-@@ -376,7 +436,9 @@
+@@ -376,7 +441,9 @@
      (for-each join! workers)
      (when first-error? (raise first-error)))
  
@@ -104,7 +109,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
  
  (def (current-or-open-compile-executor)
    (with-lock __compile-executor-mx
-@@ -389,6 +451,30 @@
+@@ -389,6 +456,30 @@
    (let (executor (current-or-open-compile-executor))
      ((compile-executor-submit executor) (make-compile-job thunk name))))
  
@@ -116,7 +121,7 @@ diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
 +      (lambda ()
 +        (with-catch
 +         (lambda (error)
-+           ((compile-executor-publish-output executor) output error)
++           ((compile-executor-publish-output executor) output #t)
 +           (raise error))
 +         (lambda ()
 +           (thunk)
