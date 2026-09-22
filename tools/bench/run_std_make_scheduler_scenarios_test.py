@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import tempfile
+import sys
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -180,6 +181,22 @@ class SchedulerObservationTest(unittest.TestCase):
 
 
 class FixtureTest(unittest.TestCase):
+    def test_timed_runner_reads_pseudo_terminal_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = subject.run_timed(
+                (sys.executable, "-c", "print('pty-output', flush=True)"),
+                phase="pty-unit",
+                cwd=Path(directory),
+                environment={},
+                timeout_seconds=5.0,
+                silence_timeout_seconds=2.0,
+                pseudo_terminal=True,
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.output, "pty-output")
+
     def test_resolve_executable_reports_the_requested_tool(self) -> None:
         with mock.patch.object(subject.shutil, "which", return_value=None):
             with self.assertRaisesRegex(RuntimeError, "gsc is unavailable"):

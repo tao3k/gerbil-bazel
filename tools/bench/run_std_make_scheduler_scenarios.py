@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
 import platform
+import pty
 import re
 import selectors
 import shutil
@@ -154,21 +156,29 @@ def run_timed(
     environment: dict[str, str],
     timeout_seconds: float,
     silence_timeout_seconds: float = 10.0,
+    pseudo_terminal: bool = False,
 ) -> CommandResult:
     print(f"[std-make-scheduler] phase={phase} status=started", file=sys.stderr, flush=True)
     started_ns = time.monotonic_ns()
     last_output_ns = started_ns
+    master_fd: int | None = None
+    slave_fd: int | None = None
+    if pseudo_terminal:
+        master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
         command,
         cwd=cwd,
         env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=slave_fd if slave_fd is not None else subprocess.PIPE,
+        stderr=slave_fd if slave_fd is not None else subprocess.STDOUT,
         start_new_session=True,
     )
-    assert process.stdout is not None
+    if slave_fd is not None:
+        os.close(slave_fd)
+    output = master_fd if master_fd is not None else process.stdout
+    assert output is not None
     selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
+    selector.register(output, selectors.EVENT_READ)
     pending = b""
     events: list[dict[str, Any]] = []
     timed_out = False
@@ -199,15 +209,21 @@ def run_timed(
                 break
             ready = selector.select(timeout=min(0.1, timeout_seconds - elapsed_seconds))
             for key, _ in ready:
-                chunk = os.read(key.fd, 65536)
+                try:
+                    chunk = os.read(key.fd, 65536)
+                except OSError as error:
+                    if pseudo_terminal and error.errno == errno.EIO:
+                        chunk = b""
+                    else:
+                        raise
                 if not chunk:
-                    selector.unregister(process.stdout)
+                    selector.unregister(output)
                     continue
                 last_output_ns = time.monotonic_ns()
                 pending += chunk
                 while b"\n" in pending:
                     raw, pending = pending.split(b"\n", 1)
-                    line = raw.decode("utf-8", errors="replace")
+                    line = raw.decode("utf-8", errors="replace").rstrip("\r")
                     events.append(
                         {
                             "elapsedNs": time.monotonic_ns() - started_ns,
@@ -232,6 +248,10 @@ def run_timed(
     finally:
         selector.close()
         terminate_process_group(process)
+        if process.stdout is not None:
+            process.stdout.close()
+        if master_fd is not None:
+            os.close(master_fd)
     result = CommandResult(
         exit_code=process.returncode if process.returncode is not None else -1,
         elapsed_ns=time.monotonic_ns() - started_ns,
