@@ -5,7 +5,19 @@ next.  A patch is not promoted because it compiles, passes focused tests, or
 improves observability.  It must address the measured owner of the cost and
 survive the admission gates below.
 
-## Current D873 decision
+## Current D875 decision
+
+The D874-corrected `0007+0008` candidate now has a complete isolated AOT
+build, but its first performance prerequisite failed. An identical-binary POO
+control measured 12.577 and 13.283 seconds (`+5.62%`); the latter also missed
+the unchanged 13.13-second absolute gate. Both arms built and stayed below the
+10-second silence limit. The host load was above its 12 logical CPUs after the
+run, so this cannot qualify a candidate comparison or establish the cause of
+the drift. Stop before revised-binary POO/MCP A/B and retry the same control
+only in a stable host window. See
+`receipts/d875-revised-candidate-aot-and-aa-gate.md`.
+
+## D873 decision
 
 The four-patch release stack is unchanged. D866 (0007+0008) repeated a
 material MCP executable-closure win in both strict build orders, but did not

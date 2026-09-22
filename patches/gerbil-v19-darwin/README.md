@@ -88,6 +88,9 @@ The subsequent output-dependency contract correction for candidate `0007`
 and its atomic-only gates are in
 `receipts/d874-output-dependency-contract.md`; it has not passed a fresh
 dual-consumer A/B.
+The corrected candidate's isolated AOT rebuild and failed same-binary POO
+control are in `receipts/d875-revised-candidate-aot-and-aa-gate.md`. Because
+that A/A gate failed, no revised-binary POO/MCP A/B was admitted.
 Patch `0008` restores the official pure-module output path after `0007`; its
 order-balanced dual-consumer A/B is in
 `receipts/d862-uninstrumented-dual-consumer-ab.md`. Patch `0009` is a separate
