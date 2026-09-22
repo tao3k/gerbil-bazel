@@ -200,10 +200,10 @@ def resolve_gerbil_build_cores(
 
     for character in value.elems():
         if character not in "0123456789":
-            fail("GERBIL_BUILD_CORES must be a positive integer, got {!r}".format(value))
+            fail("GERBIL_BUILD_CORES must be a positive integer, got {}".format(repr(value)))
     count = int(value)
     if count < 1:
-        fail("GERBIL_BUILD_CORES must be a positive integer, got {!r}".format(value))
+        fail("GERBIL_BUILD_CORES must be a positive integer, got {}".format(repr(value)))
     return struct(
         source = source,
         value = str(count),

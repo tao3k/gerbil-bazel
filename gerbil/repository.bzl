@@ -55,8 +55,8 @@ def _gerbil_version(repository_ctx, tools):
                 accepted = True
                 break
         if not accepted:
-            fail("Gerbil version {!r} does not match accepted prefixes {}".format(
-                version,
+            fail("Gerbil version {} does not match accepted prefixes {}".format(
+                repr(version),
                 expected,
             ))
     return version
@@ -95,7 +95,7 @@ def _tool_rules():
         ))
     return "\n\n".join(rules)
 
-def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
+def native_abi_fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity, environment):
     override = repository_ctx.os.environ.get("GERBIL_NATIVE_ABI", "")
     if override:
         return override
@@ -118,6 +118,7 @@ def _fingerprint(repository_ctx, host, tools, gerbil_cc, gerbil_cc_identity):
             "linker",
             host.gerbil_ld,
         ],
+        environment = environment,
         quiet = True,
     )
     if result.return_code != 0:
@@ -274,12 +275,13 @@ def _local_gerbil_repository_impl(repository_ctx):
     )
     gerbil_cc = str(runtime.compiler_path)
     version = _gerbil_version(repository_ctx, tools)
-    fingerprint = _fingerprint(
+    fingerprint = native_abi_fingerprint(
         repository_ctx,
         host,
         tools,
         gerbil_cc,
         str(runtime.compiler_identity_path),
+        runtime.environment,
     )
     environment = runtime.environment
     environment["GERBIL_BUILD_CORES"] = build_cores.value
