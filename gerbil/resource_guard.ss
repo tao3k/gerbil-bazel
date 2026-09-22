@@ -4,14 +4,14 @@
 
 (export main)
 
-(import :gerbil/gambit
-        (only-in :gerbil/compiler/base __available-cores)
+(import (only-in :gerbil/compiler/base __available-cores)
         (only-in :std/misc/process run-process)
-        (only-in :std/srfi/13
-                 string-prefix?
-                 string-trim-both
-                 string-tokenize)
-        (only-in :std/text/json json-object->string write-json-sort-keys?))
+        (only-in :std/string/misc string-trim)
+        (only-in :std/text/pregexp pregexp-split)
+        (only-in :std/encoding/json
+                 JSONWriteOptions
+                 current-json-write-options
+                 json->string))
 
 (def +resource-guard-schema+ "gerbil-bazel.resource-guard-receipt.v1")
 (def +resource-guard-admission-schema+
@@ -22,6 +22,12 @@
 (def +runnable-limit-per-cpu+ 2)
 (def +default-sample-seconds+ 0.25)
 (def +darwin-footprint-confirmation-seconds+ 10)
+
+(def (whitespace-tokens line)
+  (let (trimmed (string-trim line))
+    (if (string=? trimmed "")
+      []
+      (pregexp-split "[[:space:]]+" trimmed))))
 
 (def (now-seconds)
   (time->seconds (current-time)))
@@ -52,7 +58,7 @@
    (lambda ()
      (let* ((result (run-captured argv))
             (value (and (= (car result) 0)
-                        (string->number (string-trim-both (cdr result))))))
+                        (string->number (string-trim (cdr result))))))
        (and (exact-integer? value) (> value 0) value)))))
 
 (def (positive-integer-from-env name fallback)
@@ -90,7 +96,7 @@
   (max 1 __available-cores))
 
 (def (runnable-state-line? line)
-  (string-prefix? "R" (string-trim-both line)))
+  (string-prefix? "R" (string-trim line)))
 
 (def (runnable-process-count-from-state-output output)
   (let loop ((states (string-split output #\newline))
@@ -191,10 +197,10 @@
              (current-raw
               (read-first-line
                (linux-cgroup-v2-file relative-path "memory.current")))
-             (limit (and limit-raw (string->number (string-trim-both limit-raw))))
+             (limit (and limit-raw (string->number (string-trim limit-raw))))
              (current
               (and current-raw
-                   (string->number (string-trim-both current-raw)))))
+                   (string->number (string-trim current-raw)))))
         (if (and (exact-integer? limit)
                  (> limit 0)
                  (exact-integer? current)
@@ -220,7 +226,7 @@
              (cond
               ((eof-object? line) #f)
               ((string-prefix? "MemAvailable:" line)
-               (let* ((tokens (string-tokenize line))
+               (let* ((tokens (whitespace-tokens line))
                       (kilobytes
                        (and (pair? tokens)
                             (pair? (cdr tokens))
@@ -258,7 +264,7 @@
             (cdr result)
             "System-wide memory free percentage:")))
          (percent-token
-          (and line (last-token (string-tokenize line))))
+          (and line (last-token (whitespace-tokens line))))
          (percent
           (and
            percent-token
@@ -441,7 +447,7 @@
      ("admissionReasons" (map symbol->string reasons)))))
 
 (def (process-row line)
-  (let (tokens (string-tokenize line))
+  (let (tokens (whitespace-tokens line))
     (and (= (length tokens) 3)
          (let ((pid (string->number (car tokens)))
                (ppid (string->number (cadr tokens)))
@@ -482,7 +488,7 @@
                (cond
                 ((eof-object? line) #f)
                 ((string-prefix? "Pss:" line)
-                 (let* ((tokens (string-tokenize line))
+                 (let* ((tokens (whitespace-tokens line))
                         (kilobytes
                          (and (pair? tokens)
                               (pair? (cdr tokens))
@@ -504,7 +510,7 @@
     (if (null? lines)
       observed
       (let* ((value-text
-              (token-after "Footprint:" (string-tokenize (car lines))))
+              (token-after "Footprint:" (whitespace-tokens (car lines))))
              (value (and value-text (string->number value-text))))
         (loop (cdr lines)
               (if (and (exact-integer? value) (>= value 0))
@@ -692,8 +698,8 @@
    ("timeoutMs" (and timeout-seconds (* timeout-seconds 1000)))))
 
 (def (receipt-json receipt)
-  (parameterize ((write-json-sort-keys? #t))
-    (json-object->string receipt)))
+  (parameterize ((current-json-write-options (JSONWriteOptions sort-keys: #t)))
+    (json->string receipt)))
 
 (def (emit-receipt! prefix receipt)
   (let (payload (receipt-json receipt))
