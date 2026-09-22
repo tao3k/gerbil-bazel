@@ -44,6 +44,17 @@ jobs:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Validate pinned v0.19 buffered writer patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_dir="$RUNNER_TEMP/gerbil-v19-patch-check"
+          git init "$upstream_dir"
+          git -C "$upstream_dir" remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
+          git -C "$upstream_dir" fetch --depth=1 origin d801e7a1c7f77df421f638e62aaebe370f193c97
+          git -C "$upstream_dir" checkout --detach FETCH_HEAD
+          git -C "$upstream_dir" apply --check "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-memory-writer.patch"
+
       - name: Install Linux consumer dependencies
         if: matrix.gerbil_provider == 'immutable-prebuilt'
         run: |
