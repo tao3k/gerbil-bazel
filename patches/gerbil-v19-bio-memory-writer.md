@@ -19,6 +19,14 @@ for exact `d801e7a1` replay.
 The remaining integer-path defect is tracked in
 [upstream GitHub issue #1435](https://github.com/mighty-gerbils/gerbil/issues/1435).
 
+A strict local negative control confirms that this residual patch is not
+redundant. On otherwise identical staging-plus-PR-1493 builds, a 100 KB
+`json->string` reproducer completed with `JSON-OK` in approximately one second
+when the integer/varuint patch was present. Reversing only that patch caused
+the same command to exceed a ten-second hard timeout (exit 124). PR #1493
+therefore fixes the UTF-8 retry, but does not close the large-JSON path by
+itself.
+
 On the pinned revision, both patches pass `git apply --cached --check` against
 the clean index. With the complete patch compiled using `gxc -O`, the Gerbil
 buffered-output and JSON suites pass, a 100 KB JSON string round-trips under a
