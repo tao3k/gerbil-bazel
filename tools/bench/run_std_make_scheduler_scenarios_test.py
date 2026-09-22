@@ -154,6 +154,30 @@ class SchedulerObservationTest(unittest.TestCase):
         self.assertFalse(subject.should_stream_line("... scan source ./module.ss"))
         self.assertFalse(subject.should_stream_line("... compile module"))
 
+    def test_silence_observation_attributes_the_largest_gap(self) -> None:
+        observation = subject.silence_observation(
+            self.result((10, "first"), (80, "second"))
+        )
+
+        self.assertEqual(observation["maxGapNs"], 70)
+        self.assertEqual(observation["beforeEvent"], "first")
+        self.assertEqual(observation["afterEvent"], "second")
+
+    def test_silence_observation_labels_watchdog_terminal(self) -> None:
+        result = subject.CommandResult(
+            exit_code=-1,
+            elapsed_ns=100,
+            timed_out=True,
+            events=({"elapsedNs": 20, "line": "last output"},),
+            timeout_reason="silence",
+        )
+
+        observation = subject.silence_observation(result)
+
+        self.assertEqual(observation["maxGapNs"], 80)
+        self.assertEqual(observation["afterEvent"], "<watchdog:silence>")
+        self.assertEqual(observation["timeoutReason"], "silence")
+
 
 class FixtureTest(unittest.TestCase):
     def test_resolve_executable_reports_the_requested_tool(self) -> None:

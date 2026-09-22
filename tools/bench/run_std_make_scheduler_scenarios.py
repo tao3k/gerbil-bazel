@@ -30,6 +30,7 @@ class CommandResult:
     elapsed_ns: int
     timed_out: bool
     events: tuple[dict[str, Any], ...]
+    timeout_reason: str | None = None
 
     @property
     def output(self) -> str:
@@ -84,6 +85,22 @@ def resolve_gerbil_gsc(gxi: str, requested: str | None) -> str:
     return resolve_executable(completed.stdout.strip(), (), name="Gerbil Gambit gsc")
 
 
+def resolve_toolchain_home(gxi: str, gsc: str, requested: Path | None) -> Path:
+    home = (
+        requested.expanduser().resolve()
+        if requested is not None
+        else Path(gxi).resolve().parent.parent
+    )
+    expected_bin = (home / "bin").resolve()
+    for name, executable in (("gxi", gxi), ("gsc", gsc)):
+        if Path(executable).resolve().parent != expected_bin:
+            raise RuntimeError(
+                f"cross-toolchain {name} rejected: {executable} is not under {expected_bin}"
+            )
+    resolve_executable(str(expected_bin / "gxc"), (), name="gxc")
+    return home
+
+
 def sanitize_build_environment(environment: dict[str, str]) -> dict[str, str]:
     result = environment.copy()
     if platform.system() == "Darwin":
@@ -95,9 +112,12 @@ def sanitize_build_environment(environment: dict[str, str]) -> dict[str, str]:
             "C_INCLUDE_PATH",
             "CPLUS_INCLUDE_PATH",
             "MACOSX_DEPLOYMENT_TARGET",
+            "DYLD_LIBRARY_PATH",
+            "DYLD_FALLBACK_LIBRARY_PATH",
         ):
             result.pop(name, None)
         result.setdefault("COMPILER_PATH", "/usr/bin")
+    result.pop("GERBIL_LOADPATH", None)
     return result
 
 
@@ -152,11 +172,13 @@ def run_timed(
     pending = b""
     events: list[dict[str, Any]] = []
     timed_out = False
+    timeout_reason: str | None = None
     try:
         while True:
             elapsed_seconds = (time.monotonic_ns() - started_ns) / 1_000_000_000
             if elapsed_seconds >= timeout_seconds:
                 timed_out = True
+                timeout_reason = "total"
                 print(
                     f"[std-make-scheduler] phase={phase} status=timeout reason=total",
                     file=sys.stderr,
@@ -167,6 +189,7 @@ def run_timed(
             silent_seconds = (time.monotonic_ns() - last_output_ns) / 1_000_000_000
             if silent_seconds >= silence_timeout_seconds:
                 timed_out = True
+                timeout_reason = "silence"
                 print(
                     f"[std-make-scheduler] phase={phase} status=timeout reason=silence",
                     file=sys.stderr,
@@ -214,6 +237,7 @@ def run_timed(
         elapsed_ns=time.monotonic_ns() - started_ns,
         timed_out=timed_out,
         events=tuple(events),
+        timeout_reason=timeout_reason,
     )
     print(
         f"[std-make-scheduler] phase={phase} status=finished "
@@ -223,6 +247,32 @@ def run_timed(
         flush=True,
     )
     return result
+
+
+def silence_observation(result: CommandResult) -> dict[str, Any]:
+    """Attribute the largest event-free interval to its surrounding events."""
+    boundaries: list[tuple[int, str]] = [(0, "<process-start>")]
+    boundaries.extend(
+        (int(event["elapsedNs"]), str(event["line"])) for event in result.events
+    )
+    terminal = (
+        f"<watchdog:{result.timeout_reason}>"
+        if result.timed_out
+        else "<process-exit>"
+    )
+    boundaries.append((result.elapsed_ns, terminal))
+    before, after = max(
+        zip(boundaries, boundaries[1:]),
+        key=lambda pair: pair[1][0] - pair[0][0],
+    )
+    return {
+        "maxGapNs": after[0] - before[0],
+        "beforeElapsedNs": before[0],
+        "beforeEvent": before[1],
+        "afterElapsedNs": after[0],
+        "afterEvent": after[1],
+        "timeoutReason": result.timeout_reason,
+    }
 
 
 def write_fixture(
