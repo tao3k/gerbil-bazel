@@ -208,10 +208,14 @@ jobs:
             cc="${CC:-$(command -v cc)}"
             cxx="${CXX:-$(command -v c++)}"
             linker="$(command -v ld) $(ld --version 2>&1)"
-            configure_args=("--prefix=$GERBIL_PREFIX")
+            configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
           configure_args+=(--enable-single-host=0)
           ./configure "${configure_args[@]}"
+          if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
+            echo "release build must not use runner-specific -march=native" >&2
+            exit 1
+          fi
           # Gerbil configure resets the integrated Gambit submodule to the
           # configured revision. Apply Darwin Gambit patches afterwards, then
           # recheck configure so compiler capability flags reach gambuild-C.
