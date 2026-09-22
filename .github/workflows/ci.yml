@@ -93,7 +93,16 @@ jobs:
             echo "GERBIL_HOME=$GERBIL_HOME"
             echo "GAMBOPT=$GAMBOPT"
           } >> "$GITHUB_ENV"
-          gxi -v 2>&1 | tee /dev/stderr | grep -F 'Gerbil f0badc7'
+          set +e
+          version_output="$(gxi -v 2>&1)"
+          version_status=$?
+          set -e
+          printf 'Gerbil version exit=%s output=%s\n' "$version_status" "$version_output"
+          if (( version_status != 0 )); then
+            ldd "$GERBIL_PREFIX/bin/gerbil" || true
+            exit "$version_status"
+          fi
+          grep -F 'Gerbil f0badc7' <<< "$version_output"
 
       - name: Set up Homebrew
         if: matrix.gerbil_provider == 'homebrew-host'
