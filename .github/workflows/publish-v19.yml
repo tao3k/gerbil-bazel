@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: 66542a3ca585af9b99a177927f4b4e940a1112ec
+        default: 2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb
         required: true
         type: string
       platform:
@@ -40,20 +40,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ensemble_sha=76968e6d3987a42d613f183317f98f4c024fb180
           git init upstream-gerbil
           git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
           git -C upstream-gerbil fetch --depth=256 origin "$UPSTREAM_REF"
           upstream_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
-          git -C upstream-gerbil fetch --depth=256 origin refs/pull/1493/head
-          fetched_ensemble_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
-          [[ "$fetched_ensemble_sha" == "$ensemble_sha" ]]
-          git -C upstream-gerbil checkout --detach "$ensemble_sha"
-          git -C upstream-gerbil \
-            -c user.name=gerbil-bazel \
-            -c user.email=gerbil-bazel@users.noreply.github.com \
-            rebase --committer-date-is-author-date "$upstream_sha"
-          source_sha="$(git -C upstream-gerbil rev-parse HEAD)"
+          git -C upstream-gerbil checkout --detach "$upstream_sha"
+          source_sha="$upstream_sha"
           patchset_sha="$({
             for patch in \
               .github/workflows/publish-v19.yml \
@@ -91,7 +83,7 @@ jobs:
           {
             echo "sha=$source_sha"
             echo "staging_sha=$upstream_sha"
-            echo "ensemble_sha=$ensemble_sha"
+            echo "ensemble_sha=$upstream_sha"
             echo "patchset_sha=$patchset_sha"
             echo "os=$release_os"
             echo "arch=$release_arch"

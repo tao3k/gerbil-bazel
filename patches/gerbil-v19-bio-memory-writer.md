@@ -9,12 +9,12 @@ varuint retry loops. It adds boundary regressions in `bio-test.ss` and a
 100 KB `json->string` round-trip in `json-test.ss`.
 
 [Upstream PR #1493](https://git.cons.io/mighty-gerbils/gerbil/pulls/1493)
-already fixes the UTF-8 retry loop and adds UTF-8 growth tests, but remains
-unmerged. The release workflow now rebases the pinned PR head onto the pinned
-staging revision with Git, then applies
+fixes the UTF-8 retry loop and adds UTF-8 growth tests. It is merged into the
+pinned v0.19 staging revision `2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb`.
+The release workflow consumes that merged revision directly, then applies
 `gerbil-v19-bio-integer-growth-upstream.patch` for only the remaining
 fixed-width integer and varuint repairs plus their tests. This avoids
-duplicating the PR's UTF-8 change while keeping this complete patch available
+replaying the merged PR while keeping this complete patch available
 for exact `d801e7a1` replay.
 The remaining integer-path defect is tracked in
 [upstream GitHub issue #1435](https://github.com/mighty-gerbils/gerbil/issues/1435).
