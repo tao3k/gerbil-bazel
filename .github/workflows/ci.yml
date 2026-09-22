@@ -76,12 +76,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full-single-host-unlimited
+          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full
           archive="$RUNNER_TEMP/$release.tar.gz"
           curl --fail --location --retry 3 --output "$archive" \
             "https://github.com/tao3k/gerbil-bazel/releases/download/$release/$release.tar.gz"
           printf '%s  %s\n' \
-            df9cae2dd3f6b9f37fdfcf31ff1e2968cf2bb56c9fddb4bfd085bccd0d42a25b \
+            81734f52334e514296955e577a23011663097482261698272da3136a9e628a9f \
             "$archive" | sha256sum --check -
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
