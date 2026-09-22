@@ -83,6 +83,10 @@ def _sample_seconds(milliseconds):
 
 def _gerbil_project_compile_impl(ctx):
     toolchain = resolved_gerbil_toolchain(ctx)
+    v19 = toolchain.runtime_api == "v19"
+    json_validator = ctx.file._json_validator_v19 if v19 else ctx.file._json_validator
+    receipt_writer = ctx.file._receipt_writer_v19 if v19 else ctx.file._receipt_writer
+    resource_guard = ctx.file._resource_guard_v19 if v19 else ctx.file._resource_guard
     project_dependencies = [dep[GerbilProjectInfo] for dep in ctx.attr.deps]
     dependency_roots = depset(
         direct = [dependency.project_root for dependency in project_dependencies],
@@ -131,9 +135,9 @@ def _gerbil_project_compile_impl(ctx):
     args.add(receipt.path)
     args.add(log.path)
     args.add(ctx.attr.receipt_line_prefix)
-    args.add(ctx.file._json_validator.path)
-    args.add(ctx.file._resource_guard.path)
-    args.add(ctx.file._receipt_writer.path)
+    args.add(json_validator.path)
+    args.add(resource_guard.path)
+    args.add(receipt_writer.path)
     args.add("1" if ctx.attr.process_guard else "0")
     args.add(ctx.attr.process_guard_timeout_seconds)
     args.add(str(ctx.label))
@@ -179,9 +183,9 @@ def _gerbil_project_compile_impl(ctx):
         executable = ctx.executable._runner,
         inputs = depset(
             direct = [
-                ctx.file._json_validator,
-                ctx.file._receipt_writer,
-                ctx.file._resource_guard,
+                json_validator,
+                receipt_writer,
+                resource_guard,
                 manifest,
                 source_resolution_manifest,
                 toolchain.dependency_library_root,
@@ -248,13 +252,25 @@ gerbil_project_compile = rule(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:validate_json.ss",
         ),
+        "_json_validator_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:validate_json_v19.ss",
+        ),
         "_receipt_writer": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:write_project_receipt.ss",
         ),
+        "_receipt_writer_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:write_project_receipt_v19.ss",
+        ),
         "_resource_guard": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:resource_guard.ss",
+        ),
+        "_resource_guard_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard_v19.ss",
         ),
     },
     toolchains = [GERBIL_TOOLCHAIN_TYPE],

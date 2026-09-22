@@ -305,7 +305,7 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
         "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
-        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard))),
+        "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard_v19 if version.startswith("Gerbil d") or version.startswith("Gerbil v0.19") else repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(
         "native_scheme_env.sh",
@@ -366,6 +366,7 @@ def _local_gerbil_repository_impl(repository_ctx):
             "{{ENVIRONMENT_DICT}}": _environment_dict(environment),
             "{{EXEC_CONSTRAINT}}": repr(host.exec_constraint),
             "{{GERBIL_AS}}": repr(host.gerbil_as),
+            "{{RUNTIME_API}}": repr("v19" if version.startswith("Gerbil d") or version.startswith("Gerbil v0.19") else "legacy"),
             "{{GERBIL_CC}}": repr("gerbil-cc"),
             "{{GERBIL_GCC}}": repr("gerbil-gcc"),
             "{{GERBIL_LD}}": repr(host.gerbil_ld),
@@ -413,6 +414,10 @@ local_gerbil_repository = repository_rule(
         "_resource_guard": attr.label(
             allow_single_file = True,
             default = "@gerbil_bazel//gerbil:resource_guard.ss",
+        ),
+        "_resource_guard_v19": attr.label(
+            allow_single_file = True,
+            default = "@gerbil_bazel//gerbil:resource_guard_v19.ss",
         ),
     },
     environ = [

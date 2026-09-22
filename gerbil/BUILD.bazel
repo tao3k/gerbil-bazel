@@ -105,8 +105,12 @@ exports_files([
     "project.bzl",
     "repository.bzl",
     "resource_guard.ss",
+    "resource_guard_v19.ss",
     "toolchain.bzl",
     "validate_json.ss",
+    "validate_json_v19.ss",
     "validate_project_receipt_v1.ss",
+    "validate_project_receipt_v19.ss",
     "write_project_receipt.ss",
+    "write_project_receipt_v19.ss",
 ])
