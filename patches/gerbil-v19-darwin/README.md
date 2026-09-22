@@ -64,6 +64,12 @@ test conditions, and failed admission gates are recorded in
 does not imply release qualification.
 The subsequent strict cold-build replay and the unresolved pre-build silence
 boundary are recorded in `receipts/d853-mcp-silence-boundary-investigation.md`.
+The isolated compiler-worker attribution is in
+`receipts/d855-mcp-native-worker-attribution.md`; it is diagnostic evidence,
+not an additional release patch or an uninstrumented A/B result.
+The follow-up real generated-C atomic experiment is in
+`receipts/d857-embedded-string-lowering-atomic.md`; its identical object
+hashes and local GCC speedup do not yet qualify an end-to-end release patch.
 
 ## Convergence decision
 
