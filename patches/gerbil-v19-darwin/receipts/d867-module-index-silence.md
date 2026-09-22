@@ -11,3 +11,19 @@ Patch 0009 emits flushed, actual module-index start/progress/end events every 16
 Validation used the exact D866 `source/build` binary (SHA-256 `f064c994fe1caaac0f3e70b7aaacf320fbae3d255df44fd625717572b34835ad`) and library, with only the compiled 0009 `std/make` module (SHA-256 `a159e57254625f477e063b0e8fb7cd9c222f38033f2ff82a9f85f78aefac0537`) overlaid through `GERBIL_LOADPATH`; the source passed checkout-local `gxc -S` and reverse patch application. A strict real MCP cold build completed in 73.923 seconds; the indexed phase began at 8.483 seconds and first compile appeared at 14.953 seconds. Its largest event-free interval was 5.322 seconds (final link to process exit). A strict real POO cold build of 26 specs completed in 13.584 seconds; its index progress appeared at 0.431, 2.028, and 2.521 seconds; largest interval was 4.095 seconds. Both builds and their unchanged 10-second watchdogs passed. These are functional/observability validations, **not** a new performance improvement claim or an A/B speed admission. An earlier probe using the stale `install/` binary (`944dda73…`) is excluded from qualification.
 
 The common pre-compile silence is now attributed and reports genuine progress. A single module import can still take over 10 seconds on a pathological host; candidate 0009 does not prove that impossible. The 187-module eager-import cost remains a possible future algorithmic optimization, but changing its identity/dependency semantics requires a separate correctness and real-consumer A/B gate. Do not activate 0009 in the release workflow solely because the silence gate passes.
+
+## D869 follow-up: source-reader index shortcut rejected
+
+An isolated Darwin-only experiment replaced the completion-table ID lookup for `.ss` specs with Gerbil's own `core-read-module`, leaving the official `import-module` call in the coordinator. It did not introduce a parser or change non-Darwin code. The experimental source was reverted after the test; no algorithmic patch was added to the stack.
+
+Using the same D866 binary, real MCP revision, 12 workers, GCC 16, and 0009 instrumentation, both cold arms completed. The watchdog allowance was 30 seconds for this diagnostic because a prior baseline run was interrupted during final executable linking at 10.055 seconds; the **measured** largest gaps in these two complete runs were both below the unchanged 10-second admission limit. The 30-second allowance is not an admitted watchdog setting.
+
+| real MCP cold build | 0009-only | reader-ID experiment |
+| --- | ---: | ---: |
+| module-index phase | 6.240 s | 0.068 s |
+| first `... compile` | 12.964 s | 6.926 s |
+| final compile scheduling | 43.841 s | 42.191 s |
+| whole build | 76.162 s | 75.294 s |
+| maximum event-free gap | 5.871 s | 5.241 s |
+
+Both generated executables answered `gerbil-mcp --version` with `1.1.0`. The reader shortcut brought the first compile forward by about six seconds but saved only 0.868 seconds end-to-end in this pair; an earlier pair showed 73.923 versus 69.051 seconds for MCP while real POO worsened from 13.584 to 14.053 seconds. These inconsistent whole-build effects do not establish a substantial, repeatable cold-build optimization. The full imports remain necessary to discover dependencies and are serialized by the existing import mutex; the shortcut mostly shifts their timing. The next performance candidate must reduce or safely overlap the measured downstream cost, not claim that a faster completion-table pass eliminated the import work.
