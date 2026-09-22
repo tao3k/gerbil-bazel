@@ -1,0 +1,45 @@
+From: tao3k team and Contributors
+Subject: [PATCH 8/8] compiler: retain original Darwin path for pure module graphs
+
+Patch 0007 reuses a runtime object when an executable is in the build graph.
+Keep the pre-existing static Scheme output order for pure module graphs, so
+the optimization has no file-order effect on library-only consumers.
+
+---
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -807,18 +807,28 @@
+       (when runtime-code?
+         (cond-expand
+-          (darwin (compile-scm-file scm0 runtime-code #f scms))
++          (darwin
++           (if (current-compile-static)
++             (compile-scm-file scm0 runtime-code #f scms)
++             (compile-scm-file scm0 runtime-code)))
+           (else (compile-scm-file scm0 runtime-code))))
+       (parameterize ((current-compile-gsc-options #f))
+         (compile-scm-file scmrt loader-code))
+       (cond-expand
+         (darwin
+-         (unless runtime-code?
+-           (when (file-exists? scms)
+-             (delete-file scms))
+-           (call-with-output-file scms void)))
++         (if (current-compile-static)
++           (unless runtime-code?
++             (when (file-exists? scms)
++               (delete-file scms))
++             (call-with-output-file scms void))
++           (begin
++             (when (file-exists? scms)
++               (delete-file scms))
++             (if runtime-code?
++               (copy-file scm0 scms)
++               (call-with-output-file scms void)))))
+         (else
+          (when (file-exists? scms)
+            (delete-file scms))
+          (if runtime-code?
+            (copy-file scm0 scms)
+            (call-with-output-file scms void))))))
