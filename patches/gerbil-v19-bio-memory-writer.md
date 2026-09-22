@@ -2,18 +2,20 @@
 
 Base revision: `d801e7a1c7f77df421f638e62aaebe370f193c97`.
 
-`gerbil-v19-bio-memory-writer.patch` is the complete patch applied by
-`publish-v19.yml` to this pinned revision. It refreshes `bio.buf` and its
+`gerbil-v19-bio-memory-writer.patch` is the complete historical patch for
+this pinned revision. It refreshes `bio.buf` and its
 length after a memory-output drain in the UTF-8, fixed-width integer, and
 varuint retry loops. It adds boundary regressions in `bio-test.ss` and a
 100 KB `json->string` round-trip in `json-test.ss`.
 
 [Upstream PR #1493](https://git.cons.io/mighty-gerbils/gerbil/pulls/1493)
 already fixes the UTF-8 retry loop and adds UTF-8 growth tests, but remains
-unmerged. `gerbil-v19-bio-integer-growth-upstream.patch` contains only the
-remaining fixed-width integer and varuint repairs plus their tests, so it
-can be proposed upstream without duplicating PR #1493. It is not applied by
-the release workflow because the complete pinned-revision patch includes it.
+unmerged. The release workflow now rebases the pinned PR head onto the pinned
+staging revision with Git, then applies
+`gerbil-v19-bio-integer-growth-upstream.patch` for only the remaining
+fixed-width integer and varuint repairs plus their tests. This avoids
+duplicating the PR's UTF-8 change while keeping this complete patch available
+for exact `d801e7a1` replay.
 The remaining integer-path defect is tracked in
 [upstream GitHub issue #1435](https://github.com/mighty-gerbils/gerbil/issues/1435).
 
