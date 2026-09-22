@@ -34,8 +34,8 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            gerbil_provider: immutable-prebuilt
-            gerbil_version_label: v0.18.2-07c84815
+            gerbil_provider: released-host
+            gerbil_version_label: v0.19-f0badc7
           - runner: macos-26
             gerbil_provider: homebrew-host
             gerbil_version_label: v0.19-f0badc7
@@ -56,7 +56,7 @@ jobs:
           git -C "$upstream_dir" apply --check "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-memory-writer.patch"
 
       - name: Install Linux consumer dependencies
-        if: matrix.gerbil_provider == 'immutable-prebuilt'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -70,6 +70,28 @@ jobs:
             pkg-config \
             sqlite3 \
             zlib1g-dev
+
+      - name: Install pinned v0.19 Linux release
+        if: matrix.gerbil_provider == 'released-host'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full-single-host-unlimited
+          archive="$RUNNER_TEMP/$release.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/tao3k/gerbil-bazel/releases/download/$release/$release.tar.gz"
+          printf '%s  %s\n' \
+            df9cae2dd3f6b9f37fdfcf31ff1e2968cf2bb56c9fddb4bfd085bccd0d42a25b \
+            "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
+          echo "$GERBIL_PREFIX/bin" >> "$GITHUB_PATH"
+          {
+            echo "GERBIL_PREFIX=$GERBIL_PREFIX"
+            echo "GERBIL_HOME=$GERBIL_HOME"
+            echo "GAMBOPT=$GAMBOPT"
+          } >> "$GITHUB_ENV"
+          gxi -v 2>&1 | grep -F 'Gerbil f0badc7'
 
       - name: Set up Homebrew
         if: matrix.gerbil_provider == 'homebrew-host'
