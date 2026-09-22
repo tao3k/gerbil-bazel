@@ -79,6 +79,8 @@ The representative GCC pass breakdown and constant-lowering rejection are in
 `receipts/d860-gambit-ifd-constant-lowering-rejection.md`.
 The GCC precompiled-header feasibility gate is in
 `receipts/d861-gambit-header-pch-rejection.md`.
+The ordinary-file string-lowering rejection and unqualified multi-threaded-VM
+experiment are in `receipts/d871-d872-ordinary-string-and-vm-parallelism.md`.
 Patch `0008` restores the official pure-module output path after `0007`; its
 order-balanced dual-consumer A/B is in
 `receipts/d862-uninstrumented-dual-consumer-ab.md`. Patch `0009` is a separate
