@@ -7,6 +7,16 @@
   "gerbilRevision": "1cfb032c7a1612637da6205f5f8a15683eba3ba0",
   "gambitRevision": "ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f",
   "compiler": "GNU GCC 16",
+  "latestLocalEvidence": {
+    "receipt": "receipts/d1403-current-staging-object-reuse-qualification.md",
+    "toolchainBuilt": true,
+    "realMcpAbbaPassed": true,
+    "mcpProtocolSmokePassed": true,
+    "concurrentMakeTestCasesPassed": true,
+    "majorFirstLogCostSolved": false,
+    "pureModulePerformanceQualified": false,
+    "fullTestSuiteQualified": false
+  },
   "patches": [
     {"file": "0002-gerbil-streaming-compile-executor.patch", "sha256": "035dc4328969a939b9758a278cc3d81dec58250518386d4678575f6fba975844"},
     {"file": "0003-gerbil-darwin-executable-closure-dag.patch", "sha256": "793ff95c479d47126c2d865d728f6c53a06a9d200001281be2c29ffd87d5162e"},

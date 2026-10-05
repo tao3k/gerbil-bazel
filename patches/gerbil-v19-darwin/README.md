@@ -87,6 +87,26 @@ output behavior. The output-dependency contract and real consumer gates must
 pass before default release enablement. The latest replay receipt is
 `receipts/d1390-runtime-object-reuse-profile.md`.
 
+The subsequent current-staging toolchain build and real MCP ABBA are in
+`receipts/d1403-current-staging-object-reuse-qualification.md`: whole-build
+means are 75.842/58.532 seconds, with protocol smoke and strict concurrent
+make/test cases passing. First-compile means are 6.074/5.951 seconds; the
+startup objective and pure-module performance gate remain open. This local
+qualification does not change default release enablement.
+
+Reproduce the bounded concurrent contracts against an isolated built source:
+
+```sh
+python3 patches/gerbil-v19-darwin/tests/run_concurrent_make.py \
+  --source .data/d1391-runtime-object-source \
+  --output .data/runtime-object-reuse-concurrent-check \
+  --native-binary --repeats 1 --strict-product-progress
+```
+
+The output directory must be fresh. Worker count follows the host CPU count;
+the environment adapter reuses `gerbil/host_system.bzl` discovery and verifies
+the GNU GCC 16 frontend before running the contracts.
+
 Patch `0007` freezes the D851 Darwin executable-graph-scoped runtime-object
 reuse candidate, layered after `0002` and `0003` on staging revision
 `d801e7a1c7f77df421f638e62aaebe370f193c97`. It is preserved for replay
