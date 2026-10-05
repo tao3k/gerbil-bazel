@@ -13,6 +13,8 @@
     "realMcpAbbaPassed": true,
     "mcpProtocolSmokePassed": true,
     "concurrentMakeTestCasesPassed": true,
+    "actualMcpRegexCliConcurrentPassed": true,
+    "actualCliReceipt": "receipts/d1404-real-mcp-cli-test-boundary.md",
     "majorFirstLogCostSolved": false,
     "pureModulePerformanceQualified": false,
     "fullTestSuiteQualified": false
