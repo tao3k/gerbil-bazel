@@ -69,6 +69,24 @@ Patches `0005` (build observability) and `0006` (test observability) remain
 local investigation candidates. They are not applied by `publish-v19.yml` and
 their later observed build cannot replace the four-patch performance baseline.
 
+## Runtime Object Reuse Candidate
+
+This is a performance candidate, not an observation-only patch. The frozen
+`runtime-object-reuse.json` source profile orders `0002`, `0003`, `0007`, and
+`0008`, verifies their hashes, and pins the current canonical staging source.
+Replay it in a fresh project `.data` directory with:
+
+```sh
+python3 patches/gerbil-v19-darwin/tests/replay_runtime_object_reuse.py \
+  --source-cache .data/d935-staging-source --output .data/runtime-object-reuse-replay
+```
+
+This checks source applicability only; it does not build a toolchain or admit
+a speedup. Patch `0008` is mandatory for this profile to preserve library-only
+output behavior. The output-dependency contract and real consumer gates must
+pass before default release enablement. The latest replay receipt is
+`receipts/d1390-runtime-object-reuse-profile.md`.
+
 Patch `0007` freezes the D851 Darwin executable-graph-scoped runtime-object
 reuse candidate, layered after `0002` and `0003` on staging revision
 `d801e7a1c7f77df421f638e62aaebe370f193c97`. It is preserved for replay
