@@ -31,9 +31,6 @@ jobs:
     # Source provisioning uses the existing release-build allowance; consumer
     # test watchdogs and performance admission gates are unchanged.
     timeout-minutes: 360
-    env:
-      GERBIL_SOURCE_DIRECTORY: ${{ runner.temp }}/gerbil-ci-source
-      GERBIL_PREFIX: ${{ runner.temp }}/gerbil-ci-install
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +48,14 @@ jobs:
 
       - name: Test source provisioning contracts
         run: python3 tools/ci/test_source_toolchain.py
+
+      - name: Resolve isolated source build directories
+        shell: bash
+        run: |
+          {
+            echo "GERBIL_SOURCE_DIRECTORY=$RUNNER_TEMP/gerbil-ci-source"
+            echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-ci-install"
+          } >> "$GITHUB_ENV"
 
       - name: Install Linux consumer dependencies
         if: runner.os == 'Linux'

@@ -25,6 +25,8 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertNotIn('/releases/download/', bazel_job)
         self.assertNotIn('Install the tao3k Gerbil bottle', bazel_job)
         self.assertEqual(bazel_job.count('gerbil_provider: source-host'), 2)
+        self.assertNotIn('${{ runner.temp }}', bazel_job)
+        self.assertIn('GERBIL_PREFIX=$RUNNER_TEMP/gerbil-ci-install', bazel_job)
         for mode in ('prepare', 'build', 'verify'):
             self.assertIn('bash tools/ci/build_source_toolchain.sh ' + mode, bazel_job)
 
