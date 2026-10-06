@@ -125,8 +125,12 @@ case "${1:-}" in
       GERBIL_BUILD_FLAGS="-j$cores" ./build.sh "$target"
       if [[ "$target" == gambit ]]; then
         # Upstream's Gambit wrapper can return zero after a make failure.
-        [[ -x build/bin/gsc && -x build/bin/gsi && -f build/lib/libgambit.a ]]
+        if [[ ! -x build/bin/gsc || ! -x bootstrap/bin/gsi || ! -f build/lib/libgambit.a ]]; then
+          echo 'Gambit build missing build/bin/gsc, bootstrap/bin/gsi or build/lib/libgambit.a' >&2
+          exit 1
+        fi
         build/bin/gsc -v
+        bootstrap/bin/gsi -v
       fi
     done
     ./install.sh

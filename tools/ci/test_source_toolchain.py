@@ -1,6 +1,7 @@
 """Fail-closed source CI wiring and compiler selection contracts."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -79,6 +80,34 @@ class SourceToolchainTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('requires GNU GCC, not clang', result.stderr)
             self.assertFalse((Path(temp) / 'source').exists())
+
+    def test_gambit_gate_uses_bootstrap_gsi_and_rejects_missing_artifacts(self):
+        block = re.search(r'      if \[\[ "\$target" == gambit \]\]; then\n(.*?)\n      fi',
+                          SOURCE, re.S).group(1)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name in ('build/bin/gsc', 'bootstrap/bin/gsi'):
+                path = directory / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('#!/bin/sh\nprintf "artifact-version\\n"\n')
+                path.chmod(0o755)
+            library = directory / 'build/lib/libgambit.a'
+            library.parent.mkdir(parents=True)
+            library.touch()
+            def check():
+                return subprocess.run(['bash', '-ec', block], cwd=directory,
+                                      capture_output=True, text=True)
+            valid = check()
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertEqual(valid.stdout.count('artifact-version'), 2)
+            for name in ('build/bin/gsc', 'bootstrap/bin/gsi', 'build/lib/libgambit.a'):
+                path = directory / name
+                saved = path.with_suffix('.saved')
+                path.rename(saved)
+                failed = check()
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertIn('Gambit build missing', failed.stderr)
+                saved.rename(path)
 
 
 if __name__ == '__main__':
