@@ -12,8 +12,10 @@ source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
 patch_dir="$root/patches/gerbil-v19-darwin"
 gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
-gambit_patches=(0016-gambit-multiple-vms-global-setup-state.patch)
+gambit_patches=()
+multiple_vms=false
 if [[ "$platform" == Darwin ]]; then
+  multiple_vms=true
   gerbil_patches+=(
     patches/gerbil-v19-ffi-release-pkey-once.patch
     patches/gerbil-v19-darwin-aot-tools.patch
@@ -25,6 +27,7 @@ if [[ "$platform" == Darwin ]]; then
     patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch
   )
   gambit_patches+=(
+    0016-gambit-multiple-vms-global-setup-state.patch
     0001-gambit-darwin-posix-spawn.patch
     0004-gambit-darwin-gcc-macro-expansion.patch
     0015-gambit-darwin-literal-build-substitution.patch
@@ -59,12 +62,13 @@ patchset_hash="$({
 identity="$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash"
 
 verify() {
-  jq -e --arg identity "$identity" '.identity == $identity and .multipleVms == true' \
+  jq -e --arg identity "$identity" --argjson multipleVms "$multiple_vms" \
+    '.identity == $identity and .multipleVms == $multipleVms' \
     "$GERBIL_PREFIX/ci-source-toolchain.json" >/dev/null
   source "$GERBIL_PREFIX/activate"
-  grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
   "$GERBIL_PREFIX/bin/gxi" -v 2>&1 | grep -F "Gerbil ${GERBIL_SOURCE_REVISION:0:7}"
   if [[ "$platform" == Darwin ]]; then
+    grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
     grep -F 'replace_literal()' "$GERBIL_HOME/bin/gambuild-C"
   fi
   mkdir -p "$root/.ci/receipts"
@@ -96,10 +100,10 @@ case "${1:-}" in
     export CFLAGS="-pipe${CFLAGS:+ $CFLAGS}"
     args=("--prefix=$GERBIL_PREFIX" "--with-gambit=$GAMBIT_SOURCE_REVISION"
           "--version-string=${GERBIL_SOURCE_REVISION:0:7}" --enable-march=
-          --enable-single-host=0 --enable-multiple-vms)
+          --enable-single-host=0)
     if [[ "$platform" == Darwin ]]; then
       export GERBIL_BUILD_AOT_TOOLS=yes
-      args+=(--enable-smp --enable-c-opt=-O1 --enable-c-opt-rts=yes --enable-gcc-opts
+      args+=(--enable-multiple-vms --enable-smp --enable-c-opt=-O1 --enable-c-opt-rts=yes --enable-gcc-opts
              --enable-inline-jumps --enable-dynamic-clib --enable-trust-c-tco)
     fi
     cd "$source_dir"
@@ -113,7 +117,9 @@ case "${1:-}" in
       (cd src/gambit && ./config.status --recheck && ./config.status)
       grep -F 'replace_literal()' src/gambit/bin/gambuild-C.unix
     fi
-    grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' src/gambit/include/gambit.h
+    if [[ "$platform" == Darwin ]]; then
+      grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' src/gambit/include/gambit.h
+    fi
     for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
       printf 'BUILD %s (%s cores)\n' "$target" "$cores"
       GERBIL_BUILD_FLAGS="-j$cores" ./build.sh "$target"
@@ -127,9 +133,9 @@ case "${1:-}" in
     cp "$root/tools/release/activate-gerbil.sh" "$GERBIL_PREFIX/activate"
     jq -n --arg identity "$identity" --arg sourceRevision "$GERBIL_SOURCE_REVISION" \
       --arg gambitRevision "$GAMBIT_SOURCE_REVISION" --arg compilerHash "$compiler_hash" \
-      --arg patchsetHash "$patchset_hash" --argjson cores "$cores" \
+      --arg patchsetHash "$patchset_hash" --argjson cores "$cores" --argjson multipleVms "$multiple_vms" \
       '{identity:$identity, sourceRevision:$sourceRevision, gambitRevision:$gambitRevision,
-        compilerHash:$compilerHash, patchsetHash:$patchsetHash, cores:$cores, multipleVms:true,
+        compilerHash:$compilerHash, patchsetHash:$patchsetHash, cores:$cores, multipleVms:$multipleVms,
         scope:"source-toolchain-construction-not-D1510-performance-admission"}' \
       > "$GERBIL_PREFIX/ci-source-toolchain.json"
     verify

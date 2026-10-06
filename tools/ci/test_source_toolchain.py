@@ -34,22 +34,26 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertIn('${{ github.sha }}-${{ steps.source.outputs.cache_identity }}', CI)
         self.assertNotIn('restore-keys:', CI)
         self.assertIn('$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash', SOURCE)
-        self.assertIn('.identity == $identity and .multipleVms == true', SOURCE)
+        self.assertIn('.identity == $identity and .multipleVms == $multipleVms', SOURCE)
 
     def test_multiple_vm_flag_and_artifact_checks(self):
         self.assertIn('--enable-multiple-vms', SOURCE)
         self.assertIn('--enable-multiple-vms', PUBLISH)
-        self.assertIn('multipleVms:true', SOURCE)
+        self.assertIn('multipleVms:$multipleVms', SOURCE)
         self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
-        self.assertIn('any(. == "--enable-multiple-vms")', PUBLISH)
+        self.assertIn('"--enable-multiple-vms"] -', PUBLISH)
 
     def test_multiple_vm_setup_fix_is_in_both_build_paths(self):
         name = '0016-gambit-multiple-vms-global-setup-state.patch'
-        self.assertIn('gambit_patches=(' + name + ')', SOURCE)
+        self.assertIn(name, SOURCE)
         self.assertIn(name, PUBLISH)
         patch = (ROOT / 'patches/gerbil-v19-darwin' / name).read_text()
-        self.assertIn('+   ___P((___processor_state ___ps,', patch)
-        self.assertIn('+          ___SCMOBJ e = make_global (___ps,', patch)
+        self.assertIn('defined(__APPLE__) && defined(__MACH__) && defined(___MULTIPLE_VMS)', patch)
+        self.assertIn('+   ___P((___MAKE_GLOBAL_PSD', patch)
+        self.assertIn('+          ___SCMOBJ e = make_global (___MAKE_GLOBAL_PSV', patch)
+        common = SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0]
+        self.assertNotIn(name, common)
+        self.assertIn('multiple_vms=false', common)
 
     def test_darwin_patch_chain_includes_reuse_and_command_driver(self):
         for name in ('0007-gerbil-darwin-executable-runtime-object-reuse.patch',

@@ -76,9 +76,10 @@ and Gambit sources with the current patches, then validates the Bazel host
 provider. It does not require an existing Gerbil Release or bottle. Its
 toolchain cache has no fallback keys and includes the repository commit,
 source revisions, GNU compiler hash and applied patchset. Configuration enables
-`--enable-multiple-vms` and checks the generated and installed headers.
+`--enable-multiple-vms` only on Darwin and checks the generated and installed
+headers. Linux keeps its original VM configuration.
 Immutable publication remains a separate distribution release workflow.
-The multiple-VM profile also carries Gambit's private global-setup state fix
+The Darwin multiple-VM profile also carries Gambit's private global-setup state fix
 (`0016`): the caller supplies its processor state rather than leaving
 `___GLOCELL` without one. This new VM profile is not the retained D1510
 performance configuration; its timings require separate qualification.

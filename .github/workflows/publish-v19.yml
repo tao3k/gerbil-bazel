@@ -70,7 +70,7 @@ jobs:
             linux-x86_64)
               release_os=linux
               release_arch=x86_64
-              build_profile=portable-full-single-host-unlimited-multiple-vms
+              build_profile=portable-full-single-host-unlimited
               ;;
             darwin-aarch64)
               release_os=darwin
@@ -210,6 +210,7 @@ jobs:
               "--prefix=$GERBIL_PREFIX"
               --enable-march=
               --enable-smp
+              --enable-multiple-vms
               --enable-c-opt=-O1
               --enable-c-opt-rts=yes
               --enable-gcc-opts
@@ -223,9 +224,8 @@ jobs:
             linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
-          configure_args+=(--enable-single-host=0 --enable-multiple-vms)
+          configure_args+=(--enable-single-host=0)
           ./configure "${configure_args[@]}"
-          git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0016-gambit-multiple-vms-global-setup-state.patch"
           if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
             echo "release build must not use runner-specific -march=native" >&2
             exit 1
@@ -234,6 +234,7 @@ jobs:
           # configured revision. Apply Darwin Gambit patches afterwards, then
           # recheck configure so compiler capability flags reach gambuild-C.
           if [[ "${{ runner.os }}" == macOS ]]; then
+            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0016-gambit-multiple-vms-global-setup-state.patch"
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch"
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch"
@@ -251,7 +252,9 @@ jobs:
           gambit_public_header=src/gambit/include/gambit.h
           grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
           grep -Eq '^#define ___SINGLE_HOST_LIMIT 0$' "$gambit_public_header"
-          grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$gambit_public_header"
+          if [[ "${{ runner.os }}" == macOS ]]; then
+            grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$gambit_public_header"
+          fi
           printf 'mode=%s\n' "$SINGLE_HOST_MODE" \
             > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
@@ -366,7 +369,7 @@ jobs:
               --arg sqlitePkgconfig "$sqlite_pkgconfig" \
               --arg zlibPkgconfig "$zlib_pkgconfig" \
               '(.singleHostMode == $singleHostMode) and
-               (["--enable-march=", "--enable-smp", "--enable-gcc-opts"] -
+               (["--enable-march=", "--enable-smp", "--enable-gcc-opts", "--enable-multiple-vms"] -
                 .configureArguments | length == 0) and
                (.environment.cFlags | contains("-pipe")) and
                (.environment.pkgConfigPath | contains($opensslPkgconfig)) and
@@ -376,8 +379,7 @@ jobs:
           fi
           jq -e \
             '.singleHostMode == "unlimited" and
-             (.configureArguments | any(. == "--enable-single-host=0")) and
-             (.configureArguments | any(. == "--enable-multiple-vms"))' \
+             (.configureArguments | any(. == "--enable-single-host=0"))' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == portable-* ]]; then
             jq -e '(.configureArguments | any(. == "--enable-march="))' \
