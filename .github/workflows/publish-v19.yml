@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Exact Gerbil v0.19 revision or ref
-        default: 2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb
+        default: 1cfb032c7a1612637da6205f5f8a15683eba3ba0
         required: true
         type: string
       platform:
@@ -56,8 +56,11 @@ jobs:
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
               patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
               patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch \
+              patches/gerbil-v19-darwin/0007-gerbil-darwin-executable-runtime-object-reuse.patch \
+              patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch \
               patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch \
               patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch \
+              patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch \
               patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
               printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
             done
@@ -66,12 +69,12 @@ jobs:
             linux-x86_64)
               release_os=linux
               release_arch=x86_64
-              build_profile=portable-full-single-host-unlimited
+              build_profile=portable-full-single-host-unlimited-multiple-vms
               ;;
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-arm64-aot-tools-single-host-unlimited
+              build_profile=gcc16-arm64-aot-tools-single-host-unlimited-multiple-vms
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -169,6 +172,8 @@ jobs:
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0007-gerbil-darwin-executable-runtime-object-reuse.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
@@ -217,7 +222,7 @@ jobs:
             linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
-          configure_args+=(--enable-single-host=0)
+          configure_args+=(--enable-single-host=0 --enable-multiple-vms)
           ./configure "${configure_args[@]}"
           if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
             echo "release build must not use runner-specific -march=native" >&2
@@ -229,6 +234,7 @@ jobs:
           if [[ "${{ runner.os }}" == macOS ]]; then
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch"
+            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch"
             # Both generated configure and configure.ac are carried in the
             # audited patch. Keep configure newest so Gambit's make rules do
             # not regenerate it with an arbitrary host Autoconf version.
@@ -243,6 +249,7 @@ jobs:
           gambit_public_header=src/gambit/include/gambit.h
           grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
           grep -Eq '^#define ___SINGLE_HOST_LIMIT 0$' "$gambit_public_header"
+          grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$gambit_public_header"
           printf 'mode=%s\n' "$SINGLE_HOST_MODE" \
             > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
           for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
@@ -367,7 +374,8 @@ jobs:
           fi
           jq -e \
             '.singleHostMode == "unlimited" and
-             (.configureArguments | any(. == "--enable-single-host=0"))' \
+             (.configureArguments | any(. == "--enable-single-host=0")) and
+             (.configureArguments | any(. == "--enable-multiple-vms"))' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == portable-* ]]; then
             jq -e '(.configureArguments | any(. == "--enable-march="))' \

@@ -16,6 +16,7 @@ gerbil.host(
     expected_version_prefixes = [
         "Gerbil f0badc7",
         "Gerbil d801e7a",
+        "Gerbil 1cfb032",
     ],
 )
 gerbil.host(
@@ -23,6 +24,7 @@ gerbil.host(
     expected_version_prefixes = [
         "Gerbil f0badc7",
         "Gerbil d801e7a",
+        "Gerbil 1cfb032",
     ],
     project_dependency_source_packages = ["clan"],
     project_library_relative_path = "project-library",
