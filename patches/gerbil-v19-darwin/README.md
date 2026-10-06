@@ -274,3 +274,12 @@ the D1878 first-compile record of 5.053081 seconds and complete MCP build of
 later candidates. This is historical fallback evidence, not a new speedup
 admission: the 55-second upgrade ceiling remains unmet. Private retained
 artifacts are not uploaded by this checkpoint; Git alone cannot recover them.
+
+## D1510 shell substitution candidate
+
+The [build-only shell substitution receipt](receipts/d1510-shell-substitution-build-admission.md)
+records a Gambit-only Darwin/GNU driver candidate on the original D1510 image.
+Its three complete MCP cold builds are 52.499, 47.211 and 48.706 seconds;
+the retained fallback lock remains untouched. Patch 0015 removes redundant
+external command-substitution processes, not Scheme macro expansion. Full
+test/startup admission remains false, so this is not an all-green release.
