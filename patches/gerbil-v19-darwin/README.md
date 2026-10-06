@@ -283,3 +283,12 @@ Its three complete MCP cold builds are 52.499, 47.211 and 48.706 seconds;
 the retained fallback lock remains untouched. Patch 0015 removes redundant
 external command-substitution processes, not Scheme macro expansion. Full
 test/startup admission remains false, so this is not an all-green release.
+
+## Independent link-resource side patch
+
+Patch `0017-gambit-darwin-balanced-link-resources.patch` retains a balanced
+resource-union candidate for native Darwin/GNU GSC. The original portable
+fold remains selected elsewhere. The [side-patch receipt](receipts/d1510-balanced-link-side-patch.md)
+records exact native link-C parity and fewer resource comparisons, but no stable
+wall-time, startup, test or complete-build admission. It is not in the default
+construction/publication stack and does not replace D1510 plus 0015.

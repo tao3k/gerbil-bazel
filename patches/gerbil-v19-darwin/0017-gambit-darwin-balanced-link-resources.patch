@@ -1,0 +1,39 @@
+--- a/gsc/_t-c-1.scm
++++ b/gsc/_t-c-1.scm
+@@ -531,13 +531,35 @@
+   (and (targ-rsrc-not-demanded? r)
+        (targ-rsrc-supplied? r)))
+ 
+-(define (targ-union-list-of-rsrc list-of-rsrc)
++(define targ-darwin-gnu-resource-union?
++  (c-lambda () bool
++    "#if defined(__APPLE__) && defined(__MACH__) && defined(__GNUC__) && !defined(__clang__)\n___return(1);\n#else\n___return(0);\n#endif"))
++
++(define (targ-union-list-of-rsrc-balanced list-of-rsrc)
++  (define (merge-pairs lst)
++    (cond ((null? lst) '())
++          ((null? (cdr lst)) lst)
++          (else
++           (cons (targ-union-rsrc (car lst) (cadr lst))
++                 (merge-pairs (cddr lst))))))
++  ;; The original fold prepends each module's demanders and suppliers.
++  (let loop ((lst (reverse list-of-rsrc)))
++    (cond ((null? lst) '())
++          ((null? (cdr lst)) (car lst))
++          (else (loop (merge-pairs lst))))))
++
++(define (targ-union-list-of-rsrc-portable list-of-rsrc)
+   (let loop ((lst list-of-rsrc) (table '()))
+     (if (null? lst)
+       table
+       (loop (cdr lst)
+             (targ-union-rsrc (car lst) table)))))
+ 
++(define (targ-union-list-of-rsrc list-of-rsrc)
++  (if (targ-darwin-gnu-resource-union?)
++      (targ-union-list-of-rsrc-balanced list-of-rsrc)
++      (targ-union-list-of-rsrc-portable list-of-rsrc)))
++
+ (define (targ-union-rsrc lst1 lst2)
+   (if (null? lst1)
+     lst2
