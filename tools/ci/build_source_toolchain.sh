@@ -12,7 +12,7 @@ source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
 patch_dir="$root/patches/gerbil-v19-darwin"
 gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
-gambit_patches=()
+gambit_patches=(0016-gambit-multiple-vms-global-setup-state.patch)
 if [[ "$platform" == Darwin ]]; then
   gerbil_patches+=(
     patches/gerbil-v19-ffi-release-pkey-once.patch
@@ -24,7 +24,7 @@ if [[ "$platform" == Darwin ]]; then
     patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch
     patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch
   )
-  gambit_patches=(
+  gambit_patches+=(
     0001-gambit-darwin-posix-spawn.patch
     0004-gambit-darwin-gcc-macro-expansion.patch
     0015-gambit-darwin-literal-build-substitution.patch
@@ -117,6 +117,11 @@ case "${1:-}" in
     for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
       printf 'BUILD %s (%s cores)\n' "$target" "$cores"
       GERBIL_BUILD_FLAGS="-j$cores" ./build.sh "$target"
+      if [[ "$target" == gambit ]]; then
+        # Upstream's Gambit wrapper can return zero after a make failure.
+        [[ -x build/bin/gsc && -x build/bin/gsi && -f build/lib/libgambit.a ]]
+        build/bin/gsc -v
+      fi
     done
     ./install.sh
     cp "$root/tools/release/activate-gerbil.sh" "$GERBIL_PREFIX/activate"

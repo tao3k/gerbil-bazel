@@ -43,6 +43,14 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
         self.assertIn('any(. == "--enable-multiple-vms")', PUBLISH)
 
+    def test_multiple_vm_setup_fix_is_in_both_build_paths(self):
+        name = '0016-gambit-multiple-vms-global-setup-state.patch'
+        self.assertIn('gambit_patches=(' + name + ')', SOURCE)
+        self.assertIn(name, PUBLISH)
+        patch = (ROOT / 'patches/gerbil-v19-darwin' / name).read_text()
+        self.assertIn('+   ___P((___processor_state ___ps,', patch)
+        self.assertIn('+          ___SCMOBJ e = make_global (___ps,', patch)
+
     def test_darwin_patch_chain_includes_reuse_and_command_driver(self):
         for name in ('0007-gerbil-darwin-executable-runtime-object-reuse.patch',
                      '0008-gerbil-darwin-pure-module-original-path.patch',

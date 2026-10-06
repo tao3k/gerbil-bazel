@@ -61,6 +61,7 @@ jobs:
               patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch \
               patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch \
               patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch \
+              patches/gerbil-v19-darwin/0016-gambit-multiple-vms-global-setup-state.patch \
               patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
               printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
             done
@@ -224,6 +225,7 @@ jobs:
           fi
           configure_args+=(--enable-single-host=0 --enable-multiple-vms)
           ./configure "${configure_args[@]}"
+          git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0016-gambit-multiple-vms-global-setup-state.patch"
           if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
             echo "release build must not use runner-specific -march=native" >&2
             exit 1
