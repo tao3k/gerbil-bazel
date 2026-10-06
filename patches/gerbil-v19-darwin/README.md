@@ -265,3 +265,12 @@ audit trail for rejected hypotheses and attribution experiments.
   patchset and its independent consumer gates are stable.
 
 See `REFLECTION.md` for the round-by-round evidence and rejected approaches.
+
+## Retained D1510 fallback
+
+The [D1510 fallback checkpoint](receipts/d1510-retained-56-baseline.md) retains
+the D1878 first-compile record of 5.053081 seconds and complete MCP build of
+56.255963 seconds. Its input lock and verifier prevent silent replacement by
+later candidates. This is historical fallback evidence, not a new speedup
+admission: the 55-second upgrade ceiling remains unmet. Private retained
+artifacts are not uploaded by this checkpoint; Git alone cannot recover them.
