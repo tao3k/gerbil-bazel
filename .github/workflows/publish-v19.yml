@@ -223,8 +223,15 @@ jobs:
             linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
-          configure_args+=(--enable-single-host=0 --enable-multiple-vms --enable-smp)
+          source_revision="$(git rev-parse HEAD)"
+          gambit_revision="$(git -C src/gambit rev-parse HEAD)"
+          configure_args+=(
+            "--with-gambit=$gambit_revision"
+            "--version-string=${source_revision:0:7}"
+            --enable-single-host=0 --enable-multiple-vms --enable-smp
+          )
           ./configure "${configure_args[@]}"
+          [[ "$(git -C src/gambit rev-parse HEAD)" == "$gambit_revision" ]]
           git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gambit-v19-multiple-vms-global-capacity.patch"
           git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gambit-v19-multiple-vms-global-setup-state.patch"
           if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
