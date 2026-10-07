@@ -1,0 +1,19 @@
+{
+  "scope": "unchanged-47s-host-complete-MCP-test-baseline",
+  "diagnosticOnly": false,
+  "testQualified": true,
+  "newRuntimeSpeedupProven": false,
+  "decision": "ALLOW",
+  "physicalCoreWorkers": 12,
+  "firstOutputSeconds": 2.6560746250033844,
+  "completeTestWaveSeconds": 105.75098187500407,
+  "expectedFiles": 39,
+  "passedFiles": 39,
+  "expectedCases": 965,
+  "passedCases": 965,
+  "limitsSeconds": {"firstLog": 5, "completeBuild": 50, "completeTest": 125},
+  "binarySha256": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+  "privateReport": ".data/d1510-whitespace-125-strict-wave-v1/report.json",
+  "privateReportSha256": "f69698f8bddfdfbe58b03433db641b7b3d4116ce75fdb30c6cc2f086d674aea8",
+  "previousColdBuildsSecondsNotRerun": [47.771712542, 47.824226292, 47.927093625]
+}

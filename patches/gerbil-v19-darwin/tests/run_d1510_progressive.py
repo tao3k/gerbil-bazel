@@ -129,9 +129,10 @@ def main():
         subprocess.run(['git', 'apply', '--check', str(fixture)], cwd=project, check=True)
         subprocess.run(['git', 'apply', str(fixture)], cwd=project, check=True)
         test_process = subprocess.run([
-            sys.executable, str(Path(__file__).with_name('run_selected_mcp_wave.py')),
+            sys.executable, str(Path(__file__).with_name('run_complete_mcp_wave.py')),
             '--binary', str(binary), '--home', str(home), '--project', str(project),
-            '--output', str(output / 'tests'), '--cold-report', str(report_path)], check=False)
+            '--output', str(output / 'tests'), '--cold-report', str(report_path),
+            '--whole-task-gates'], check=False)
         test_report = json.loads((output / 'tests/report.json').read_text())
         pipeline['test'] = test_report['admission']
         pipeline['qualified'] = (test_process.returncode == 0 and
