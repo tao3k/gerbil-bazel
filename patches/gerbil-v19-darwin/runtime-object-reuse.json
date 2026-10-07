@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "profile": "darwin-runtime-object-reuse-candidate",
+  "releaseQualified": false,
+  "upstream": "https://git.cons.io/mighty-gerbils/gerbil.git",
+  "branch": "v0.19-staging",
+  "gerbilRevision": "1cfb032c7a1612637da6205f5f8a15683eba3ba0",
+  "gambitRevision": "ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f",
+  "compiler": "GNU GCC 16",
+  "latestLocalEvidence": {
+    "receipt": "receipts/d1403-current-staging-object-reuse-qualification.md",
+    "toolchainBuilt": true,
+    "realMcpAbbaPassed": true,
+    "mcpProtocolSmokePassed": true,
+    "concurrentMakeTestCasesPassed": true,
+    "actualMcpRegexCliConcurrentPassed": true,
+    "actualCliReceipt": "receipts/d1404-real-mcp-cli-test-boundary.md",
+    "majorFirstLogCostSolved": false,
+    "pureModulePerformanceQualified": false,
+    "fullTestSuiteQualified": false
+  },
+  "patches": [
+    {"file": "0002-gerbil-streaming-compile-executor.patch", "sha256": "035dc4328969a939b9758a278cc3d81dec58250518386d4678575f6fba975844"},
+    {"file": "0003-gerbil-darwin-executable-closure-dag.patch", "sha256": "793ff95c479d47126c2d865d728f6c53a06a9d200001281be2c29ffd87d5162e"},
+    {"file": "0007-gerbil-darwin-executable-runtime-object-reuse.patch", "sha256": "938fc257c89e386ed5b940f32b43f200f78b5f0f30c84d95fee2c721b157d1d7"},
+    {"file": "0008-gerbil-darwin-pure-module-original-path.patch", "sha256": "d84aa442290d79964596244b2c70e859efa434a80c9bbffbe04676a200991136"}
+  ],
+  "boundary": "Source replay profile, not a complete toolchain patch manifest. Reuse is Darwin executable-graph-only; pure module graphs retain their original path.",
+  "requiredGates": [
+    "output dependency contract including failure propagation",
+    "fresh isolated GNU GCC toolchain build",
+    "adjacent order-balanced real MCP clean/build first-log and whole-build runs",
+    "pure-module consumer non-regression",
+    "concurrent std/make and std/test correctness"
+  ]
+}

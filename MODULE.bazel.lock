@@ -191,8 +191,8 @@
   "moduleExtensions": {
     "//gerbil:extensions.bzl%gerbil": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "ftvcVApdsKajkZscTLJdqAalEp8gjyxQjrBxQOOSik4=",
-        "usagesDigest": "jtaBPY6W4B+60PzJpWX7WyMt49f/06aa3e12dVYB5W4=",
+        "bzlTransitiveDigest": "I7NBRIvN4lOReGLUbY1i2Wqw/lLRmOg6rwMSZODxtxI=",
+        "usagesDigest": "gQSWHM7VybkDsGpNdJyMu2uzkuzoXDai9YmmSKQxZSI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -207,7 +207,8 @@
               "environment": {},
               "expected_version_prefixes": [
                 "Gerbil f0badc7",
-                "Gerbil d801e7a"
+                "Gerbil d801e7a",
+                "Gerbil 1cfb032"
               ],
               "project_library_relative_path": ".gerbil/lib",
               "tool_paths": {}
@@ -225,7 +226,8 @@
               "environment": {},
               "expected_version_prefixes": [
                 "Gerbil f0badc7",
-                "Gerbil d801e7a"
+                "Gerbil d801e7a",
+                "Gerbil 1cfb032"
               ],
               "project_library_relative_path": "project-library",
               "project_root_marker": "@@//tests/smoke:project-root.marker",
@@ -260,8 +262,8 @@
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "ftvcVApdsKajkZscTLJdqAalEp8gjyxQjrBxQOOSik4=",
-        "usagesDigest": "jtaBPY6W4B+60PzJpWX7WyMt49f/06aa3e12dVYB5W4=",
+        "bzlTransitiveDigest": "I7NBRIvN4lOReGLUbY1i2Wqw/lLRmOg6rwMSZODxtxI=",
+        "usagesDigest": "gQSWHM7VybkDsGpNdJyMu2uzkuzoXDai9YmmSKQxZSI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "local_gerbil": {
@@ -276,7 +278,8 @@
               "environment": {},
               "expected_version_prefixes": [
                 "Gerbil f0badc7",
-                "Gerbil d801e7a"
+                "Gerbil d801e7a",
+                "Gerbil 1cfb032"
               ],
               "project_library_relative_path": ".gerbil/lib",
               "tool_paths": {}
@@ -294,7 +297,8 @@
               "environment": {},
               "expected_version_prefixes": [
                 "Gerbil f0badc7",
-                "Gerbil d801e7a"
+                "Gerbil d801e7a",
+                "Gerbil 1cfb032"
               ],
               "project_library_relative_path": "project-library",
               "project_root_marker": "@@//tests/smoke:project-root.marker",

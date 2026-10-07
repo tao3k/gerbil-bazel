@@ -392,6 +392,10 @@ def normalized_gambit_runtime(
 
     compiler = _materialized_compiler(repository_ctx, compiler_command)
     producer_options = discover_gambit_producer_options(repository_ctx, gerbil_home)
+    # Patched Gerbil resolves gambuild-C beside GERBIL_GSC for executable builds.
+    repository_ctx.symlink(
+        repository_ctx.path("{}/gambuild-C".format(gambit_bin)), "gambuild-C"
+    )
     gsc = _materialized_gsc(
         repository_ctx,
         gerbil_gsc,

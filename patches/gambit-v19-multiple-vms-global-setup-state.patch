@@ -1,0 +1,45 @@
+diff --git a/lib/setup.c b/lib/setup.c
+index ce87691c..f0123c65 100644
+--- a/lib/setup.c
++++ b/lib/setup.c
+@@ -1475,15 +1475,28 @@ int n;)
+ }
+ 
+ 
++#if !defined(___SINGLE_VM)
++#define ___MAKE_GLOBAL_PSD ___processor_state ___ps,
++#define ___MAKE_GLOBAL_PSV ___ps,
++#define ___MAKE_GLOBAL_PSDKR ___processor_state ___ps;
++#else
++#define ___MAKE_GLOBAL_PSD
++#define ___MAKE_GLOBAL_PSV
++#define ___MAKE_GLOBAL_PSDKR
++#endif
++
+ ___HIDDEN ___SCMOBJ make_global
+-   ___P((___BOOL collect_undef_glo,
++   ___P((___MAKE_GLOBAL_PSD
++         ___BOOL collect_undef_glo,
+          ___UTF_8STRING str,
+          int supply,
+          ___glo_struct **glo),
+-        (collect_undef_glo,
++        (___MAKE_GLOBAL_PSV
++         collect_undef_glo,
+          str,
+          supply,
+          glo)
++___MAKE_GLOBAL_PSDKR
+ ___BOOL collect_undef_glo;
+ ___UTF_8STRING str;
+ int supply;
+@@ -1649,7 +1662,8 @@ ___module_struct *module;)
+       while (i-- > 0)
+         {
+           ___glo_struct *glo = 0;
+-          ___SCMOBJ e = make_global (ctx->collect_undef_glo,
++          ___SCMOBJ e = make_global (___MAKE_GLOBAL_PSV
++                                     ctx->collect_undef_glo,
+                                      glo_names[i],
+                                      i<supcount,
+                                      &glo);

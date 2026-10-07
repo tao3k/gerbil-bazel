@@ -1,0 +1,135 @@
+"""Fail-closed source CI wiring and compiler selection contracts."""
+import json
+import os
+import re
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / 'tools/ci/build_source_toolchain.sh'
+CI = (ROOT / '.github/workflows/ci.yml').read_text()
+PUBLISH = (ROOT / '.github/workflows/publish-v19.yml').read_text()
+SOURCE = SCRIPT.read_text()
+
+
+class SourceToolchainTests(unittest.TestCase):
+    def test_revision_matches_audited_profile(self):
+        profile = json.loads((ROOT / 'patches/gerbil-v19-darwin/runtime-object-reuse.json').read_text())
+        self.assertIn('GERBIL_SOURCE_REVISION: ' + profile['gerbilRevision'], CI)
+        self.assertIn('GAMBIT_SOURCE_REVISION: ' + profile['gambitRevision'], CI)
+        self.assertIn('default: ' + profile['gerbilRevision'], PUBLISH)
+
+    def test_main_ci_builds_source_not_release_or_bottle(self):
+        bazel_job = CI.split('  lock-linux-seed:', 1)[0]
+        self.assertNotIn('/releases/download/', bazel_job)
+        self.assertNotIn('Install the tao3k Gerbil bottle', bazel_job)
+        self.assertEqual(bazel_job.count('gerbil_provider: source-host'), 2)
+        self.assertNotIn('${{ runner.temp }}', bazel_job)
+        self.assertIn('GERBIL_PREFIX=$RUNNER_TEMP/gerbil-ci-install', bazel_job)
+        for mode in ('prepare', 'build', 'verify'):
+            self.assertIn('bash tools/ci/build_source_toolchain.sh ' + mode, bazel_job)
+
+    def test_cache_cannot_restore_another_revision_or_patchset(self):
+        self.assertIn('${{ github.sha }}-${{ steps.source.outputs.cache_identity }}', CI)
+        self.assertNotIn('restore-keys:', CI)
+        self.assertIn('$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash', SOURCE)
+        self.assertIn('.identity == $identity and .multipleVms == $multipleVms', SOURCE)
+
+    def test_multiple_vm_flag_and_artifact_checks(self):
+        self.assertIn('--enable-multiple-vms', SOURCE)
+        self.assertIn('--enable-multiple-vms', PUBLISH)
+        self.assertIn('multipleVms:$multipleVms', SOURCE)
+        self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
+        self.assertIn('"--enable-multiple-vms"] -', PUBLISH)
+        self.assertIn('multiple_vms=true', SOURCE)
+        self.assertNotIn('multiple_vms=false', SOURCE)
+        self.assertIn('--enable-single-host=0 --enable-multiple-vms --enable-smp)', SOURCE)
+        self.assertIn('portable-full-single-host-unlimited-multiple-vms', PUBLISH)
+        self.assertIn('gxi tools/ci/multiple_vm_globals.ss', CI)
+        self.assertIn('gxi "$GITHUB_WORKSPACE/tools/ci/multiple_vm_globals.ss"', PUBLISH)
+
+    def test_multiple_vm_setup_fix_is_in_both_build_paths(self):
+        name = 'gambit-v19-multiple-vms-global-setup-state.patch'
+        self.assertIn(name, SOURCE)
+        self.assertIn(name, PUBLISH)
+        patch = (ROOT / 'patches' / name).read_text()
+        self.assertIn('!defined(___SINGLE_VM)', patch)
+        self.assertIn('+   ___P((___MAKE_GLOBAL_PSD', patch)
+        self.assertIn('+          ___SCMOBJ e = make_global (___MAKE_GLOBAL_PSV', patch)
+        self.assertNotIn('0016-gambit-multiple-vms-global-setup-state.patch', PUBLISH)
+        common = SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0]
+        self.assertIn(name, common)
+
+    def test_global_capacity_growth_patch_is_shared_and_address_stable(self):
+        name = 'gambit-v19-multiple-vms-global-capacity.patch'
+        patch = (ROOT / 'patches' / name).read_text()
+        self.assertIn(name, SOURCE)
+        self.assertIn(name, PUBLISH)
+        self.assertIn(name, SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0])
+        self.assertIn('___GLO_SEGMENT_SIZE', patch)
+        self.assertIn('ensure_glo_segment', patch)
+        self.assertIn('free_glo_tables', patch)
+        self.assertIn('segment+offset', patch)
+        self.assertIn('__atomic_store_n (&vms->glos, table, __ATOMIC_RELEASE)', patch)
+        added_lines = '\n'.join(line for line in patch.splitlines()
+                                if line.startswith('+') and not line.startswith('+++'))
+        self.assertNotIn('20000', added_lines)
+
+    def test_darwin_patch_chain_includes_reuse_and_command_driver(self):
+        for name in ('0007-gerbil-darwin-executable-runtime-object-reuse.patch',
+                     '0008-gerbil-darwin-pure-module-original-path.patch',
+                     '0015-gambit-darwin-literal-build-substitution.patch'):
+            self.assertIn(name, SOURCE)
+            self.assertIn(name, PUBLISH)
+        self.assertLess(SOURCE.index('0007-gerbil'), SOURCE.index('0008-gerbil'))
+        self.assertIn('if [[ "$platform" == Darwin ]]; then', SOURCE)
+
+    def test_clang_is_rejected_before_checkout_or_build(self):
+        with tempfile.TemporaryDirectory() as temp:
+            compiler = Path(temp) / 'fake-clang'
+            compiler.write_text('#!/bin/sh\nprintf "#define __GNUC__ 4\\n#define __clang__ 1\\n"\n')
+            compiler.chmod(0o755)
+            env = os.environ.copy()
+            env.update(CC=str(compiler), GERBIL_SOURCE_REVISION='1' * 40,
+                       GAMBIT_SOURCE_REVISION='2' * 40,
+                       GERBIL_SOURCE_DIRECTORY=str(Path(temp) / 'source'),
+                       GERBIL_PREFIX=str(Path(temp) / 'install'))
+            result = subprocess.run(['bash', str(SCRIPT), 'build'], env=env,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('requires GNU GCC, not clang', result.stderr)
+            self.assertFalse((Path(temp) / 'source').exists())
+
+    def test_gambit_gate_uses_bootstrap_gsi_and_rejects_missing_artifacts(self):
+        block = re.search(r'      if \[\[ "\$target" == gambit \]\]; then\n(.*?)\n      fi',
+                          SOURCE, re.S).group(1)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            for name in ('build/bin/gsc', 'bootstrap/bin/gsi'):
+                path = directory / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('#!/bin/sh\nprintf "artifact-version\\n"\n')
+                path.chmod(0o755)
+            library = directory / 'build/lib/libgambit.a'
+            library.parent.mkdir(parents=True)
+            library.touch()
+            def check():
+                return subprocess.run(['bash', '-ec', block], cwd=directory,
+                                      capture_output=True, text=True)
+            valid = check()
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertEqual(valid.stdout.count('artifact-version'), 2)
+            for name in ('build/bin/gsc', 'bootstrap/bin/gsi', 'build/lib/libgambit.a'):
+                path = directory / name
+                saved = path.with_suffix('.saved')
+                path.rename(saved)
+                failed = check()
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertIn('Gambit build missing', failed.stderr)
+                saved.rename(path)
+
+
+if __name__ == '__main__':
+    unittest.main()

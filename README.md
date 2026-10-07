@@ -69,10 +69,21 @@ falls back to a source build. See
 [RFC 0002](docs/rfc/0002-prebuilt-linux-capability.org) for the archive,
 release, receipt, and performance contracts.
 
-Gerbil-Bazel is a release consumer, not a Gerbil distribution builder. Cache
-misses resolve immutable Release archives or Homebrew bottles; they never
-trigger a Gerbil source build inside consumer CI. Toolchain production and
-publication remain owned by the distribution release pipeline.
+Downstream prebuilt consumers resolve immutable Release archives or Homebrew
+bottles and fail closed; a missing archive is not silently replaced by an
+unrelated revision. This repository's own CI builds its pinned staging Gerbil
+and Gambit sources with the current patches, then validates the Bazel host
+provider. It does not require an existing Gerbil Release or bottle. Its
+toolchain cache has no fallback keys and includes the repository commit,
+source revisions, GNU compiler hash and applied patchset. Linux and Darwin both
+enable `--enable-multiple-vms` and `--enable-smp`, check the generated and
+installed headers, and exercise global growth across GC. The shared Gambit
+capacity patch keeps global-cell addresses stable while adding segments.
+Immutable publication remains a separate distribution release workflow.
+The shared profile also carries Gambit's private global-setup state fix:
+the caller supplies its processor state rather than leaving
+`___GLOCELL` without one. This new VM profile is not the retained D1510
+performance configuration; its timings require separate qualification.
 
 Both `auto` providers and the explicit `prebuilt` provider support the same
 project-package manifest view as `host`. Declare `project_root_marker` pointing
