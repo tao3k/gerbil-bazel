@@ -378,6 +378,15 @@ fi
      (.gambitProducerOptions.dynamic | type == "string") and
      (.gambitProducerOptions.object | type == "string")' \
     "$output_base/$receipt_relative" >/dev/null
+  gsc_wrapper="$(jq -r '.environment.GERBIL_GSC' "$output_base/$receipt_relative")"
+  gerbil_home="$(jq -r '.environment.GERBIL_HOME' "$output_base/$receipt_relative")"
+  gambuild_sibling="${gsc_wrapper%/*}/gambuild-C"
+  if [[ ! -L "$gambuild_sibling" || ! -x "$gambuild_sibling" ]] || \
+     ! cmp -s "$gambuild_sibling" "$gerbil_home/bin/gambuild-C"; then
+    printf 'provider did not expose immutable gambuild-C beside GERBIL_GSC: %s\n' \
+      "$gambuild_sibling" >&2
+    exit 1
+  fi
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
     jq -e \
       '.gambitProducerOptions == {dynamic: "-bundle", object: "-fPIC"}' \
