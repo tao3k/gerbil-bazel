@@ -43,18 +43,39 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertIn('multipleVms:$multipleVms', SOURCE)
         self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
         self.assertIn('"--enable-multiple-vms"] -', PUBLISH)
+        self.assertIn('multiple_vms=true', SOURCE)
+        self.assertNotIn('multiple_vms=false', SOURCE)
+        self.assertIn('--enable-single-host=0 --enable-multiple-vms --enable-smp)', SOURCE)
+        self.assertIn('portable-full-single-host-unlimited-multiple-vms', PUBLISH)
+        self.assertIn('gxi tools/ci/multiple_vm_globals.ss', CI)
+        self.assertIn('gxi "$GITHUB_WORKSPACE/tools/ci/multiple_vm_globals.ss"', PUBLISH)
 
     def test_multiple_vm_setup_fix_is_in_both_build_paths(self):
-        name = '0016-gambit-multiple-vms-global-setup-state.patch'
+        name = 'gambit-v19-multiple-vms-global-setup-state.patch'
         self.assertIn(name, SOURCE)
         self.assertIn(name, PUBLISH)
-        patch = (ROOT / 'patches/gerbil-v19-darwin' / name).read_text()
-        self.assertIn('defined(__APPLE__) && defined(__MACH__) && defined(___MULTIPLE_VMS)', patch)
+        patch = (ROOT / 'patches' / name).read_text()
+        self.assertIn('!defined(___SINGLE_VM)', patch)
         self.assertIn('+   ___P((___MAKE_GLOBAL_PSD', patch)
         self.assertIn('+          ___SCMOBJ e = make_global (___MAKE_GLOBAL_PSV', patch)
+        self.assertNotIn('0016-gambit-multiple-vms-global-setup-state.patch', PUBLISH)
         common = SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0]
-        self.assertNotIn(name, common)
-        self.assertIn('multiple_vms=false', common)
+        self.assertIn(name, common)
+
+    def test_global_capacity_growth_patch_is_shared_and_address_stable(self):
+        name = 'gambit-v19-multiple-vms-global-capacity.patch'
+        patch = (ROOT / 'patches' / name).read_text()
+        self.assertIn(name, SOURCE)
+        self.assertIn(name, PUBLISH)
+        self.assertIn(name, SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0])
+        self.assertIn('___GLO_SEGMENT_SIZE', patch)
+        self.assertIn('ensure_glo_segment', patch)
+        self.assertIn('free_glo_tables', patch)
+        self.assertIn('segment+offset', patch)
+        self.assertIn('__atomic_store_n (&vms->glos, table, __ATOMIC_RELEASE)', patch)
+        added_lines = '\n'.join(line for line in patch.splitlines()
+                                if line.startswith('+') and not line.startswith('+++'))
+        self.assertNotIn('20000', added_lines)
 
     def test_darwin_patch_chain_includes_reuse_and_command_driver(self):
         for name in ('0007-gerbil-darwin-executable-runtime-object-reuse.patch',

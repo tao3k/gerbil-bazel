@@ -10,12 +10,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 [[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
 source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
-patch_dir="$root/patches/gerbil-v19-darwin"
 gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
-gambit_patches=()
-multiple_vms=false
+gambit_patches=(
+  patches/gambit-v19-multiple-vms-global-capacity.patch
+  patches/gambit-v19-multiple-vms-global-setup-state.patch
+)
+multiple_vms=true
 if [[ "$platform" == Darwin ]]; then
-  multiple_vms=true
   gerbil_patches+=(
     patches/gerbil-v19-ffi-release-pkey-once.patch
     patches/gerbil-v19-darwin-aot-tools.patch
@@ -27,10 +28,9 @@ if [[ "$platform" == Darwin ]]; then
     patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch
   )
   gambit_patches+=(
-    0016-gambit-multiple-vms-global-setup-state.patch
-    0001-gambit-darwin-posix-spawn.patch
-    0004-gambit-darwin-gcc-macro-expansion.patch
-    0015-gambit-darwin-literal-build-substitution.patch
+    patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch
+    patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch
+    patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch
   )
 fi
 
@@ -55,7 +55,7 @@ export CC="$compiler" GERBIL_GCC="$compiler" GERBIL_BUILD_CORES="$cores"
 compiler_hash="$(sha256_file "$compiler")"
 patchset_hash="$({
   for patch in "${gerbil_patches[@]}"; do sha256_file "$root/$patch"; done
-  for patch in "${gambit_patches[@]}"; do sha256_file "$patch_dir/$patch"; done
+  for patch in "${gambit_patches[@]}"; do sha256_file "$root/$patch"; done
   sha256_file "$root/tools/ci/build_source_toolchain.sh"
   sha256_file "$root/tools/release/activate-gerbil.sh"
 } | shasum -a 256 | awk '{print $1}')"
@@ -67,8 +67,8 @@ verify() {
     "$GERBIL_PREFIX/ci-source-toolchain.json" >/dev/null
   source "$GERBIL_PREFIX/activate"
   "$GERBIL_PREFIX/bin/gxi" -v 2>&1 | grep -F "Gerbil ${GERBIL_SOURCE_REVISION:0:7}"
+  grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
   if [[ "$platform" == Darwin ]]; then
-    grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
     grep -F 'replace_literal()' "$GERBIL_HOME/bin/gambuild-C"
   fi
   mkdir -p "$root/.ci/receipts"
@@ -89,7 +89,7 @@ case "${1:-}" in
       git -C "$source_dir" apply "$root/$patch"
     done
     for patch in "${gambit_patches[@]}"; do
-      git -C "$source_dir/src/gambit" apply --check "$patch_dir/$patch"
+      git -C "$source_dir/src/gambit" apply --check "$root/$patch"
     done
     printf 'cache_identity=%s\n' "$identity" >> "${GITHUB_OUTPUT:?}"
     ;;
@@ -100,26 +100,26 @@ case "${1:-}" in
     export CFLAGS="-pipe${CFLAGS:+ $CFLAGS}"
     args=("--prefix=$GERBIL_PREFIX" "--with-gambit=$GAMBIT_SOURCE_REVISION"
           "--version-string=${GERBIL_SOURCE_REVISION:0:7}" --enable-march=
-          --enable-single-host=0)
+          --enable-single-host=0 --enable-multiple-vms --enable-smp)
     if [[ "$platform" == Darwin ]]; then
       export GERBIL_BUILD_AOT_TOOLS=yes
-      args+=(--enable-multiple-vms --enable-smp --enable-c-opt=-O1 --enable-c-opt-rts=yes --enable-gcc-opts
+      args+=(--enable-c-opt=-O1 --enable-c-opt-rts=yes --enable-gcc-opts
              --enable-inline-jumps --enable-dynamic-clib --enable-trust-c-tco)
     fi
     cd "$source_dir"
     ./configure "${args[@]}"
     [[ "$(git -C src/gambit rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]]
     for patch in "${gambit_patches[@]}"; do
-      git -C src/gambit apply "$patch_dir/$patch"
+      git -C src/gambit apply "$root/$patch"
     done
     if [[ "$platform" == Darwin ]]; then
       touch src/gambit/configure
       (cd src/gambit && ./config.status --recheck && ./config.status)
       grep -F 'replace_literal()' src/gambit/bin/gambuild-C.unix
+    else
+      (cd src/gambit && ./config.status)
     fi
-    if [[ "$platform" == Darwin ]]; then
-      grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' src/gambit/include/gambit.h
-    fi
+    grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' src/gambit/include/gambit.h
     for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
       printf 'BUILD %s (%s cores)\n' "$target" "$cores"
       GERBIL_BUILD_FLAGS="-j$cores" ./build.sh "$target"
