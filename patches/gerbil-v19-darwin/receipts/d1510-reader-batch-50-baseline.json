@@ -1,0 +1,32 @@
+{
+  "scope": "Darwin GNU GCC D1510 MCP cold build only",
+  "ceilingSeconds": 50,
+  "firstCompileCeilingSeconds": 5,
+  "coldQualified": true,
+  "latestGuardRunAdmitted": false,
+  "latestGuardReport": ".data/d1510-reader-batch-5-50-guard-v2/report.json",
+  "latestGuardRun": {"firstCompileSeconds": 4.793609374995867, "attemptSeconds": 50.047304291998444, "stopSeconds": 50.03796750000038, "decision": "DENY", "reaped": true},
+  "testQualified": false,
+  "productionAdmitted": false,
+  "candidateBinarySha256": "ae4cb2adf85162e4de54acf4798d9812ade163f9ba41787b6e84c2074ccc910f",
+  "coldReport": ".data/d1510-reader-batch-progressive-v1/report.json",
+  "testReport": ".data/d1510-reader-batch-test-wave-v2/report.json",
+  "coldRuns": [
+    {"firstCompileSeconds": 4.618989458002034, "buildWallSeconds": 46.65286762500182},
+    {"firstCompileSeconds": 4.7962906250031665, "buildWallSeconds": 46.90262954100035},
+    {"firstCompileSeconds": 4.455518624999968, "buildWallSeconds": 47.827904416997626}
+  ],
+  "testWave": {"wallSeconds": 49.604683582998405, "passedFiles": 31, "deniedFiles": 8, "decision": "DENY"},
+  "artifactHashes": {
+    ".data/d1510-reader-batch-5-50-guard-v2/report.json": "9a0dd916c3f6be5f351c83fb91d3a12a27ca4471d0bc4889750a8f6031494868",
+    ".data/d1510-reader-batch-native-v1/gerbil": "ae4cb2adf85162e4de54acf4798d9812ade163f9ba41787b6e84c2074ccc910f",
+    ".data/d1510-reader-batch-runtime-v1/_io.o": "4b1d7c20795d47da89ca51ef33ca2c3f96dd35f3aeb8069eb09d1da649469b76",
+    ".data/d1510-reader-batch-runtime-v1/_gambit.o": "a8f37562c9f866a9eaca846a2c9a20208d6376b9ebfe13639f5f6b22e80964ec",
+    ".data/d1510-reader-batch-progressive-v1/report.json": "712aec55ce18e62fc26d4056471315bd47cacdd243fb732468787a1d21f9bf2c",
+    ".data/d1510-reader-batch-test-wave-v2/report.json": "c1bf32942c93f28e3e4416762bb1d3221ad9c8c9ac4b5e4b2fb4a860c139229d",
+    "patches/gerbil-v19-darwin/tests/darwin_reader_batch_helper.scm": "a729824240d3707affb01bd5c6d58576f17a5b0f5c4d2bf7ced66c74cf9bf29e",
+    "patches/gerbil-v19-darwin/tests/prepare_darwin_reader_batch.py": "43aeecc06f420914bb238451c7be7a68353ef593c185d8e39920186021dea0ad",
+    "patches/gerbil-v19-darwin/tests/build_generated_phi_eval.py": "2104bfb35c52253ad5d3f2bf84d681afbf590fba661ee98c31f0f6622ee84a2a",
+    "patches/gerbil-v19-darwin/tests/build_embedded_provider_candidate.py": "5f7dc8fbc6489519ce8d8190048829149d73e0a61e05dd77a42138d840a30ec8"
+  }
+}

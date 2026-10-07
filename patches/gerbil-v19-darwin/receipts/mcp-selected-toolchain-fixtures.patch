@@ -1,0 +1,71 @@
+diff --git a/test/chunk-12-test.ss b/test/chunk-12-test.ss
+index 3231ae9..d911125 100644
+--- a/test/chunk-12-test.ss
++++ b/test/chunk-12-test.ss
+@@ -261,3 +261,3 @@
+       (let-values (((text err) (call-tool +c+ "gerbil_binary_audit"
+-                                  (hash ("binary_path" "/opt/gerbil/bin/gxi")))))
++                                  (hash ("binary_path" (getenv "GERBIL_MCP_GXI_PATH"))))))
+         ;; gxi will have leaks (isError may be true for high severity), that's expected
+diff --git a/test/chunk-18-test.ss b/test/chunk-18-test.ss
+index e855d5c..17d453a 100644
+--- a/test/chunk-18-test.ss
++++ b/test/chunk-18-test.ss
+@@ -22,3 +22,3 @@
+         (check (text-has? text "calc") => #t)
+-        (check (text-has? text "NUMBER") => #t))
++        (check (text-has? text "NUMBER") => #t)))
+ 
+@@ -697,6 +697,9 @@
+     (test-case "reports missing package when not linked"
+-      (let-values (((text err) (call-tool +c+ "gerbil_pkg_link_sync"
+-                                (hash ("pkg_name" "nonexistent-pkg-xyz-42")))))
+-        (check err => #t)
+-        (check (text-has? text "not found") => #t)))
++      (with-temp-dir
++        (lambda (dir)
++          (let-values (((text err) (call-tool +c+ "gerbil_pkg_link_sync"
++                                     (hash ("pkg_name" "nonexistent-pkg-xyz-42")
++                                           ("gerbil_path" dir)))))
++            (check err => #t)
++            (check (text-has? text "not found") => #t)))))
+ 
+@@ -1217,2 +1220,2 @@
+ 
+-  )))
++  ))
+diff --git a/test/chunk-21-test.ss b/test/chunk-21-test.ss
+index 2b3c3f5..bc1623a 100644
+--- a/test/chunk-21-test.ss
++++ b/test/chunk-21-test.ss
+@@ -278,6 +278,9 @@
+     (test-case "reports missing package when not linked"
+-      (let-values (((text err) (call-tool +c+ "gerbil_pkg_link_sync"
+-                                 (hash ("pkg_name" "nonexistent-pkg-xyz-42")))))
+-        (check err => #t)
+-        (check (text-has? text "not found") => #t)))
++      (with-temp-dir
++        (lambda (dir)
++          (let-values (((text err) (call-tool +c+ "gerbil_pkg_link_sync"
++                                     (hash ("pkg_name" "nonexistent-pkg-xyz-42")
++                                           ("gerbil_path" dir)))))
++            (check err => #t)
++            (check (text-has? text "not found") => #t)))))
+ 
+diff --git a/test/protocol-test.ss b/test/protocol-test.ss
+index 68e5ea6..7cad3bf 100644
+--- a/test/protocol-test.ss
++++ b/test/protocol-test.ss
+@@ -15,7 +15,7 @@
+   (list "GERBIL_MCP_MODE=full"
+-        "GERBIL_HOME=/opt/gerbil"
+-        "GERBIL_MCP_GXI_PATH=/opt/gerbil/bin/gxi"
+-        "GERBIL_MCP_GXC_PATH=/opt/gerbil/bin/gxc"
+-        "GERBIL_MCP_GERBIL_PATH=/opt/gerbil/bin/gerbil"
+-        "GERBIL_MCP_GXPKG_PATH=/opt/gerbil/bin/gxpkg"
++        (string-append "GERBIL_HOME=" (getenv "GERBIL_HOME"))
++        (string-append "GERBIL_MCP_GXI_PATH=" (getenv "GERBIL_MCP_GXI_PATH"))
++        (string-append "GERBIL_MCP_GXC_PATH=" (getenv "GERBIL_MCP_GXC_PATH"))
++        (string-append "GERBIL_MCP_GERBIL_PATH=" (getenv "GERBIL_MCP_GERBIL_PATH"))
++        (string-append "GERBIL_MCP_GXPKG_PATH=" (getenv "GERBIL_MCP_GXPKG_PATH"))
+         "GERBIL_MCP_LOG=1"
