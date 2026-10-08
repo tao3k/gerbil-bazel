@@ -9,6 +9,7 @@ import subprocess
 import time
 
 from .execution import Budget, execute
+from .cleanup import retain
 from .storage import atomic_json, digest, files, lease, relative
 
 
@@ -51,7 +52,23 @@ def validate_inventory(profile, source):
     return {name: digest(source / name) for name in declared}
 
 
-def run(root, profile_path, toolchain_path, identifier, rounds=3):
+def run(root, profile_path, toolchain_path, identifier, rounds=3, retention='receipts'):
+    if retention not in ('receipts', 'failed', 'all'):
+        raise ValueError('unknown retention policy')
+    receipt = None
+    owned = []
+    try:
+        receipt = _run(root, profile_path, toolchain_path, identifier, rounds, created=owned.append)
+        return receipt
+    finally:
+        # Do not adopt a pre-existing ID when validation or mkdir failed.
+        if owned and owned[0].get('state') == 'terminal':
+            receipt = owned[0]
+            receipt['retention'] = retain(root.resolve(), identifier, retention)
+            atomic_json(root / '.data/bench/runs' / identifier / 'receipt.json', receipt)
+
+
+def _run(root, profile_path, toolchain_path, identifier, rounds=3, *, created=None):
     root = root.resolve()
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', identifier) or rounds not in (1, 2, 3):
         raise ValueError('safe fresh run ID and 1-3 rounds required')
@@ -91,6 +108,8 @@ def run(root, profile_path, toolchain_path, identifier, rounds=3):
                                        if path.is_relative_to(root / '.data')],
                        gates=dict(firstLogSeconds=5, buildSeconds=50, testSeconds=112))
         atomic_json(output / 'receipt.json', receipt)
+        if created is not None:
+            created(receipt)
         try:
             for index in range(rounds):
                 folder = output / str(index)

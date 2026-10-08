@@ -60,8 +60,16 @@ experiment numbers. The runner does not reconstruct historical flags by guess.
 
 ## Cleanup
 
-Cleanup defaults to a plan. It removes only registered per-round `project`
-copies, never logs, receipts, toolchains, or arbitrary historical `.data` trees.
+New runs default to `--retention receipts`: after a terminal outcome, including
+exceptions, remove the owned per-round `project` copies automatically. Logs,
+source/artifact hashes and acceptance receipts survive. Use `--retention failed`
+to retain failed rounds for debugging, or `--retention all` to retain all copies.
+An active lease or failed safety check records `retention.state = deferred`;
+it never kills another run to make room. Interrupted nonterminal runs remain
+protected and require investigation before cleanup.
+
+Manual cleanup first produces a reviewed plan. It removes only registered
+per-round `project` copies, never logs, receipts, toolchains, or arbitrary trees.
 The byte count is logical file bytes, not promised APFS reclaimed disk space.
 Symlinks, active leases, nonterminal runs, protected inputs, changed trees and
 changed receipts are denied. Shared run leases block exclusive cleanup.
@@ -74,8 +82,33 @@ python3 tools/bench/gerbil_package_bench.py cleanup-apply \
 ```
 
 The apply receipt records each completed removal, including partial failure.
-Old unregistered experiments require separate reviewed migration; this tool
-does not guess that an old numbered directory is disposable.
+For old unregistered experiments, select explicit directories and one generated
+artifact class. `dump-plan` selects GNU numbered compiler-pass dumps, never C
+sources or objects. `cache-plan` selects only `.gerbil/lib` and `.gerbil/bin`
+inside a `project` with `gerbil.pkg`; it preserves dependency stores, package
+sources, raw logs and receipts. Neither command deletes anything:
+
+```sh
+python3 tools/bench/gerbil_package_bench.py cache-plan \
+  --directory .data/old-experiment --output .data/old-cache-plan.json
+python3 tools/bench/gerbil_package_bench.py dump-plan \
+  --directory .data/old-experiment --output .data/old-dump-plan.json
+```
+
+Review `targets` and the SHA before using `cleanup-apply` as above. Legacy apply
+rechecks identities and baseline protections, and refuses deletion if an open
+file is detected or `lsof` cannot supply a complete snapshot. This is a snapshot
+check, not locking of historical jobs that do not use the framework lease.
+Plans are bounded to 15 seconds; `complete: false` means a partial scan, not
+permission to infer total disk usage. Applications can still review those exact
+listed targets. No whole numbered experiment directory is guessed disposable.
+
+`tools/bench/retention.json` pins baseline roots and receipt graphs. Referenced
+`.data` experiment roots, selected toolchain inputs and package sources are
+protected across both cleanup modes. Required receipt anchors must exist;
+optional local anchors are followed when present. Add a baseline anchor before
+retiring its construction directories. This policy is separate from the
+package-neutral execution and cleanup engines.
 
 Bounded read-only inventory reports observed logical bytes and explicitly marks
 partial scans. It does not authorize deletion of old experiments:

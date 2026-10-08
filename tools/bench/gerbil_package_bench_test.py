@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from gerbil_bench import cleanup
+from gerbil_bench import cleanup, dumps
 from gerbil_bench.execution import Budget, execute
 from gerbil_bench.runner import load_profile, run, validate_inventory
 from gerbil_bench.storage import atomic_json, digest, lease, relative
@@ -16,6 +16,9 @@ class FrameworkTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name).resolve()
+        (self.root / 'tools/bench').mkdir(parents=True)
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=[], protectedReceipts=[]))
         self.run = self.root / '.data/bench/runs/check'
         self.project = self.run / '0/project'
         self.project.mkdir(parents=True)
@@ -78,9 +81,147 @@ class FrameworkTests(unittest.TestCase):
                 with lease(self.root, exclusive=True):
                     self.fail('exclusive cleanup acquired while run active')
 
+    def test_retention_preserves_logs_and_drops_copies(self):
+        result = cleanup.retain(self.root, 'check', 'receipts')
+        self.assertEqual(result['state'], 'cleaned')
+        self.assertEqual(result['removedProjects'], 1)
+        self.assertFalse(self.project.exists())
+        self.assertTrue((self.run / 'build.log').exists())
+
+    def test_failed_retention_keeps_failed_round(self):
+        atomic_json(self.run / 'receipt.json', dict(state='terminal', protectedPaths=[],
+                    runs=[dict(index=0, passed=False)]))
+        result = cleanup.retain(self.root, 'check', 'failed')
+        self.assertEqual(result['state'], 'cleaned')
+        self.assertTrue(self.project.exists())
+
+    def test_auto_cleanup_defers_for_live_lease(self):
+        with lease(self.root):
+            result = cleanup.retain(self.root, 'check', 'receipts')
+        self.assertEqual(result['state'], 'deferred')
+        self.assertTrue(self.project.exists())
+
+    def test_dump_cleanup_only_generated_dumps(self):
+        (self.project / 'unit.c.123r.expand').write_bytes(b'dump')
+        (self.project / 'unit.c').write_bytes(b'source')
+        (self.project / 'report.json').write_text('{}')
+        value = dumps.plan(self.root, ['.data/bench/runs/check'])
+        self.assertEqual(len(value['targets']), 1)
+        path = self.root / '.data/dump-plan.json'
+        atomic_json(path, value)
+        with patch('gerbil_bench.dumps.ensure_not_open'):
+            result = dumps.apply(self.root, path, digest(path))
+        self.assertTrue(result['complete'])
+        self.assertTrue((self.project / 'unit.c').exists())
+        self.assertTrue((self.project / 'artifact.o').exists())
+        self.assertTrue((self.project / 'report.json').exists())
+
+    def test_dump_cleanup_protects_baseline_graph(self):
+        (self.project / 'unit.c.123r.expand').write_bytes(b'dump')
+        pin = self.root / 'tools/bench/pin.json'
+        atomic_json(pin, dict(artifact='.data/bench/runs/check/0/project/artifact.o'))
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=[], protectedReceipts=['tools/bench/pin.json']))
+        value = dumps.plan(self.root, ['.data/bench/runs/check'])
+        self.assertEqual(value['targets'], [])
+        self.assertEqual(len(value['protectedFiles']), 1)
+
+    def test_dump_revalidation_rejects_changed_file(self):
+        dump = self.project / 'unit.c.123r.expand'
+        dump.write_bytes(b'dump')
+        path = self.root / '.data/dump-plan.json'
+        atomic_json(path, dumps.plan(self.root, ['.data/bench/runs/check']))
+        dump.write_bytes(b'changed dump')
+        with self.assertRaises(ValueError):
+            dumps.apply(self.root, path, digest(path))
+        self.assertTrue(dump.exists())
+
+    def test_legacy_package_cache_keeps_sources_and_receipts(self):
+        (self.project / 'gerbil.pkg').write_text('(package: example)')
+        (self.project / 'main.ss').write_text('source')
+        cache = self.project / '.gerbil/lib'
+        cache.mkdir(parents=True)
+        (cache / 'compiled.o').write_bytes(b'compiled')
+        value = dumps.plan(self.root, ['.data/bench/runs/check'], kind='package-caches')
+        self.assertEqual(len(value['targets']), 1)
+        plan_path = self.root / '.data/cache-plan.json'
+        atomic_json(plan_path, value)
+        with patch('gerbil_bench.dumps.ensure_not_open'):
+            result = dumps.apply(self.root, plan_path, digest(plan_path))
+        self.assertTrue(result['complete'])
+        self.assertFalse(cache.exists())
+        self.assertTrue((self.project / 'main.ss').exists())
+        self.assertTrue((self.run / 'receipt.json').exists())
+
+    def test_legacy_cache_live_process_blocks_apply(self):
+        (self.project / 'gerbil.pkg').write_text('package')
+        cache = self.project / '.gerbil/bin'
+        cache.mkdir(parents=True)
+        (cache / 'program').write_bytes(b'program')
+        path = self.root / '.data/cache-plan.json'
+        atomic_json(path, dumps.plan(self.root, ['.data/bench/runs/check'], kind='package-caches'))
+        with patch('gerbil_bench.dumps.ensure_not_open', side_effect=ValueError('live process')):
+            with self.assertRaises(ValueError):
+                dumps.apply(self.root, path, digest(path))
+        self.assertTrue(cache.exists())
+
     def execution(self, code, budget=None, **kwargs):
         return execute([sys.executable, '-c', code], self.root, os.environ.copy(),
                        self.root / 'test.log', budget or Budget(2, 1), **kwargs)
+
+    def test_legacy_plan_rejects_directory_symlink(self):
+        (self.root / '.data/alias').symlink_to(self.run, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            dumps.plan(self.root, ['.data/alias'])
+
+    def test_legacy_plan_requires_matching_action_and_kind(self):
+        (self.project / 'unit.c.123r.expand').write_bytes(b'dump')
+        value = dumps.plan(self.root, ['.data/bench/runs/check'])
+        value['action'] = 'remove-legacy-package-build-caches'
+        path = self.root / '.data/wrong-plan.json'
+        atomic_json(path, value)
+        with self.assertRaises(ValueError):
+            dumps.apply(self.root, path, digest(path))
+
+    def test_open_file_snapshot_denies_warning_and_live_descendant(self):
+        for result in (dict(returncode=1, stdout=b'', stderr=b''),
+                       dict(returncode=0, stdout=b'', stderr=b'permission denied'),
+                       dict(returncode=0, stdout=('p123\nn' + str(self.project / 'artifact.o') + '\n').encode(), stderr=b'')):
+            from subprocess import CompletedProcess
+            with patch('gerbil_bench.dumps.subprocess.run', return_value=CompletedProcess([], **result)):
+                with self.assertRaises(ValueError):
+                    dumps.ensure_not_open([self.project])
+
+    def test_pinned_receipt_blocks_managed_cleanup(self):
+        pin = self.root / 'tools/bench/pin.json'
+        atomic_json(pin, dict(artifact='.data/bench/runs/check/0/project/artifact.o'))
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=[], protectedReceipts=['tools/bench/pin.json']))
+        with self.assertRaises(ValueError):
+            cleanup.plan(self.root, ['check'])
+
+    def test_optional_local_anchor_can_be_absent(self):
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=[], protectedReceipts=[], optionalReceipts=['patches/missing.json']))
+        self.assertEqual(len(cleanup.plan(self.root, ['check'])['targets']), 1)
+
+    def test_exception_retention_cleans_only_owned_terminal_run(self):
+        def fail(*args, created, **kwargs):
+            record = json.loads((self.run / 'receipt.json').read_text())
+            created(record)
+            raise RuntimeError('owned run failed')
+        with patch('gerbil_bench.runner._run', side_effect=fail):
+            with self.assertRaises(RuntimeError):
+                run(self.root, None, None, 'check')
+        self.assertFalse(self.project.exists())
+        self.assertEqual(json.loads((self.run / 'receipt.json').read_text())['retention']['state'], 'cleaned')
+
+    def test_validation_failure_does_not_adopt_existing_run(self):
+        with patch('gerbil_bench.runner._run', side_effect=FileExistsError('existing ID')):
+            with self.assertRaises(FileExistsError):
+                run(self.root, None, None, 'check')
+        self.assertTrue(self.project.exists())
+        self.assertNotIn('retention', json.loads((self.run / 'receipt.json').read_text()))
 
     def test_success_requires_final_ok(self):
         self.assertTrue(self.execution("print('OK')", final_ok=True)['passed'])
@@ -99,9 +240,10 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(row['stop'], 'complete-time-deadline')
 
     def test_descendant_pipe_cannot_hide_root_exit(self):
+        # Allow interpreter startup; the deadline must still kill the pipe holder.
         row = self.execution("import subprocess, sys; print('OK', flush=True); "
-                             "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(2)'])",
-                             Budget(.2, 1))
+                             "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'])",
+                             Budget(1, 1))
         self.assertEqual(row['exitCode'], 0)
         self.assertFalse(row['passed'])
         self.assertEqual(row['stop'], 'complete-time-deadline')
@@ -176,6 +318,8 @@ class FrameworkTests(unittest.TestCase):
                 receipt = run(self.root, profile, selected, name, rounds=2)
                 self.assertEqual(receipt['decision'], 'ALLOW')
                 self.assertEqual(len(receipt['runs']), 2)
+                self.assertEqual(receipt['retention']['state'], 'cleaned')
+                self.assertFalse((self.root / '.data/bench/runs' / name / '0/project').exists())
                 self.assertNotIn(str(self.root), json.dumps(receipt))
                 self.assertTrue((source / 'a-test.ss').exists())
 

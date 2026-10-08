@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "protectedPaths": [
+    ".data/gerbil-mcp",
+    ".data/d935-staging-source",
+    ".data/d1391-runtime-object-source",
+    ".data/d1510-mcp-test-source-home-v2",
+    ".data/d1510-source-loader-linked",
+    ".data/d1510-shell-substitution",
+    ".data/d1510-reader-whitespace-native-v2",
+    ".data/d1510-original-gnu-debug-sidecar-v1",
+    ".data/d1510-stdlib-exclusive-cpu-v1",
+    ".data/d1510-stdlib-native-lines-v2",
+    ".data/d1510-stdlib-hash-layout-v3"
+  ],
+  "protectedReceipts": [
+    "patches/gerbil-v19-darwin/receipts/d1510-reader-batch-50-baseline.json",
+    "patches/gerbil-v19-darwin/receipts/d1510-source-loader-49-baseline.json",
+    "patches/gerbil-v19-darwin/receipts/d1510-retained-56-baseline.json"
+  ],
+  "optionalReceipts": [
+    "patches/gerbil-v19-darwin/receipts/d1510-reader-whitespace-47-baseline.json"
+  ]
+}

@@ -3,6 +3,7 @@ import fcntl
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -43,10 +44,12 @@ def lease(root, *, exclusive=False):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def files(path, *, exclude=()):
+def files(path, *, exclude=(), deadline=None):
     """Never traverse links: copied sources and cleanup targets must be self-contained."""
     result = []
     for directory, dirs, names in os.walk(path, followlinks=False):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError('bounded tree inventory incomplete')
         dirs[:] = [name for name in dirs if name not in exclude]
         names = [name for name in names if name not in exclude]
         for name in dirs + names:
@@ -54,6 +57,8 @@ def files(path, *, exclude=()):
             if item.is_symlink():
                 raise ValueError('symlink in managed tree: ' + str(item.relative_to(path)))
         for name in names:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError('bounded tree inventory incomplete')
             item = Path(directory) / name
             stat = item.stat()
             if not item.is_file():
@@ -62,7 +67,7 @@ def files(path, *, exclude=()):
     return sorted(result)
 
 
-def fingerprint(path):
-    entries = files(path)
+def fingerprint(path, *, deadline=None):
+    entries = files(path, deadline=deadline)
     return dict(bytes=sum(row[1] for row in entries), files=len(entries),
                 treeSha256=hashlib.sha256(json.dumps(entries).encode()).hexdigest())
