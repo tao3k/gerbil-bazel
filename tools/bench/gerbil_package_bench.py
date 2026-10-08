@@ -39,6 +39,7 @@ def main():
     tree = commands.add_parser('tree-plan')
     tree.add_argument('--older-days', type=int, default=7)
     tree.add_argument('--batch', type=int, default=20)
+    tree.add_argument('--completed', action='store_true')
     tree.add_argument('--output', required=True)
     args = parser.parse_args()
     if args.command == 'run':
@@ -66,16 +67,17 @@ def main():
         value = operation(root, path, args.sha256)
         print(json.dumps(dict(state=value['state'], complete=value['complete'],
                               removedTargets=len(value['removed']),
-                              removedLogicalBytes=sum(row.get('bytes', 0) for row in value['removed']),
+                              removedLogicalBytes=(sum(row['bytes'] for row in value['removed'])
+                                                   if all('bytes' in row for row in value['removed']) else None),
                               observedAvailableDeltaBytes=value.get('observedAvailableDeltaBytes'))))
     elif args.command == 'tree-plan':
         output = relative(root, args.output)
         if not output.is_relative_to(root / '.data') or output.exists():
             parser.error('fresh .data plan output required')
         with lease(root, exclusive=True):
-            value = trees.plan(root, days=args.older_days, batch=args.batch)
+            value = trees.plan(root, days=args.older_days, batch=args.batch, completed=args.completed)
             atomic_json(output, value)
-        print(json.dumps(dict(targets=value['targets'], planSha256=digest(output))))
+        print(json.dumps(dict(targets=len(value['targets']), planSha256=digest(output))))
     elif args.command == 'retired-plan':
         output = relative(root, args.output)
         if not output.is_relative_to(root / '.data') or output.exists():

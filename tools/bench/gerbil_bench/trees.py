@@ -12,7 +12,7 @@ from .retired import EXPERIMENT, failed
 from .storage import atomic_json, digest, lease, relative
 
 
-def plan(root, *, days=7, batch=20):
+def plan(root, *, days=7, batch=20, completed=False):
     root = root.resolve()
     if days < 1 or not 1 <= batch <= 100:
         raise ValueError('positive age and bounded batch required')
@@ -24,23 +24,26 @@ def plan(root, *, days=7, batch=20):
             intersects(path, protected)):
             continue
         report = path / 'report.json'
-        sha, rejected, admitted = None, False, False
+        sha, rejected, admitted, finished = None, False, False, False
         if report.is_file() and not report.is_symlink() and report.stat().st_size < 10_000_000:
             try:
                 record = json.loads(report.read_text())
                 rejected, admitted = failed(record), record.get('productionAdmitted') is True
+                finished = record.get('qualified') is True or record.get('passed') is True
                 sha = digest(report)
             except (ValueError, OSError):
                 continue
         if admitted:
             continue
         old = path.stat().st_mtime < cutoff and (not report.exists() or report.stat().st_mtime < cutoff)
-        if rejected or old:
-            targets.append(dict(path=str(path.relative_to(root)), reason='failed' if rejected else 'aged',
+        if rejected or old or completed and finished:
+            reason = 'failed' if rejected else 'completed' if completed and finished else 'aged'
+            targets.append(dict(path=str(path.relative_to(root)), reason=reason,
                                 reportSha256=sha, **file_identity(path)))
         if len(targets) >= batch:
             break
     return dict(schema=1, action='retire-numbered-experiment-trees', olderDays=days,
+                includeCompleted=completed,
                 targets=targets, evidencePolicy='archive-top-two-level-text-and-receipts')
 
 
@@ -62,6 +65,21 @@ def archive_evidence(source, destination):
     with destination.open('rb') as stream:
         os.fsync(stream.fileno())
     return dict(path=destination.name, sha256=digest(destination), bytes=destination.stat().st_size)
+
+
+def logical_size(source):
+    total, count, pending = 0, 0, [source]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(entry.path)
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+                    count += 1
+    return dict(bytes=total, files=count)
 
 
 def apply(root, path, expected_sha):
@@ -97,22 +115,26 @@ def apply(root, path, expected_sha):
                        quarantined=[], archives=[], availableBefore=os.statvfs(root).f_bavail * os.statvfs(root).f_frsize)
         atomic_json(destination, receipt)
         try:
-            for target in targets:
+            for target, row in zip(targets, record['targets']):
                 archive = archive_evidence(target, archives / (target.name + '.tar.gz'))
                 archive['path'] = str((archives / archive['path']).relative_to(root))
                 receipt['archives'].append(archive)
                 atomic_json(destination, receipt)
+                size = logical_size(target)
+                if file_identity(target) != {key: row[key] for key in ('bytes', 'mtimeNs', 'inode', 'device')}:
+                    raise ValueError('experiment changed during evidence archival')
                 # Renaming isolates the selected tree before recursive removal.
                 moved = trash / target.name
                 target.rename(moved)
                 receipt['quarantined'].append(str(moved.relative_to(root)))
                 atomic_json(destination, receipt)
                 shutil.rmtree(moved)
-                receipt['removed'].append(dict(path=str(target.relative_to(root))))
+                receipt['removed'].append(dict(path=str(target.relative_to(root)), **size))
                 atomic_json(destination, receipt)
                 print(json.dumps(dict(removed=str(target.relative_to(root)))), flush=True)
         finally:
             receipt.update(state='terminal', complete=len(receipt['removed']) == len(targets),
+                           removedLogicalBytes=sum(row['bytes'] for row in receipt['removed']),
                            availableAfter=os.statvfs(root).f_bavail * os.statvfs(root).f_frsize)
             receipt['observedAvailableDeltaBytes'] = receipt['availableAfter'] - receipt['availableBefore']
             atomic_json(destination, receipt)

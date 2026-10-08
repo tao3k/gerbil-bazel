@@ -339,6 +339,13 @@ class FrameworkTests(unittest.TestCase):
             trees.apply(self.root, path, digest(path))
         self.assertTrue((self.project / 'artifact.o').exists())
 
+    def test_completed_tree_requires_explicit_selection(self):
+        directory = self.root / '.data/d900-completed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(qualified=True, productionAdmitted=False))
+        self.assertEqual(trees.plan(self.root)['targets'], [])
+        self.assertEqual(len(trees.plan(self.root, completed=True)['targets']), 1)
+
     def test_success_requires_final_ok(self):
         self.assertTrue(self.execution("print('OK')", final_ok=True)['passed'])
         for code in ("print('not complete')", "print('CASE-FAIL bad'); print('OK')",

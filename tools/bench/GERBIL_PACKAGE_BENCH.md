@@ -133,6 +133,9 @@ cover all of `.data` or reclaim that many physical APFS bytes.
 
 For disposable numbered experiment directories, `tree-plan` retires entire
 failed trees, plus old unprotected trees (seven days by default), in batches:
+Use `--completed` only when retiring completed, receipt-qualified experiments
+explicitly; this includes recent disposable construction trees. Pinned baselines
+and production-admitted roots remain excluded even in this mode.
 
 ```sh
 python3 tools/bench/gerbil_package_bench.py tree-plan \
