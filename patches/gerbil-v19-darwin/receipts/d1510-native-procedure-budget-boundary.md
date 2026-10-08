@@ -176,3 +176,61 @@ Root file SHA256 values, under the retained build's `lib/` directory:
 
 All four reader invocations exited zero. No performance qualification,
 production edit or new build/test campaign follows this source-only check.
+
+## Import Construction And Callback Closure Budget
+
+The next source review checks the ordinary path, not the selective index.
+`core-bind-import!` resolves the current export, allocates a fresh import
+binding and calls its live initializer before `core-bind!`. Existing original
+contracts already prove those ordering and mutation boundaries; bypassing the
+generic binding constructor is also already performed in generated code.
+No repetition of that contract or a shared binding cache is justified.
+
+One distinct operation exists in generated `core-bind!__%`: its first native
+instruction allocates the four-capture `update-binding` closure, before key
+substitution, phase shifting and the target-table lookup. `core-context-bind!`
+uses this closure only if a binding is already present. A missing-key path
+could theoretically avoid that private closure, but it must preserve live
+context-bind replacement, key substitution, debug effects, hash interfaces
+and all existing-binding callbacks. It cannot decide a miss before the live
+import initializer runs. This is not permission to skip binding initialization.
+
+The old D1296 physical-allocation recording was joined offline to its **exact
+original source**, not to the current similarly named native file. Every
+recorded site lies inside a generated procedure-switch region; all core
+site bytes sum to the original 210,519,320-byte total. The only counted site
+in `core-bind!__%` is original line 18876, `___ALLOC_CLO(4UL)`:
+473,990 executions, **22,751,520 physical bytes**. It includes all counted
+binding calls, not only imports or proven missing-key calls.
+
+| Original core lexical region | Recorded physical bytes |
+| --- | ---: |
+| core-quote-syntax | 73,462,560 |
+| core-apply-user-macro | 56,519,160 |
+| core-expand-expression | 28,672,440 |
+| core-bind! | 22,751,520 |
+| core-expand-block | 15,498,944 |
+
+The closure bytes are 1.3916% of the old recording's eight-unit
+1,634,955,056-byte total. This is neither an elapsed-time fraction nor an
+estimate against Gambit's process-statistics allocation metric. The sample
+does not include expander/module's import-record/binding allocation sites;
+the table therefore cannot establish their complete allocation budget.
+These old, instrumented observations are not current frozen-host measurements.
+The original core source hash differs from the current retained file, so a
+line-number join against the latter would be invalid.
+
+| Question | Decision |
+| --- | --- |
+| Correct direction? | Private callback materialization is a real operation, distinct from required fresh binding objects. It still needs missed-key eligibility and live callee guards. |
+| Already explored? | Existing constructor/initializer contracts do not measure this callback allocation. This is an offline join of existing allocation evidence, not another constructor-fusion experiment. |
+| Worth implementing now? | NO as the next major-gain candidate: the largest eligible byte saving is smaller than the counted total, with no exclusive CPU budget or current-profile coverage. |
+| Expected benefit? | No supported seconds or factor. The 1.3916% byte share cannot be promoted to a speed forecast. |
+
+Exact inputs: original core C SHA256
+`f0436cf04a48cea28ed353c60c36fca9889836be76fef78d79fb6d23adb8c108`;
+`.data/d1296-primitive-allocation-sites/mcp-counts.gerbil__expander__core.90337.tsv`
+SHA256 `0877f62fe42062ae96b3acd04d75b8217388234c01e540f1f821c417ac59bd20`;
+old report SHA256
+`e0dae76b98535ae4c5a92322282de61a5b4568246472c1db24f7ce03ac568e54`.
+No compiler, runtime or consumer was changed. No new performance campaign ran.
