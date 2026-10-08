@@ -1,0 +1,47 @@
+(define case-count 0)
+(define (check name value)
+  (unless value (error "native stage contract failed" name))
+  (set! case-count (+ case-count 1))
+  (display "IMPORT-BINDING-CASE\t") (write name) (newline))
+(define module-path (getenv "NATIVE_STAGE_MODULE"))
+(define marker-path (getenv "NATIVE_STAGE_MARKER"))
+(define (marker)
+  (and (file-exists? marker-path)
+       (call-with-input-file marker-path
+         (lambda (port) (read-line port #f)))))
+(define slot (##make-global-var 'd1510-native-stage-value))
+(define before (list (##global-var-ref slot)))
+(define descriptor-result
+  (##load-object-file module-path (path-strip-directory module-path) #t))
+(check 'native-descriptors-returned
+  (and (vector? descriptor-result) (= (vector-length descriptor-result) 3)
+       (= (vector-length (vector-ref descriptor-result 0)) 1)))
+(check 'mapping-defers-c-and-scheme (not (marker)))
+(define mapped-state (list (##global-var-ref slot)))
+(check 'mapping-records-supplied-but-uninitialized-global
+  (and (##unbound? (car before)) (##unbound? (car mapped-state))
+       (not (eq? (car before) (car mapped-state)))))
+(define descriptors (vector-ref descriptor-result 0))
+(##gc)
+(check 'descriptor-thunk-survives-gc
+  (procedure? (vector-ref (vector-ref descriptors 0) 4)))
+(##register-module-descrs descriptors)
+(define modules
+  (map (lambda (md)
+         (##lookup-registered-module (##vector-last (vector-ref md 0))))
+       (vector->list descriptors)))
+(##init-modules modules 0)
+(check 'zero-stage-preserves-effects (not (marker)))
+(##init-modules modules 1)
+(check 'stage-one-only-c (equal? (marker) "C\n"))
+(check 'stage-one-preserves-scheme-value (eq? (car mapped-state) (##global-var-ref slot)))
+(##init-modules modules 2)
+(define value (##global-var-ref slot))
+(check 'stage-two-orders-c-before-scheme (equal? (marker) "C\nSCHEME\n"))
+(check 'stage-two-sets-live-value (equal? value '(native-stage-value)))
+(##init-modules modules 2)
+(check 'repeated-init-preserves-identity-and-effects
+  (and (eq? value (##global-var-ref slot)) (equal? (marker) "C\nSCHEME\n")))
+(check 'duplicate-native-map-is-refused
+  (fixnum? (##load-object-file module-path (path-strip-directory module-path) #t)))
+(display "IMPORT-BINDING-OK\t") (write case-count) (newline)
