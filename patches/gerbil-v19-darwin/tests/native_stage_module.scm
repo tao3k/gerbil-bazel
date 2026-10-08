@@ -12,4 +12,6 @@
     (call-with-output-file
       (list path: (getenv "NATIVE_STAGE_MARKER") append: #t)
       (lambda (port) (display "SCHEME\n" port)))
+    (when (equal? (getenv "NATIVE_STAGE_THROW" #f) "1")
+      (raise 'native-stage-failure))
     (list 'native-stage-value)))

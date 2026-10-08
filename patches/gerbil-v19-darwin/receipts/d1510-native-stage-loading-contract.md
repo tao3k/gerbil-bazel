@@ -98,3 +98,44 @@ fresh-context/record/mark/property equivalence, live handler and dependency
 mutations, cycle/reload/error and concurrent-loading semantics, and real stdlib
 plus MCP clean/build/full-test acceptance. This contract does not claim a
 Darwin/Linux cause, a platform speedup or a license to skip phase execution.
+
+## Failed Initializer And Public Loader Replay
+
+The same compiled fixture now optionally raises `native-stage-failure` after
+recording its Scheme effect, before assigning the supplied Scheme global.
+The shared runner selects `normal`, `scheme-error` or `gerbil-error`; it does
+not add another controller or change the original binding suite's default.
+
+| Mode | Processes | Ordered cases per process | Passed |
+| --- | ---: | ---: | ---: |
+| Bottom-level failed Scheme initializer | 12 | 13 | 156/156 |
+| Gerbil public loader error cache | 12 | 6 | 72/72 |
+| Normal native-stage regression | 12 | 11 | 132/132 |
+
+Private receipts are respectively
+`.data/d1510-native-stage-error-contract-v1/report.json`,
+`.data/d1510-native-stage-gerbil-error-v1/report.json` and
+`.data/d1510-native-stage-normal-error-regression-v1/report.json`.
+The updated source SHA256 is
+`e73733f6d797d70e390ccd43f9b4685f9a4f9bcdd1756834db9938b53fb51c5e`;
+the normal/public-loader runs' compiled module SHA256 is
+`d64b2746d45e35a818f94d0583558309b368ace13be2f2ef0689794a24edee06`.
+These are new fixture versions, not replacements for the historical hashes.
+All three reports pass binary, fixture, module and source identity checks.
+The updated runner's default binding mode separately passes **408/408** in
+`.data/d1510-binding-contract-error-modes-regression-v1/report.json`, with
+unchanged binary and fixture. The optional modes do not replace that suite.
+
+On failure, Gambit has already advanced the descriptor to stage two. Its
+next bottom-level initialization returns without repeating the thunk **or
+replaying the exception**. The prior C/Scheme effects remain; the supplied
+global is still uninitialized. Gerbil's public `load-module`, by contrast,
+stores `(error exception)` in its registry and rethrows that same exception
+on the next call, without repeating those effects. A staged construction
+integration cannot substitute the bottom-level stage flag for this error
+registry. Neither behavior permits restarting a partially executed thunk.
+
+This extension closes a correctness question needed by any future deployment,
+not a removable execution budget. Expected performance benefit remains
+unmeasured; no first-log, cold-build or complete-test result is produced and
+no production optimization is admitted.

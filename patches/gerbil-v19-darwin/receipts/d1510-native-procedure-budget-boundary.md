@@ -135,3 +135,44 @@ policy, performance gate, frozen object or consumer source was changed.
 The existing `test_hash_layout.py` pytest checks pass **6/6**. An initial
 unittest-discovery invocation found zero tests and exited 5; it is not counted
 as validation. These parser checks are not Scheme or complete-test acceptance.
+
+## Selective Import Index: Check Syntax Before Claiming Coverage
+
+Retained `expander/module.ss:801-813` builds an equal-key export index for
+`(spec: path . specs)` imports. This allocates composite `(phi . name)` keys
+for every source export before selecting requested names. It is distinct from
+the ordinary `import1` path at `:783-789`, which maps all exports into fresh
+retained import records. Optimizing the selective index cannot eliminate that
+ordinary mapping.
+
+An original native Scheme reader parsed all top-level datums of the four
+existing root interface files, recursively classifying `spec:` under
+`%#import` versus `%#export`. No source was expanded, imported or rewritten.
+
+| Root interface | Import forms | Export forms | Import spec forms | Export spec forms |
+| --- | ---: | ---: | ---: | ---: |
+| std/make | 1 | 1 | 0 | 13 |
+| std/test | 1 | 1 | 0 | 0 |
+| std/encoding/json | 1 | 1 | 0 | 0 |
+| std/list/list | 1 | 1 | 0 | 0 |
+
+The make interface's thirteen `spec:` forms are **exports**, not evidence
+that it rebuilds the selective import index thirteen times. This audit is
+limited to root files: dependencies, dynamic transformers and other phases
+can still reach selective imports. It does not establish a zero whole-import
+cost. NO to selecting this index rewrite as a major-gain implementation from
+root syntax alone; there is no measured removable budget or seconds forecast.
+The next execution investigation remains the ordinary fresh import-record
+and binding construction path, not a package-specific selective-import fix.
+
+Root file SHA256 values, under the retained build's `lib/` directory:
+
+| File | SHA256 |
+| --- | --- |
+| std/make.ssi | `86bce94f12ca4ee46c7937c42fc86f6daad0f5cb4477830b26c9ceef863233f9` |
+| std/test.ssi | `e745b33acbdf21c1009784e8c1815550b1b7b6cd7888f4deeff6e7f27d9412b7` |
+| std/encoding/json.ssi | `c59acd623c99bc04589bb9604b2017df239101e1d179ee708b46f24be12589ab` |
+| std/list/list.ssi | `d7b8207af2bb9a21d006639600de508977889bad1626ae8d7d73b455b62de7f4` |
+
+All four reader invocations exited zero. No performance qualification,
+production edit or new build/test campaign follows this source-only check.

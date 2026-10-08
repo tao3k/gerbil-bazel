@@ -44,11 +44,24 @@ NATIVE_STAGE_CASES = (
     'duplicate-native-map-is-refused',
 )
 
+NATIVE_STAGE_ERROR_CASES = NATIVE_STAGE_CASES[:7] + (
+    'failing-stage-two-propagates-exact-error', 'failing-stage-two-records-started-stage',
+    'failing-stage-two-preserves-uninitialized-value', 'failing-stage-two-retains-prior-effects',
+    'repeated-failed-init-does-not-replay-error-or-thunk', 'duplicate-native-map-is-refused',
+)
+
+NATIVE_STAGE_GERBIL_CASES = (
+    'gerbil-loader-first-error-propagates', 'gerbil-loader-effects-in-original-order',
+    'gerbil-loader-caches-exact-error', 'gerbil-loader-retains-uninitialized-value',
+    'gerbil-loader-second-error-identical', 'gerbil-loader-replay-does-not-repeat-effects',
+)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--native-stages', action='store_true')
+    parser.add_argument('--native-stages', nargs='?', const='normal',
+                        choices=('normal', 'scheme-error', 'gerbil-error'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
     output = args.output.resolve()
@@ -63,7 +76,9 @@ def main():
     home = root / '.data/d1510-mcp-test-source-home-v2/build'
     fixture = Path(__file__).with_name(
         'native_stage_contract.scm' if args.native_stages else 'import_binding_contract.scm')
-    expected_cases = NATIVE_STAGE_CASES if args.native_stages else EXPECTED_CASES
+    expected_cases = (NATIVE_STAGE_GERBIL_CASES if args.native_stages == 'gerbil-error' else
+                      NATIVE_STAGE_ERROR_CASES if args.native_stages == 'scheme-error' else
+                      NATIVE_STAGE_CASES if args.native_stages else EXPECTED_CASES)
     fixture_hash = hashlib.sha256(fixture.read_bytes()).hexdigest()
     env = build_environment()
     for key in tuple(env):
@@ -110,7 +125,9 @@ def main():
         (job / 'tmp').mkdir()
         local = dict(env, GERBIL_PATH=str(job / 'package-home'), TMPDIR=str(job / 'tmp'))
         if args.native_stages:
-            local.update(NATIVE_STAGE_MODULE=str(module), NATIVE_STAGE_MARKER=str(job / 'stages.txt'))
+            local.update(NATIVE_STAGE_MODULE=str(module), NATIVE_STAGE_MARKER=str(job / 'stages.txt'),
+                         NATIVE_STAGE_THROW='0' if args.native_stages == 'normal' else '1',
+                         NATIVE_STAGE_GERBIL_LOAD='1' if args.native_stages == 'gerbil-error' else '0')
         row = execute([str(job / 'gxi'), '-e', '(load ' + json.dumps(str(fixture)) + ')'],
                       job, local, job / 'original.log', budget)
         # Absolute fixture paths remain only in private logs, not shareable receipts.
@@ -139,6 +156,7 @@ def main():
                   fixtureSha256=fixture_hash, fixtureUnchanged=fixture_unchanged,
                   compilation=compilation, moduleUnchanged=module_unchanged,
                   moduleSourceUnchanged=source_unchanged,
+                  nativeStageMode=args.native_stages,
                   performanceQualified=False, productionAdmitted=False)
     atomic_json(output / 'report.json', report)
     print(json.dumps(dict(passed=passed, workers=workers, casesPerProcess=len(expected_cases),
