@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from gerbil_bench import cleanup, dumps
+from gerbil_bench import cleanup, dumps, retired, trees
 from gerbil_bench.execution import Budget, execute
 from gerbil_bench.runner import load_profile, run, validate_inventory
 from gerbil_bench.storage import atomic_json, digest, lease, relative
@@ -222,6 +222,122 @@ class FrameworkTests(unittest.TestCase):
                 run(self.root, None, None, 'check')
         self.assertTrue(self.project.exists())
         self.assertNotIn('retention', json.loads((self.run / 'receipt.json').read_text()))
+
+    def test_retired_failure_removes_binaries_not_evidence(self):
+        directory = self.root / '.data/d999-failed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(qualified=False))
+        (directory / 'candidate.o').write_bytes(bytes.fromhex('cffaedfe') + b'object')
+        (directory / 'candidate.c').write_text('source')
+        (directory / 'failed.log').write_text('failure evidence')
+        value = retired.plan(self.root)
+        self.assertEqual(len(value['targets']), 1)
+        path = self.root / '.data/retired-plan.json'
+        atomic_json(path, value)
+        with patch('gerbil_bench.retired.ensure_not_open'):
+            result = retired.apply(self.root, path, digest(path))
+        self.assertTrue(result['complete'])
+        self.assertTrue((directory / 'candidate.c').exists())
+        self.assertTrue((directory / 'failed.log').exists())
+        self.assertTrue((directory / 'report.json').exists())
+
+    def test_retired_protected_and_recent_success_survive(self):
+        for name, passed in (('d991-protected', False), ('d992-recent', True)):
+            directory = self.root / '.data' / name
+            directory.mkdir()
+            atomic_json(directory / 'report.json', dict(passed=passed))
+            (directory / 'candidate.o').write_bytes(bytes.fromhex('cffaedfe') + b'object')
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=['.data/d991-protected'], protectedReceipts=[]))
+        self.assertEqual(retired.plan(self.root)['targets'], [])
+
+    def test_retired_changed_failure_receipt_denies_delete(self):
+        directory = self.root / '.data/d999-failed'
+        directory.mkdir()
+        report = directory / 'report.json'
+        atomic_json(report, dict(passed=False))
+        (directory / 'candidate.o').write_bytes(b'!<arch>\nobject')
+        path = self.root / '.data/retired-plan.json'
+        atomic_json(path, retired.plan(self.root))
+        atomic_json(report, dict(passed=True))
+        with self.assertRaises(ValueError):
+            retired.apply(self.root, path, digest(path))
+
+    def test_retired_age_is_explicit_and_only_old_files(self):
+        import time
+        directory = self.root / '.data/d993-old'
+        directory.mkdir()
+        report = directory / 'report.json'
+        atomic_json(report, dict(passed=True))
+        old = directory / 'old.o'
+        old.write_bytes(b'!<arch>\nobject')
+        (directory / 'new.o').write_bytes(b'!<arch>\nobject')
+        expired = time.time() - 8 * 86400
+        for path in (old, report):
+            os.utime(path, (expired, expired))
+        self.assertEqual([row['path'] for row in retired.plan(self.root)['targets']],
+                         ['.data/d993-old/old.o'])
+
+    def test_retired_matches_failed_binary_to_construction_receipt(self):
+        failure = self.root / '.data/d990-denied'
+        native = self.root / '.data/d991-native'
+        for directory in (failure, native):
+            directory.mkdir()
+        atomic_json(failure / 'report.json', dict(qualified=False, runs=[dict(binarySha256='a' * 64)]))
+        atomic_json(native / 'report.json', dict(qualified=True, binarySha256='a' * 64))
+        (native / 'unit.o').write_bytes(b'!<arch>\nobject')
+        value = retired.plan(self.root)
+        self.assertEqual([row['path'] for row in value['targets']], ['.data/d991-native/unit.o'])
+        self.assertEqual(len(value['reportHashes']), 2)
+
+    def test_retired_production_admission_never_selected(self):
+        directory = self.root / '.data/d990-production'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(qualified=False, productionAdmitted=True))
+        (directory / 'unit.o').write_bytes(b'!<arch>\nobject')
+        self.assertEqual(retired.plan(self.root)['targets'], [])
+
+    def test_numbered_tree_cleanup_archives_failure_evidence(self):
+        import tarfile
+        directory = self.root / '.data/d900-failed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(passed=False))
+        (directory / 'failure.log').write_text('negative evidence')
+        (directory / 'large.o').write_bytes(b'binary')
+        path = self.root / '.data/tree-plan.json'
+        atomic_json(path, trees.plan(self.root))
+        with patch('gerbil_bench.trees.ensure_not_open'):
+            result = trees.apply(self.root, path, digest(path))
+        self.assertTrue(result['complete'])
+        self.assertFalse(directory.exists())
+        with tarfile.open(self.root / result['archives'][0]['path']) as archive:
+            self.assertEqual(set(archive.getnames()), {'failure.log', 'report.json'})
+
+    def test_numbered_tree_protects_baseline_and_running_open_tree(self):
+        directory = self.root / '.data/d900-failed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(passed=False))
+        path = self.root / '.data/tree-plan.json'
+        atomic_json(path, trees.plan(self.root))
+        with patch('gerbil_bench.trees.ensure_not_open', side_effect=ValueError('live process')):
+            with self.assertRaises(ValueError):
+                trees.apply(self.root, path, digest(path))
+        self.assertTrue(directory.exists())
+        atomic_json(self.root / 'tools/bench/retention.json', dict(schema=1,
+                    protectedPaths=['.data/d900-failed'], protectedReceipts=[]))
+        with self.assertRaises(ValueError):
+            trees.apply(self.root, path, digest(path))
+
+    def test_numbered_tree_delete_does_not_follow_inner_symlink(self):
+        directory = self.root / '.data/d900-failed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(passed=False))
+        (directory / 'outside').symlink_to(self.project, target_is_directory=True)
+        path = self.root / '.data/tree-plan.json'
+        atomic_json(path, trees.plan(self.root))
+        with patch('gerbil_bench.trees.ensure_not_open'):
+            trees.apply(self.root, path, digest(path))
+        self.assertTrue((self.project / 'artifact.o').exists())
 
     def test_success_requires_final_ok(self):
         self.assertTrue(self.execution("print('OK')", final_ok=True)['passed'])

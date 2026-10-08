@@ -110,6 +110,46 @@ optional local anchors are followed when present. Add a baseline anchor before
 retiring its construction directories. This policy is separate from the
 package-neutral execution and cleanup engines.
 
+For a larger historical cleanup, `retired-plan` discovers failed experiments
+from explicit failure verdicts in `report.json`, follows their local input
+references and matches constructed binaries by their recorded SHA256. It also
+selects report-bearing old experiments (default seven days), but only deletes
+old files from that age-only category. Production-admitted roots and pinned
+baselines are excluded. Selection never relies on an experiment number alone.
+
+```sh
+python3 tools/bench/gerbil_package_bench.py retired-plan \
+  --older-days 7 --scan-seconds 60 --output .data/retired-artifacts-plan.json
+```
+
+Only generated Mach-O binaries/objects, object archives and GNU compiler dumps
+are listed. Source, scripts, configurations, JSON receipts, logs, dependency
+stores and checkout metadata remain in place. Failed-route evidence therefore
+survives without retaining its bulky objects. Apply revalidates all associated
+report hashes, file identities, protections and open files; use the same
+reviewed `cleanup-apply` command. The applied receipt records logical bytes
+removed. Partial plans report scanned/selected directories and never claim to
+cover all of `.data` or reclaim that many physical APFS bytes.
+
+For disposable numbered experiment directories, `tree-plan` retires entire
+failed trees, plus old unprotected trees (seven days by default), in batches:
+
+```sh
+python3 tools/bench/gerbil_package_bench.py tree-plan \
+  --older-days 7 --batch 20 --output .data/numbered-tree-plan.json
+```
+
+After review, `cleanup-apply` archives text evidence from the top two levels
+(reports, configurations, logs and candidate source), then atomically moves each
+selected tree into `.data/bench/trash` before deleting it. These archives are
+evidence, not full backups of build trees or deep profiler recordings. Symlinks
+inside a retired tree are removed without following their destinations. Baseline
+protections, receipt/directory identity and open-file checks are mandatory.
+An interruption leaves an explicit quarantine receipt; do not silently rerun
+the old plan. Completed deletions are recorded one directory at a time.
+Free-space change is reported as `observedAvailableDeltaBytes`, not an exact
+attribution of APFS physical bytes to this cleanup.
+
 Bounded read-only inventory reports observed logical bytes and explicitly marks
 partial scans. It does not authorize deletion of old experiments:
 

@@ -93,7 +93,9 @@ def ensure_not_open(paths):
     if result.returncode or result.stderr:
         raise ValueError('complete lsof snapshot required before legacy deletion')
     opened = {line[1:] for line in result.stdout.decode(errors='strict').splitlines() if line.startswith('n/')}
-    if any(str(path) == name or name.startswith(str(path) + '/') for path in paths for name in opened):
+    exact = {str(path) for path in paths}
+    directories = tuple(str(path) + '/' for path in paths if path.is_dir())
+    if exact.intersection(opened) or directories and any(name.startswith(directories) for name in opened):
         raise ValueError('legacy artifact still open by a live process')
 
 

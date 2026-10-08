@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from gerbil_bench import cleanup, dumps, inventory, runner
+from gerbil_bench import cleanup, dumps, inventory, retired, runner, trees
 from gerbil_bench.storage import atomic_json, digest, lease, relative
 
 
@@ -32,6 +32,14 @@ def main():
     cache = commands.add_parser('cache-plan')
     cache.add_argument('--directory', action='append', required=True)
     cache.add_argument('--output', required=True)
+    old = commands.add_parser('retired-plan')
+    old.add_argument('--older-days', type=int, default=7)
+    old.add_argument('--scan-seconds', type=float, default=30)
+    old.add_argument('--output', required=True)
+    tree = commands.add_parser('tree-plan')
+    tree.add_argument('--older-days', type=int, default=7)
+    tree.add_argument('--batch', type=int, default=20)
+    tree.add_argument('--output', required=True)
     args = parser.parse_args()
     if args.command == 'run':
         receipt = runner.run(root, relative(root, args.profile), relative(root, args.toolchain),
@@ -51,9 +59,32 @@ def main():
         if not path.is_relative_to(root / '.data'):
             parser.error('plan must be in .data')
         action = json.loads(path.read_text())['action']
-        operation = dumps.apply if action in ('remove-legacy-gnu-compiler-dumps',
-                                              'remove-legacy-package-build-caches') else cleanup.apply
-        print(json.dumps(operation(root, path, args.sha256)))
+        operation = (trees.apply if action == 'retire-numbered-experiment-trees' else
+                     retired.apply if action == 'remove-retired-generated-artifacts' else
+                     dumps.apply if action in ('remove-legacy-gnu-compiler-dumps',
+                                               'remove-legacy-package-build-caches') else cleanup.apply)
+        value = operation(root, path, args.sha256)
+        print(json.dumps(dict(state=value['state'], complete=value['complete'],
+                              removedTargets=len(value['removed']),
+                              removedLogicalBytes=sum(row.get('bytes', 0) for row in value['removed']),
+                              observedAvailableDeltaBytes=value.get('observedAvailableDeltaBytes'))))
+    elif args.command == 'tree-plan':
+        output = relative(root, args.output)
+        if not output.is_relative_to(root / '.data') or output.exists():
+            parser.error('fresh .data plan output required')
+        with lease(root, exclusive=True):
+            value = trees.plan(root, days=args.older_days, batch=args.batch)
+            atomic_json(output, value)
+        print(json.dumps(dict(targets=value['targets'], planSha256=digest(output))))
+    elif args.command == 'retired-plan':
+        output = relative(root, args.output)
+        if not output.is_relative_to(root / '.data') or output.exists():
+            parser.error('fresh .data plan output required')
+        with lease(root, exclusive=True):
+            value = retired.plan(root, days=args.older_days, seconds=args.scan_seconds)
+            atomic_json(output, value)
+        print(json.dumps(dict(complete=value['complete'], targets=len(value['targets']),
+                              reclaimableBytes=value['reclaimableBytes'], planSha256=digest(output))))
     elif args.command in ('dump-plan', 'cache-plan'):
         output = relative(root, args.output)
         if not output.is_relative_to(root / '.data') or output.exists():
