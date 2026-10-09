@@ -7,8 +7,8 @@ home=${3:-"$root/.data/d1391-runtime-object-source/build"}
 source=${4:-"$root/.data/ascent-link-regeneration-v4/core__types.c"}
 case "$output:$source" in "$root"/.data/*:"$root"/.data/*) ;; *) exit 2 ;; esac
 # Selected installed tools are read-only inputs; only owned output is written.
-test -d "$bin" && test ! -L "$bin"
-test -d "$home" && test ! -L "$home"
+bin=$(cd "$bin" && pwd -P)
+home=$(cd "$home" && pwd -P)
 if test ! -f "$home/include/gambit.h" || test -L "$home/include/gambit.h"; then exit 2; fi
 if test ! -f "$source" || test -L "$source"; then exit 2; fi
 test ! -e "$output"
