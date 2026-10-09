@@ -16,6 +16,8 @@ SOURCE = SCRIPT.read_text()
 
 class SourceToolchainTests(unittest.TestCase):
     def test_native_contract_has_no_ripgrep_dependency(self):
+        self.assertIn('"$fixture/path-receipt" "$CC"', CI)
+        self.assertNotIn('"$fixture/path-receipt" "$GERBIL_GCC"', CI)
         script = (ROOT / 'patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh').read_text()
         self.assertNotRegex(script, r'\brg\s')
         self.assertEqual(script.count("grep -Ec '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$'"), 2)
