@@ -2,13 +2,13 @@ diff --git a/src/build.sh b/src/build.sh
 index 20e4801..4bfd910 100755
 --- a/src/build.sh
 +++ b/src/build.sh
-@@ -295,9 +295,25 @@ build_srfi() {
+@@ -295,9 +295,26 @@ build_srfi() {
  
  build_tools () {
    feedback_low "Building gerbil tools"
    (cd tools && gxi ./build.ss) || die
 +  if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
-+    # The General AOT entry owns the complete tool set and closes heavyweight
++    # The General AOT entry owns selected tools and closes heavyweight
 +    # executables sequentially under the shared std/make implementation.
 +    (cd tools && gxi ./build-aot.ss) || die
 +  fi
@@ -16,9 +16,10 @@ index 20e4801..4bfd910 100755
        toolname=$(basename $tool .ss)
 -      (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
 +      case "$toolname" in
-+        gxpkg|gxtags)
++        gxpkg|gxtags|gxtest)
 +          if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
 +            test -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" || die
++            test ! -L "${GERBIL_BUILD_PREFIX}/bin/${toolname}" || die
 +          else
 +            (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil "$toolname")
 +          fi
@@ -43,7 +44,7 @@ index 0000000..dcd2a96
 +        :std/make)
 +
 +(def aot-tools
-+  '("gxpkg" "gxtags"))
++  '("gxpkg" "gxtags" "gxtest"))
 +
 +(def aot-cc-options
 +  (append-options
