@@ -66,6 +66,19 @@ jobs:
               patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
               printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
             done
+            if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]; then
+              for patch in \
+                patches/gerbil-v19-darwin/static-c-snapshot-candidate.series \
+                patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json \
+                patches/gerbil-v19-darwin/static-reuse-helper-install.patch \
+                patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch; do
+                printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
+              done
+              while IFS= read -r name; do
+                patch="patches/gerbil-v19-darwin/$name"
+                printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
+              done < patches/gerbil-v19-darwin/static-c-snapshot-candidate.series
+            fi
           } | git hash-object --stdin)"
           case "$TARGET_PLATFORM" in
             linux-x86_64)
@@ -178,6 +191,7 @@ jobs:
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-reuse-helper-install.patch"
 
       - name: Build exact v0.19 toolchain
         if: steps.gerbil-cache.outputs.cache-hit != 'true'
@@ -244,7 +258,13 @@ jobs:
           if [[ "${{ runner.os }}" == macOS ]]; then
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
             git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch"
-            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch"
+            python3 "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/tests/experiment_framework/patch_lock.py" \
+              "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json" \
+              --lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2 --performance
+            while IFS= read -r patch; do
+              git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/$patch"
+            done < "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"
+            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch"
             # Both generated configure and configure.ac are carried in the
             # audited patch. Keep configure newest so Gambit's make rules do
             # not regenerate it with an arbitrary host Autoconf version.
@@ -367,6 +387,9 @@ jobs:
              (.configureArguments | type == "array")' \
             "$GERBIL_PREFIX/gerbil-build-receipt.json"
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
+            test -x "$GERBIL_HOME/bin/gambit-file-sha256"
+            test ! -L "$GERBIL_HOME/bin/gambit-file-sha256"
+            grep -F 'bound_input_sha=' "$GERBIL_HOME/bin/gambit-static-object-reuse"
             openssl_pkgconfig="$(brew --prefix openssl@3)/lib/pkgconfig"
             sqlite_pkgconfig="$(brew --prefix sqlite)/lib/pkgconfig"
             zlib_pkgconfig="$(brew --prefix zlib)/lib/pkgconfig"

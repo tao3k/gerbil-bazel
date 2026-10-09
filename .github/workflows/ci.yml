@@ -194,6 +194,8 @@ jobs:
           path: |
             .ci/gerbil-version.txt
             .ci/receipts/*.json
+            .data/ci-static-snapshot/**/*.log
+            .data/ci-static-snapshot/**/*.sha256
           if-no-files-found: warn
 
   lock-linux-seed:

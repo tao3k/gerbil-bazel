@@ -15,6 +15,49 @@ SOURCE = SCRIPT.read_text()
 
 
 class SourceToolchainTests(unittest.TestCase):
+    def test_static_contract_accepts_installed_current_symlink(self):
+        script = ROOT / 'patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh'
+        data = ROOT / '.data'
+        data.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=data) as temp:
+            directory = Path(temp)
+            home = directory / 'installed'
+            (home / 'bin').mkdir(parents=True)
+            (home / 'include').mkdir()
+            (home / 'include/gambit.h').write_text('/* selected header */\n')
+            compiler = home / 'bin/gsc'
+            compiler.write_text('#!/bin/sh\nexit 73\n')
+            compiler.chmod(0o755)
+            current = directory / 'current'
+            current.symlink_to(home, target_is_directory=True)
+            bin_alias = directory / 'selected-bin'
+            bin_alias.symlink_to(home / 'bin', target_is_directory=True)
+            source = directory / 'probe.c'
+            source.write_text('int probe(void) { return 1; }\n')
+            for index, bin_path in enumerate((current / 'bin', bin_alias)):
+                output = directory / ('receipt-' + str(index))
+                result = subprocess.run(['bash', str(script), str(bin_path), str(output),
+                                         str(current), str(source)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 73, result.stderr)
+                self.assertTrue((output / 'control.log').is_file())
+                self.assertTrue((output / 'selected-toolchain.sha256').is_file())
+            missing = subprocess.run(['bash', str(script), str(directory / 'missing'),
+                                      str(directory / 'missing-output'), str(current), str(source)],
+                                     capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertFalse((directory / 'missing-output').exists())
+
+    def test_release_builds_and_hashes_frozen_darwin_bundle(self):
+        identity = PUBLISH.split('patchset_sha="$({', 1)[1].split('} | git hash-object --stdin)', 1)[0]
+        self.assertIn('if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]', identity)
+        self.assertIn('done < patches/gerbil-v19-darwin/static-c-snapshot-candidate.series', identity)
+        for name in ('static-reuse-helper-install.patch', 'static-snapshot-path-fallback.patch'):
+            self.assertIn(name, identity)
+            self.assertRegex(PUBLISH, r'git -C .* apply .*' + re.escape(name))
+        self.assertIn('done < "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"', PUBLISH)
+        self.assertIn('--lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2', PUBLISH)
+        self.assertNotIn('apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0015-', PUBLISH)
+
     def test_review_hardening_does_not_rewrite_frozen_lock(self):
         self.assertIn('static-reuse-helper-install.patch', SOURCE)
         self.assertIn('static-snapshot-path-fallback.patch', SOURCE)
