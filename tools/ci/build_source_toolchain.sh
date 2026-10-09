@@ -30,8 +30,15 @@ if [[ "$platform" == Darwin ]]; then
   gambit_patches+=(
     patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch
     patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch
-    patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch
   )
+  # The locked series includes 0015-gambit-darwin-literal-build-substitution.patch.
+  # Compile the snapshot helper here; reuse remains opt-in for consumers.
+  python3 "$root/patches/gerbil-v19-darwin/tests/experiment_framework/patch_lock.py" \
+    "$root/patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json" \
+    --lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2 --performance
+  while IFS= read -r patch; do
+    gambit_patches+=("patches/gerbil-v19-darwin/$patch")
+  done < "$root/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"
 fi
 
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
@@ -70,6 +77,9 @@ verify() {
   grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
   if [[ "$platform" == Darwin ]]; then
     grep -F 'replace_literal()' "$GERBIL_HOME/bin/gambuild-C"
+    test -x "$GERBIL_HOME/bin/gambit-file-sha256"
+    test ! -L "$GERBIL_HOME/bin/gambit-file-sha256"
+    grep -F 'bound_input_sha=' "$GERBIL_HOME/bin/gambit-static-object-reuse"
   fi
   mkdir -p "$root/.ci/receipts"
   cp "$GERBIL_PREFIX/ci-source-toolchain.json" "$root/.ci/receipts/source-toolchain.json"
@@ -90,7 +100,14 @@ case "${1:-}" in
     done
     for patch in "${gambit_patches[@]}"; do
       git -C "$source_dir/src/gambit" apply --check "$root/$patch"
+      git -C "$source_dir/src/gambit" apply "$root/$patch"
     done
+    # Dependent patches must be checked in composition, then restored before
+    # configure selects the pinned submodule and the build applies them again.
+    for ((index=${#gambit_patches[@]}-1; index>=0; index--)); do
+      git -C "$source_dir/src/gambit" apply --reverse "$root/${gambit_patches[index]}"
+    done
+    git -C "$source_dir/src/gambit" diff --exit-code
     printf 'cache_identity=%s\n' "$identity" >> "${GITHUB_OUTPUT:?}"
     ;;
   build)

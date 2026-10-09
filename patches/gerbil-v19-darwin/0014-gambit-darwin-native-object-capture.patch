@@ -1,0 +1,179 @@
+diff --git a/bin/gambuild-C.unix.in b/bin/gambuild-C.unix.in
+index 7427992..35f111c 100644
+--- a/bin/gambuild-C.unix.in
++++ b/bin/gambuild-C.unix.in
+@@ -369,7 +369,14 @@ case "$1" in
+       printf "%s\n" "${BUILD_DYN_CMD}"
+     fi
+ 
+-    eval "${BUILD_DYN_CMD}"
++    if test "${GAMBIT_DARWIN_NATIVE_OBJECTS-}" = 1; then
++      GAMBIT_NATIVE_OBJECT_DRIVER_LOADING=yes
++      . "$(dirname "$0")/gambit-native-object-cache"
++      unset GAMBIT_NATIVE_OBJECT_DRIVER_LOADING
++      gambuild_dyn_with_native_object_cache
++    else
++      eval "${BUILD_DYN_CMD}"
++    fi
+     ;;
+ 
+   "lib")
+diff --git a/bin/makefile.in b/bin/makefile.in
+index 1b6b660..303cdcf 100644
+--- a/bin/makefile.in
++++ b/bin/makefile.in
+@@ -75,7 +75,7 @@ GSC_EXECUTABLE = gsc@exe@
+ GSI_EXECUTABLE_INSTALLED = @ENABLE_INTERPRETER_NAME@@exe@
+ GSC_EXECUTABLE_INSTALLED = @ENABLE_COMPILER_NAME@@exe@
+ 
+-RCFILES = makefile.in \
++RCFILES = makefile.in gambit-native-object-cache.unix \
+ gambvcs.unix.in gambvcs.bat.windows.in \
+ gambuild-C.unix.in gambuild-C.bat.windows.in \
+ gambuild-js.unix.in gambuild-js.bat.windows.in \
+@@ -94,7 +94,7 @@ GENDISTFILES =
+ 
+ DISTFILES = $(RCFILES) $(GENDISTFILES)
+ 
+-INSTFILES_BIN_PROG = gambvcs@bat@ gambuild-C@bat@ \
++INSTFILES_BIN_PROG = gambit-native-object-cache gambvcs@bat@ gambuild-C@bat@ \
+ gambuild-js@bat@ gambuild-python@bat@ gambuild-ruby@bat@ gambuild-php@bat@ gambuild-java@bat@ \
+ gambuild-x86@bat@ gambuild-x86-64@bat@ gambuild-arm@bat@ gambuild-riscv-32@bat@ gambuild-riscv-64@bat@ \
+ gambdoc@bat@
+@@ -110,7 +110,7 @@ core:
+ 
+ core-pre:
+ 
+-core-post: gambvcs@bat@ gambuild-C@bat@ gambuild-js@bat@ gambuild-python@bat@ gambuild-ruby@bat@ gambuild-php@bat@ gambuild-java@bat@ gambuild-x86@bat@ gambuild-x86-64@bat@ gambuild-arm@bat@ gambuild-riscv-32@bat@ gambuild-riscv-64@bat@ gambdoc@bat@ six@exe@ gsi-script@bat@ gsc-script@bat@ six-script@bat@ scheme-srfi-0@bat@ scheme-r5rs@bat@ scheme-r4rs@bat@ scheme-ieee-1178-1990@bat@
++core-post: gambit-native-object-cache gambvcs@bat@ gambuild-C@bat@ gambuild-js@bat@ gambuild-python@bat@ gambuild-ruby@bat@ gambuild-php@bat@ gambuild-java@bat@ gambuild-x86@bat@ gambuild-x86-64@bat@ gambuild-arm@bat@ gambuild-riscv-32@bat@ gambuild-riscv-64@bat@ gambdoc@bat@ six@exe@ gsi-script@bat@ gsc-script@bat@ six-script@bat@ scheme-srfi-0@bat@ scheme-r5rs@bat@ scheme-r4rs@bat@ scheme-ieee-1178-1990@bat@
+ 
+ phase1: core
+ 
+@@ -120,6 +120,10 @@ phase3:
+ 
+ phase4:
+ 
++gambit-native-object-cache: makefile $(srcdirpfx)gambit-native-object-cache.unix
++	cp $(srcdirpfx)gambit-native-object-cache.unix gambit-native-object-cache
++	chmod +x gambit-native-object-cache
++
+ gambvcs@bat@: makefile gambvcs.unix gambvcs.bat.windows
+ 	rm -f gambvcs@bat@
+ 	if test "@bat@" = ""; then \
+diff --git a/bin/gambit-native-object-cache.unix b/bin/gambit-native-object-cache.unix
+new file mode 100755
+index 0000000..f53bdda
+--- /dev/null
++++ b/bin/gambit-native-object-cache.unix
+@@ -0,0 +1,111 @@
++#!/bin/sh
++
++gambit_native_object_subcommand()
++{
++  program=$1
++  shift
++  case "${program##*/}" in
++    collect2)
++      test -n "${GAMBIT_NATIVE_CAPTURE_DIRECTORY-}" || return 2
++      index=0
++      for argument do
++        case "$argument" in
++          *.o)
++            if test -f "$argument"; then
++              cp "$argument" "${GAMBIT_NATIVE_CAPTURE_DIRECTORY}/link-input-${index}.o" || return 2
++              index=$((index+1))
++            fi
++            ;;
++        esac
++      done
++      "$program" "$@"
++      return $?
++      ;;
++    *) exec "$program" "$@" ;;
++  esac
++}
++
++gambit_native_object_sha256()
++{
++  /usr/bin/shasum -a 256 "$1" | awk '{print $1}'
++}
++
++gambuild_dyn_with_native_object_cache()
++{
++  marker=$(printf '%s\n' '#if defined(__APPLE__) && defined(__MACH__) && defined(__GNUC__) && !defined(__clang__)' 'GAMBIT_NATIVE_DARWIN_GNU' '#endif' |
++           eval "$C_COMPILER -E -P -x c -" 2>/dev/null)
++  if test "$marker" != GAMBIT_NATIVE_DARWIN_GNU; then
++    eval "$BUILD_DYN_CMD"
++    return $?
++  fi
++
++  helper="$(dirname "$0")/gambit-native-object-cache"
++  case "$helper" in
++    *,*) printf '%s\n' 'Gambit native capture refuses a GCC wrapper path containing commas' >&2; return 2 ;;
++  esac
++  temporary=$(mktemp -d "${BUILD_DYN_OUTPUT_FILENAME_PARAM}.gambit-native-cache.XXXXXX") || return 2
++  GAMBIT_NATIVE_CAPTURE_DIRECTORY=$temporary
++  export GAMBIT_NATIVE_CAPTURE_DIRECTORY
++  original_compiler=$C_COMPILER
++  C_COMPILER="$C_COMPILER -wrapper $(shell_string_encode "$helper")"
++  BUILD_DYN_CAPTURE_CMD=$(substitute_dyn "$BUILD_DYN")
++  if test -n "${GAMBUILD_VERBOSE-}"; then
++    printf '%s\n' "$BUILD_DYN_CAPTURE_CMD"
++  fi
++  eval "$BUILD_DYN_CAPTURE_CMD"
++  status=$?
++  C_COMPILER=$original_compiler
++  unset GAMBIT_NATIVE_CAPTURE_DIRECTORY
++  if test "$status" != 0; then
++    rm -rf "$temporary"
++    return "$status"
++  fi
++
++  count=0
++  for object in "$temporary"/link-input-*.o; do
++    if test -f "$object"; then
++      captured=$object
++      count=$((count+1))
++    fi
++  done
++  # Existing-object links need no capture; multi-source images are not advertised.
++  if test "$count" != 1; then
++    rm -rf "$temporary"
++    return 0
++  fi
++  mv "$captured" "$temporary/object.o" || { rm -rf "$temporary"; return 2; }
++  image_sha=$(gambit_native_object_sha256 "$BUILD_DYN_OUTPUT_FILENAME_PARAM")
++  object_sha=$(gambit_native_object_sha256 "$temporary/object.o")
++  case "$image_sha$object_sha" in
++    *[!0123456789abcdef]*) rm -rf "$temporary"; return 2 ;;
++  esac
++  if test "${#image_sha}" != 64 || test "${#object_sha}" != 64; then
++    rm -rf "$temporary"
++    return 2
++  fi
++  directory="${BUILD_DYN_OUTPUT_FILENAME_PARAM}.gambit-native-objects.${image_sha}.${object_sha}"
++  reference="${BUILD_DYN_OUTPUT_FILENAME_PARAM}.gambit-native-objects"
++  if test -e "$reference" && { test ! -f "$reference" || test -L "$reference"; }; then
++    rm -rf "$temporary"
++    return 2
++  fi
++  printf 'schema=1\nimage-sha256=%s\nobject-sha256=%s\ndirectory=%s\n' \
++    "$image_sha" "$object_sha" "${directory##*/}" > "$temporary/reference"
++  if test -e "$directory"; then
++    if test -L "$directory" || test "$(gambit_native_object_sha256 "$directory/object.o")" != "$object_sha"; then
++      rm -rf "$temporary"
++      return 2
++    fi
++    mv -f "$temporary/reference" "$reference" || { rm -rf "$temporary"; return 2; }
++    rm -rf "$temporary"
++  else
++    mv "$temporary" "$directory" || { rm -rf "$temporary"; return 2; }
++    mv -f "$directory/reference" "$reference" || return 2
++  fi
++  return 0
++}
++
++if test "${GAMBIT_NATIVE_OBJECT_DRIVER_LOADING-}" != yes; then
++  gambit_native_object_subcommand "$@"
++  exit $?
++fi

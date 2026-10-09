@@ -15,6 +15,16 @@ SOURCE = SCRIPT.read_text()
 
 
 class SourceToolchainTests(unittest.TestCase):
+    def test_static_snapshot_series_is_locked_and_darwin_only(self):
+        before_darwin, darwin = SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)
+        self.assertNotIn('static-c-snapshot-candidate.series', before_darwin)
+        self.assertIn('static-c-snapshot-candidate.series', darwin)
+        self.assertIn('--lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2', darwin)
+        self.assertIn('apply --reverse', SOURCE)
+        self.assertIn('gambit-file-sha256', SOURCE)
+        self.assertNotIn('export GAMBIT_DARWIN_STATIC_OBJECT_REUSE', SOURCE)
+        self.assertIn('check_static_object_reuse.sh', CI)
+
     def test_revision_matches_audited_profile(self):
         profile = json.loads((ROOT / 'patches/gerbil-v19-darwin/runtime-object-reuse.json').read_text())
         self.assertIn('GERBIL_SOURCE_REVISION: ' + profile['gerbilRevision'], CI)
