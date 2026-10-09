@@ -1,0 +1,209 @@
+Subject: [EXPERIMENTAL PATCH] gambit: harden opt-in static reuse
+
+Apply after 0019. Reject incomplete digests and changed tool/source
+snapshots; reject non-regular proof targets; retain the original
+compiler path for calls with diagnostics or auxiliary outputs.
+This candidate remains default-off pending second-consumer admission.
+
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -1,6 +1,15 @@
+-# Private prototype sourced by the obj branch of gambuild-C.
+-# Only a complete preprocessor result and matching native context admit reuse.
++# Opt-in Darwin/GNU static object reuse; diagnostics retain the original path.
+ gambit_static_sha()
+ {
+-  /usr/bin/shasum -a 256 "$1" | awk '{print $1}'
++  digest=$(/usr/bin/shasum -a 256 "$1") || return 2
++  digest=${digest%% *}
++  test "${#digest}" = 64 || return 2
++  case "$digest" in *[!0-9a-f]*) return 2 ;; esac
++  printf '%s\n' "$digest"
++}
++
++gambit_static_tools()
++{
++  /usr/bin/shasum -a 256 "$compiler" "$cc1" "$assembler" "$apple_as" \
++    "$0" "$(dirname "$0")/gsc" "$(dirname "$0")/gambit-static-object-reuse"
+ }
+@@ -24,2 +33,11 @@
+ 
++gambit_static_original()
++{
++  BUILD_OBJ=$original_build_obj
++  BUILD_OBJ_INPUT_FILENAMES_PARAM=$original_input
++  BUILD_OBJ_OUTPUT_FILENAME_PARAM=$original_output
++  rm -f "$proof" || return 2
++  eval "$BUILD_OBJ_CMD"
++}
++
+ gambit_static_object_locked()
+@@ -29,26 +47,21 @@
+   proof="${output}.gambit-static-proof"
+-  # The first cold object retains the original path, with no cache population.
++  original_build_obj=$BUILD_OBJ
++  original_input=$source
++  original_output=$output
++  if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then
++    printf 'GAMBIT-STATIC-OBJECT-PROOF-DENY\n' >&2
++    return 2
++  fi
+   if test ! -f "$output" || test -L "$output" || test ! -f "$source" || test -L "$source"; then
+-    eval "$BUILD_OBJ_CMD"
++    gambit_static_original
+     return $?
+   fi
+-  case "$source$output" in
+-    *'
+-'*|*'\r'*) eval "$BUILD_OBJ_CMD"; return $? ;;
+-  esac
+   compiler=${C_COMPILER%% *}
+-  if test ! -x "$compiler"; then
+-    eval "$BUILD_OBJ_CMD"
+-    return $?
+-  fi
++  if test ! -x "$compiler"; then gambit_static_original; return $?; fi
+   marker=$(printf '%s\n' '#if defined(__APPLE__) && defined(__MACH__) && defined(__GNUC__) && !defined(__clang__)' 'GAMBIT_STATIC_DARWIN_GNU' '#endif' |
+            "$compiler" -E -P -x c - 2>/dev/null)
+-  if test "$marker" != GAMBIT_STATIC_DARWIN_GNU; then
+-    eval "$BUILD_OBJ_CMD"
+-    return $?
+-  fi
+-  # Caller-owned dependency/auxiliary outputs require the original invocation.
+-  case " $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ " in
+-    *' -M'*|*' -B'*|*' -save-temps'*|*' -fprofile'*|*' --coverage'*|*' -gsplit-dwarf'*|*' -fplugin'*|*' -wrapper '*)
+-      eval "$BUILD_OBJ_CMD"; return $? ;;
++  if test "$marker" != GAMBIT_STATIC_DARWIN_GNU; then gambit_static_original; return $?; fi
++  case " $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
++    *' -M'*|*' -B'*|*' -save-temps'*|*' -fprofile'*|*' --coverage'*|*' -gsplit-dwarf'*|*' -fplugin'*|*' -wrapper'*|*' -specs'*|*' --specs'*|*' -fdump'*|*' -fopt-info'*|*' -S '*|*' -E '*|*' -o '*|*' @'*)
++      gambit_static_original; return $? ;;
+   esac
+@@ -56,71 +69,62 @@
+   trap 'rm -rf "$temporary"; rmdir "$lock"' 0
+-  env | LC_ALL=C sort > "$temporary/environment"
+-  original_build_obj=$BUILD_OBJ
+-  original_input=$BUILD_OBJ_INPUT_FILENAMES_PARAM
+-  original_output=$BUILD_OBJ_OUTPUT_FILENAME_PARAM
+-  status=0
+-  source_before=$(gambit_static_sha "$source") || status=2
+-  if test "$status" = 0; then
+-    BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
+-    BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/input.i"
+-    preprocess=$(substitute_obj "$BUILD_OBJ")
+-    eval "$preprocess"
+-    status=$?
++  env > "$temporary/environment.raw" || return 2
++  LC_ALL=C sort "$temporary/environment.raw" > "$temporary/environment" || return 2
++  source_before=$(gambit_static_sha "$source") || return 2
++  cc1=$("$compiler" -print-prog-name=cc1) || return 2
++  assembler=$("$compiler" -print-prog-name=as) || return 2
++  case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
++  apple_as=$(/usr/bin/xcrun --find as) || return 2
++  gambit_static_tools > "$temporary/tools.before" || return 2
++  BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
++  BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/input.i"
++  preprocess=$(substitute_obj "$BUILD_OBJ") || return 2
++  # Warning-producing invocations never enter the cache: preserve original diagnostics.
++  if ! eval "$preprocess" > "$temporary/cpp.stdout" 2> "$temporary/cpp.stderr"; then
++    cat "$temporary/cpp.stdout"
++    cat "$temporary/cpp.stderr" >&2
++    return 2
+   fi
+-  if test "$status" = 0; then
+-    cc1=$("$compiler" -print-prog-name=cc1)
+-    assembler=$("$compiler" -print-prog-name=as)
+-    case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") ;; esac
+-    apple_as=$(/usr/bin/xcrun --find as) || status=2
+-    if test ! -f "$cc1" || test ! -f "$assembler" || test ! -f "$apple_as"; then
+-      status=2
+-    fi
++  if test -s "$temporary/cpp.stdout" || test -s "$temporary/cpp.stderr"; then
++    gambit_static_original; return $?
+   fi
+-  if test "$status" = 0; then
+-    {
+-      printf 'gambit-static-proof-v1\n%s\n%s\n' "$BUILD_OBJ_CMD" "$PWD"
+-      # Conservatively bind the complete environment, excluding owned staging.
+-      cat "$temporary/environment"
+-      /usr/bin/shasum -a 256 "$compiler" "$cc1" "$assembler" "$apple_as" \
+-        "$0" "$(dirname "$0")/gsc" "$(dirname "$0")/gambit-static-object-reuse" "$temporary/input.i"
+-    } > "$temporary/context"
+-    # Stage names cannot participate in the digest of equivalent preprocessor bytes.
+-    /usr/bin/shasum -a 256 "$temporary/input.i" | awk '{print $1}' > "$temporary/preprocessed-sha"
+-    sed '$d' "$temporary/context" > "$temporary/stable-context"
+-    cat "$temporary/preprocessed-sha" >> "$temporary/stable-context"
+-    key=$(gambit_static_sha "$temporary/stable-context")
+-    object_sha=$(gambit_static_sha "$output")
+-    printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof"
+-    if test -f "$proof" && test ! -L "$proof" && cmp -s "$proof" "$temporary/proof"; then
+-      if test "$(gambit_static_sha "$source")" != "$source_before"; then
+-        status=2
+-      else
+-        printf 'GAMBIT-STATIC-OBJECT-HIT\n' >&2
+-      fi
+-    else
+-      BUILD_OBJ=$original_build_obj
+-      BUILD_OBJ_INPUT_FILENAMES_PARAM="$temporary/input.i"
+-      BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/object.o"
+-      compile=$(substitute_obj "$BUILD_OBJ")
+-      eval "$compile"
+-      status=$?
+-      if test "$status" = 0; then
+-        if test "$(gambit_static_sha "$source")" != "$source_before"; then
+-          status=2
+-        else
+-          object_sha=$(gambit_static_sha "$temporary/object.o")
+-          printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof"
+-          mv -f "$temporary/object.o" "$output" && mv -f "$temporary/proof" "$proof"
+-          status=$?
+-          test "$status" != 0 || printf 'GAMBIT-STATIC-OBJECT-MISS\n' >&2
+-        fi
+-      fi
+-    fi
++  gambit_static_tools > "$temporary/tools.after" || return 2
++  cmp -s "$temporary/tools.before" "$temporary/tools.after" || return 2
++  preprocessed_sha=$(gambit_static_sha "$temporary/input.i") || return 2
++  printf 'gambit-static-proof-v2\n%s\n%s\n' "$BUILD_OBJ_CMD" "$PWD" > "$temporary/context" || return 2
++  cat "$temporary/environment" "$temporary/tools.before" >> "$temporary/context" || return 2
++  printf '%s\n' "$preprocessed_sha" >> "$temporary/context" || return 2
++  key=$(gambit_static_sha "$temporary/context") || return 2
++  object_sha=$(gambit_static_sha "$output") || return 2
++  printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof" || return 2
++  if test -f "$proof" && cmp -s "$proof" "$temporary/proof"; then
++    source_after=$(gambit_static_sha "$source") || return 2
++    test "$source_before" = "$source_after" || return 2
++    gambit_static_tools > "$temporary/tools.hit" || return 2
++    cmp -s "$temporary/tools.before" "$temporary/tools.hit" || return 2
++    printf 'GAMBIT-STATIC-OBJECT-HIT\n' >&2
++    return 0
+   fi
+   BUILD_OBJ=$original_build_obj
+-  BUILD_OBJ_INPUT_FILENAMES_PARAM=$original_input
+-  BUILD_OBJ_OUTPUT_FILENAME_PARAM=$original_output
+-  rm -rf "$temporary"
+-  trap 'rmdir "$lock"' 0
+-  return "$status"
++  BUILD_OBJ_INPUT_FILENAMES_PARAM="$temporary/input.i"
++  BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/object.o"
++  compile=$(substitute_obj "$BUILD_OBJ") || return 2
++  if ! eval "$compile" > "$temporary/cc.stdout" 2> "$temporary/cc.stderr"; then
++    cat "$temporary/cc.stdout"
++    cat "$temporary/cc.stderr" >&2
++    return 2
++  fi
++  if test -s "$temporary/cc.stdout" || test -s "$temporary/cc.stderr"; then
++    gambit_static_original; return $?
++  fi
++  source_after=$(gambit_static_sha "$source") || return 2
++  test "$source_before" = "$source_after" || return 2
++  gambit_static_tools > "$temporary/tools.compiled" || return 2
++  cmp -s "$temporary/tools.before" "$temporary/tools.compiled" || return 2
++  object_sha=$(gambit_static_sha "$temporary/object.o") || return 2
++  printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof" || return 2
++  # A changed publication target is not eligible for replacement.
++  test ! -L "$output" && test -f "$output" || return 2
++  if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then return 2; fi
++  mv -f "$temporary/object.o" "$output" && mv -f "$temporary/proof" "$proof" || return 2
++  printf 'GAMBIT-STATIC-OBJECT-MISS\n' >&2
+ }

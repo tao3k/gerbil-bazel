@@ -1,0 +1,17 @@
+{
+  "schema": "mcp-performance-lock-v1",
+  "scope": "complete-real-mcp-package",
+  "limitsSeconds": {"firstLog": 4.5, "completeBuild": 42, "completeTest": 97},
+  "candidateBinarySha256": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+  "baselineReceipt": "d1510-static-object-reuse-v4-checkpoint.json",
+  "rawColdReceiptSha256": "4affc9a0c4c901e36eb50b16983d66eb67a67dcd33c17f43de3659f8f00a775d",
+  "rawCompleteTestReceiptSha256": "b76e7ac843d1db2021745ae800731be3154bdbf2415779d277294045d458a294",
+  "coldSamples": [
+    {"firstCompileSeconds": 4.049027000000024, "buildWallSeconds": 37.365152416000456},
+    {"firstCompileSeconds": 4.0441681669999525, "buildWallSeconds": 37.40637304200027},
+    {"firstCompileSeconds": 4.00350008300029, "buildWallSeconds": 36.466995249999854}
+  ],
+  "completeTest": {"wallSeconds": 87.409175416, "files": 39, "cases": 965, "passed": true, "passingSamples": 1},
+  "policy": "About 10 percent margin over the maximum measured baseline, rounded upward to 0.5 seconds for first log and whole seconds for complete tasks. Every new candidate must meet all three gates; no averaging or historical-binary exemption. Diagnostic runs cannot qualify.",
+  "evidenceBoundary": "Three cold builds and one complete test pass. Later complete tests at 99.545632625 and a 112.039055667 interrupted attempt are not admitted by this lock. Repeated complete-test stability remains unproven."
+}

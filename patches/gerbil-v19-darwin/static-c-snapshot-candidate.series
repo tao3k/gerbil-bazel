@@ -1,0 +1,6 @@
+0014-gambit-darwin-native-object-capture.patch
+0015-gambit-darwin-literal-build-substitution.patch
+0019-gambit-darwin-static-object-reuse-candidate.patch
+0020-gambit-darwin-static-object-reuse-hardening.patch
+0021-gambit-darwin-native-static-reuse-digests.patch
+0026-gambit-darwin-static-c-snapshot-input.patch

@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "status": "experimental-candidate-checkpoint",
+  "defaultEnabled": false,
+  "productionAdmitted": false,
+  "repeatedColdQualified": true,
+  "ascentQualified": false,
+  "performanceGainAttributed": false,
+  "observedColdReuseHits": 0,
+  "patch": "0021-gambit-darwin-native-static-reuse-digests.patch",
+  "patchSha256": "4e7a6350595673febb39a4b6a555fd75db98ad68708940a98186548a25278604",
+  "helperSha256": "08d8ebe59d24a7098561c909c5b8e04c66aff78794d5f68f1cedddf1f2168646",
+  "driverSha256": "d9d537df086e1e40fcd78f0f0713cdd16df71b4101f459bf6b6625c9c2e67779",
+  "binarySha256": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+  "gates": {
+    "firstCompileSeconds": 5,
+    "completeBuildSeconds": 50,
+    "completeTestSeconds": 112
+  },
+  "observed": {
+    "firstCompileSeconds": 4.049027000000024,
+    "completeBuildSeconds": 37.365152416000456,
+    "testFirstOutputSeconds": 1.6635630410000886,
+    "completeTestSeconds": 87.40917541599993,
+    "files": 39,
+    "passedFiles": 39,
+    "cases": 965,
+    "passedCases": 965
+  },
+  "rawReceipts": {
+    ".data/d1510-static-reuse-mcp-v4/report.json": "4affc9a0c4c901e36eb50b16983d66eb67a67dcd33c17f43de3659f8f00a775d",
+    ".data/d1510-static-reuse-mcp-v4/tests/report.json": "b76e7ac843d1db2021745ae800731be3154bdbf2415779d277294045d458a294",
+    ".data/d1510-static-reuse-ascent-native-v4-summary.json": "791a49e19f69f698ebd35aa977dee44fc3b75d7b08f781bdc8bc325f6484a2fa"
+  },
+  "coldSamples": [
+    {
+      "firstCompileSeconds": 4.049027000000024,
+      "completeBuildSeconds": 37.365152416000456
+    },
+    {
+      "firstCompileSeconds": 4.0441681669999525,
+      "completeBuildSeconds": 37.40637304200027
+    },
+    {
+      "firstCompileSeconds": 4.00350008300029,
+      "completeBuildSeconds": 36.466995249999854
+    }
+  ],
+  "nativeDigestSha256": "e0124f9b69561d6fc34b148aa57e1573aebb7f3adc0ef4470b657f895156f2df",
+  "nativeDigestSourceSha256": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a",
+  "ascentObservedScenarios": [
+    {
+      "receipt": ".data/d1510-static-reuse-ascent-readonly-control-v4",
+      "exitStatus": 0,
+      "completeSeconds": 43.08,
+      "userSeconds": 81.36,
+      "systemSeconds": 16.54,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 0,
+      "staticObjectMisses": 0,
+      "objectCalls": 74,
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "0344b8b1a005234f1255abe6455917bacde8f542734347c994db07859872a7b8"
+    },
+    {
+      "receipt": ".data/d1510-static-reuse-ascent-readonly-v4-populate-v1",
+      "exitStatus": 0,
+      "completeSeconds": 47.25,
+      "userSeconds": 98.13,
+      "systemSeconds": 28.84,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 0,
+      "staticObjectMisses": 72,
+      "objectCalls": 74,
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "f6d9b4fec33a9858c5e3a12fab28ce64a5bab34ebcc4db9c9f0345cc9462332d"
+    },
+    {
+      "receipt": ".data/d1510-static-reuse-ascent-readonly-v4-hit-v1",
+      "exitStatus": 0,
+      "completeSeconds": 38.42,
+      "userSeconds": 51.17,
+      "systemSeconds": 23.77,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 71,
+      "staticObjectMisses": 1,
+      "objectCalls": 74,
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "82f1d29f01481e3032c45e6d3262d44aa2099c31664f78e9fd7d6cf27f64f6df"
+    }
+  ],
+  "ascentScenarioPerformanceImproved": true
+}

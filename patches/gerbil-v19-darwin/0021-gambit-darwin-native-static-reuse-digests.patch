@@ -1,0 +1,140 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gambit: native static reuse digests
+
+Apply after 0020 on Darwin/GNU only. Keep full content identity
+while using public CommonCrypto SHA256 instead of repeated Perl
+hash processes. Bind the digest executable into the tool snapshot.
+Explicit non-Darwin opt-in uses the original command without locks.
+Default-off; full second-consumer admission remains incomplete.
+
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -3,3 +3,3 @@
+ {
+-  digest=$(/usr/bin/shasum -a 256 "$1") || return 2
++  digest=$("$(dirname "$0")/gambit-file-sha256" --raw "$1") || return 2
+   digest=${digest%% *}
+@@ -12,4 +12,4 @@
+ {
+-  /usr/bin/shasum -a 256 "$compiler" "$cc1" "$assembler" "$apple_as" \
+-    "$0" "$(dirname "$0")/gsc" "$(dirname "$0")/gambit-static-object-reuse"
++  "$(dirname "$0")/gambit-file-sha256" "$compiler" "$cc1" "$assembler" "$apple_as" \
++    "$0" "$(dirname "$0")/gsc" "$(dirname "$0")/gambit-static-object-reuse" "$(dirname "$0")/gambit-file-sha256"
+ }
+@@ -18,2 +18,6 @@
+ (
++  if test "$(uname -s)" != Darwin; then
++    eval "$BUILD_OBJ_CMD"
++    return $?
++  fi
+   lock="${BUILD_OBJ_OUTPUT_FILENAME_PARAM}.gambit-static-lock"
+diff --git a/bin/makefile.in b/bin/makefile.in
+--- a/bin/makefile.in
++++ b/bin/makefile.in
+@@ -94,3 +94,3 @@
+ 
+-RCFILES += gambit-static-object-reuse.unix
++RCFILES += gambit-static-object-reuse.unix gambit-file-sha256.c
+ 
+@@ -106,3 +106,3 @@
+ INSTFILES_BIN_LINK = $(INSTFILES_BIN_LINK_GSI) $(INSTFILES_BIN_LINK_GSC)
+-INSTFILES_BIN_PROG += gambit-static-object-reuse
++INSTFILES_BIN_PROG += gambit-static-object-reuse gambit-file-sha256
+ 
+@@ -126,3 +126,6 @@
+ 
+-core-post: gambit-static-object-reuse
++core-post: gambit-static-object-reuse gambit-file-sha256
++
++gambit-file-sha256: makefile $(srcdirpfx)gambit-file-sha256.c
++	$(C_COMPILER) $(FLAGS_EXE) -O2 -Wno-deprecated-declarations $(srcdirpfx)gambit-file-sha256.c -o gambit-file-sha256
+ 
+diff --git a/bin/gambit-file-sha256.c b/bin/gambit-file-sha256.c
+new file mode 100644
+--- /dev/null
++++ b/bin/gambit-file-sha256.c
+@@ -0,0 +1,84 @@
++#if !defined(__APPLE__) || !defined(__MACH__) || !defined(__GNUC__) || defined(__clang__)
++#error This experimental backend requires Darwin and GNU GCC.
++#endif
++
++#include <CommonCrypto/CommonDigest.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++static int file_digest(const char *path, unsigned char *digest) {
++  unsigned char buffer[1024 * 1024];
++  CC_SHA256_CTX context;
++  struct stat status;
++  int file = open(path, O_RDONLY);
++  if (file < 0) return -1;
++  if (fstat(file, &status) != 0) {
++    int saved = errno;
++    close(file);
++    errno = saved;
++    return -1;
++  }
++  if (!S_ISREG(status.st_mode)) {
++    close(file);
++    errno = EINVAL;
++    return -1;
++  }
++  if (!CC_SHA256_Init(&context)) {
++    close(file);
++    errno = EIO;
++    return -1;
++  }
++  for (;;) {
++    ssize_t count = read(file, buffer, sizeof(buffer));
++    if (count < 0 && errno == EINTR) continue;
++    if (count < 0) {
++      int saved = errno;
++      close(file);
++      errno = saved;
++      return -1;
++    }
++    if (count == 0) break;
++    if (!CC_SHA256_Update(&context, buffer, (CC_LONG)count)) {
++      close(file);
++      errno = EIO;
++      return -1;
++    }
++  }
++  if (close(file) != 0) return -1;
++  if (!CC_SHA256_Final(digest, &context)) {
++    errno = EIO;
++    return -1;
++  }
++  return 0;
++}
++
++int main(int argc, char **argv) {
++  int raw = argc == 3 && strcmp(argv[1], "--raw") == 0;
++  int start = raw ? 2 : 1;
++  if (argc <= start) return 2;
++  for (int index = start; index < argc; ++index) {
++    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
++    const char *path = argv[index];
++    int escaped = !raw && (strchr(path, '\\') || strchr(path, '\n'));
++    if (file_digest(path, digest) != 0) {
++      fprintf(stderr, "gambit-file-sha256: %s: %s\n", path, strerror(errno));
++      return 2;
++    }
++    if (escaped) putchar('\\');
++    for (int byte = 0; byte < CC_SHA256_DIGEST_LENGTH; ++byte) printf("%02x", (unsigned int)digest[byte]);
++    if (!raw) {
++      printf("  ");
++      for (const char *character = path; *character; ++character) {
++        if (*character == '\\') printf("\\\\");
++        else if (*character == '\n') printf("\\n");
++        else putchar(*character);
++      }
++    }
++    putchar('\n');
++  }
++  return fflush(stdout) == 0 && !ferror(stdout) ? 0 : 2;
++}
