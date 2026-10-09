@@ -11,7 +11,11 @@
     ".data/d1510-original-gnu-debug-sidecar-v1",
     ".data/d1510-stdlib-exclusive-cpu-v1",
     ".data/d1510-stdlib-native-lines-v2",
-    ".data/d1510-stdlib-hash-layout-v3"
+    ".data/d1510-stdlib-hash-layout-v3",
+    ".data/d1510-static-c-snapshot-mcp-driver-v1",
+    ".data/d1510-static-c-snapshot-ascent-v1",
+    ".data/d1510-ascent-pr1-latest-v1",
+    ".data/d1510-static-c-snapshot-mcp-qualification-v2"
   ],
   "protectedReceipts": [
     "patches/gerbil-v19-darwin/receipts/d1510-reader-batch-50-baseline.json",
@@ -19,6 +23,7 @@
     "patches/gerbil-v19-darwin/receipts/d1510-retained-56-baseline.json"
   ],
   "optionalReceipts": [
-    "patches/gerbil-v19-darwin/receipts/d1510-reader-whitespace-47-baseline.json"
+    "patches/gerbil-v19-darwin/receipts/d1510-reader-whitespace-47-baseline.json",
+    "patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json"
   ]
 }

@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from gerbil_bench import cleanup, dumps, retired, trees
+from gerbil_bench import cleanup, dumps, retired, sweep, trees
+from gerbil_bench.protection import protected_paths
 from gerbil_bench.execution import Budget, execute
 from gerbil_bench.runner import load_profile, run, validate_inventory
 from gerbil_bench.storage import atomic_json, digest, lease, relative
@@ -345,6 +346,71 @@ class FrameworkTests(unittest.TestCase):
         atomic_json(directory / 'report.json', dict(qualified=True, productionAdmitted=False))
         self.assertEqual(trees.plan(self.root)['targets'], [])
         self.assertEqual(len(trees.plan(self.root, completed=True)['targets']), 1)
+
+    def test_cleanup_protects_registered_worktrees(self):
+        (self.root / '.git').mkdir()
+        directory = self.root / '.data/d900-delivery'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(passed=False))
+        result = type('Result', (), dict(returncode=0, stdout='worktree ' + str(directory) + '\n'))()
+        with patch('gerbil_bench.protection.subprocess.run', return_value=result):
+            self.assertIn(directory, protected_paths(self.root))
+            self.assertEqual(trees.plan(self.root)['targets'], [])
+        with patch('gerbil_bench.protection.subprocess.run', return_value=type('Result', (), dict(returncode=1))()):
+            with self.assertRaises(ValueError):
+                protected_paths(self.root)
+
+    def test_running_old_tree_and_explicit_exclusions_are_protected(self):
+        directory = self.root / '.data/d900-running'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(state='running', passed=False))
+        self.assertEqual(trees.plan(self.root)['targets'], [])
+        atomic_json(directory / 'report.json', dict(state='terminal', passed=False))
+        self.assertEqual(trees.plan(self.root, exclude=['.data/d900-running'])['targets'], [])
+        self.assertEqual(trees.plan(self.root, exclude=['.data/d900-running/build/bin'])['targets'], [])
+
+    def test_cleanup_sweep_is_dry_by_default_then_bounded(self):
+        for name in ('d900-failed', 'd901-failed', 'd902-failed'):
+            directory = self.root / '.data' / name
+            directory.mkdir()
+            atomic_json(directory / 'report.json', dict(passed=False))
+        dry = sweep.sweep(self.root, 'dry', batch=1, batches=3)
+        self.assertEqual(dry['removedTargets'], 0)
+        self.assertEqual(len(dry['batches']), 3)
+        plans = [json.loads((self.root / row['plan']).read_text()) for row in dry['batches']]
+        self.assertEqual(len({value['targets'][0]['path'] for value in plans}), 3)
+        with patch('gerbil_bench.trees.ensure_not_open'):
+            applied = sweep.sweep(self.root, 'apply', batch=1, batches=2, apply=True)
+        self.assertEqual(applied['removedTargets'], 2)
+        self.assertTrue((self.root / '.data/d902-failed').exists())
+
+    def test_cleanup_sweep_reports_partial_removals_and_stops(self):
+        directory = self.root / '.data/d900-failed'
+        directory.mkdir()
+        atomic_json(directory / 'report.json', dict(passed=False))
+        def fail(root, plan, sha):
+            atomic_json(plan.with_name(plan.stem + '-applied.json'), dict(
+                complete=False, removed=[dict(path='.data/d900-failed', bytes=17)],
+                removedLogicalBytes=17, observedAvailableDeltaBytes=8))
+            raise OSError('removal interrupted')
+        with patch('gerbil_bench.trees.apply', side_effect=fail):
+            with self.assertRaises(OSError):
+                sweep.sweep(self.root, 'partial', apply=True, batches=3)
+        record = json.loads((self.root / '.data/bench/cleanup/partial/receipt.json').read_text())
+        self.assertEqual(record['removedTargets'], 1)
+        self.assertEqual(record['removedLogicalBytes'], 17)
+        self.assertEqual(record['state'], 'terminal')
+        self.assertFalse(record['complete'])
+        self.assertEqual(len(record['batches']), 1)
+
+    def test_cleanup_interrupt_retains_failed_terminal_receipt(self):
+        with patch('gerbil_bench.trees.plan', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                sweep.sweep(self.root, 'interrupted')
+        record = json.loads((self.root / '.data/bench/cleanup/interrupted/receipt.json').read_text())
+        self.assertEqual(record['state'], 'terminal')
+        self.assertFalse(record['complete'])
+        self.assertIn('KeyboardInterrupt', record['error'])
 
     def test_success_requires_final_ok(self):
         self.assertTrue(self.execution("print('OK')", final_ok=True)['passed'])

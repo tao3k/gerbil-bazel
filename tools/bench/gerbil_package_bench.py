@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from gerbil_bench import cleanup, dumps, inventory, retired, runner, trees
+from gerbil_bench import cleanup, dumps, inventory, retired, runner, sweep, trees
 from gerbil_bench.storage import atomic_json, digest, lease, relative
 
 
@@ -41,13 +41,25 @@ def main():
     tree.add_argument('--batch', type=int, default=20)
     tree.add_argument('--completed', action='store_true')
     tree.add_argument('--output', required=True)
+    tree.add_argument('--exclude', action='append', default=[])
+    retire = commands.add_parser('sweep')
+    retire.add_argument('--id', required=True)
+    retire.add_argument('--older-days', type=int, default=7)
+    retire.add_argument('--batches', type=int, default=1)
+    retire.add_argument('--batch', type=int, default=20)
+    retire.add_argument('--exclude', action='append', default=[])
+    retire.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     if args.command == 'run':
         receipt = runner.run(root, relative(root, args.profile), relative(root, args.toolchain),
                              args.id, args.rounds, args.retention)
         print(json.dumps({key: receipt[key] for key in ('package', 'decision', 'workers', 'runs', 'retention')}))
         return 0 if receipt['decision'] == 'ALLOW' else 1
-    if args.command == 'cleanup-plan':
+    if args.command == 'sweep':
+        value = sweep.sweep(root, args.id, days=args.older_days, batches=args.batches,
+                            batch=args.batch, apply=args.apply, exclude=args.exclude)
+        print(json.dumps(value))
+    elif args.command == 'cleanup-plan':
         output = relative(root, args.output)
         if not output.is_relative_to(root / '.data') or output.exists():
             parser.error('fresh .data plan output required')
@@ -75,7 +87,8 @@ def main():
         if not output.is_relative_to(root / '.data') or output.exists():
             parser.error('fresh .data plan output required')
         with lease(root, exclusive=True):
-            value = trees.plan(root, days=args.older_days, batch=args.batch, completed=args.completed)
+            value = trees.plan(root, days=args.older_days, batch=args.batch,
+                               completed=args.completed, exclude=args.exclude)
             atomic_json(output, value)
         print(json.dumps(dict(targets=len(value['targets']), planSha256=digest(output))))
     elif args.command == 'retired-plan':

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 
 from .storage import relative
 
@@ -44,6 +45,18 @@ def protected_paths(root):
         visit(json.loads(path.read_text()))
     for receipt in (root / '.data/bench/runs').glob('*/receipt.json'):
         protected.update(relative(root, path) for path in json.loads(receipt.read_text())['protectedPaths'])
+    # A delivery checkout is never an age-based disposable experiment.
+    if (root / '.git').exists():
+        result = subprocess.run(['git', '-C', str(root), 'worktree', 'list', '--porcelain'],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            raise ValueError('Git worktree inventory required before cleanup')
+        for line in result.stdout.splitlines():
+            if line.startswith('worktree '):
+                path = Path(line[len('worktree '):]).resolve()
+                if path.is_relative_to(root / '.data'):
+                    parts = path.relative_to(root).parts
+                    protected.add(root.joinpath(*parts[:2]))
     return protected
 
 

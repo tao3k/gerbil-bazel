@@ -12,22 +12,31 @@ from .retired import EXPERIMENT, failed
 from .storage import atomic_json, digest, lease, relative
 
 
-def plan(root, *, days=7, batch=20, completed=False):
+def plan(root, *, days=7, batch=20, completed=False, exclude=()):
     root = root.resolve()
     if days < 1 or not 1 <= batch <= 100:
         raise ValueError('positive age and bounded batch required')
     cutoff = time.time() - days * 86400
     protected = protected_paths(root)
+    excluded_roots = set()
+    for name in exclude:
+        path = relative(root, name)
+        if path in (root, root / '.data'):
+            protected.add(path)
+        elif path.is_relative_to(root / '.data'):
+            excluded_roots.add(root / '.data' / path.relative_to(root / '.data').parts[0])
     targets = []
     for path in sorted((root / '.data').iterdir()):
         if (not EXPERIMENT.fullmatch(path.name) or path.is_symlink() or not path.is_dir() or
-            intersects(path, protected)):
+            path in excluded_roots or intersects(path, protected)):
             continue
         report = path / 'report.json'
         sha, rejected, admitted, finished = None, False, False, False
         if report.is_file() and not report.is_symlink() and report.stat().st_size < 10_000_000:
             try:
                 record = json.loads(report.read_text())
+                if record.get('state') in ('running', 'preparing', 'pending'):
+                    continue
                 rejected, admitted = failed(record), record.get('productionAdmitted') is True
                 finished = record.get('qualified') is True or record.get('passed') is True
                 sha = digest(report)
@@ -44,6 +53,7 @@ def plan(root, *, days=7, batch=20, completed=False):
             break
     return dict(schema=1, action='retire-numbered-experiment-trees', olderDays=days,
                 includeCompleted=completed,
+                excludedPaths=list(exclude),
                 targets=targets, evidencePolicy='archive-top-two-level-text-and-receipts')
 
 
