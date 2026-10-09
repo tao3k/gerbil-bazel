@@ -15,6 +15,24 @@ SOURCE = SCRIPT.read_text()
 
 
 class SourceToolchainTests(unittest.TestCase):
+    def test_native_contract_has_no_ripgrep_dependency(self):
+        self.assertIn('"$fixture/path-receipt" "$CC"', CI)
+        self.assertNotIn('"$fixture/path-receipt" "$GERBIL_GCC"', CI)
+        script = (ROOT / 'patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh').read_text()
+        self.assertNotRegex(script, r'\brg\s')
+        self.assertEqual(script.count("grep -Ec '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$'"), 2)
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / 'concurrent.log'
+            for content, expected in (('GAMBIT-STATIC-OBJECT-HIT\n', 0),
+                                      ('GAMBIT-STATIC-OBJECT-MISS\n', 0),
+                                      ('GAMBIT-STATIC-OBJECT-HIT\nGAMBIT-STATIC-OBJECT-MISS\n', 1),
+                                      ('unrelated\n', 1)):
+                log.write_text(content)
+                result = subprocess.run(['bash', '-c',
+                                         'test "$(grep -Ec \'^GAMBIT-STATIC-OBJECT-(HIT|MISS)$\' "$1")" = 1',
+                                         'contract', str(log)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_static_contract_accepts_installed_current_symlink(self):
         script = ROOT / 'patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh'
         data = ROOT / '.data'

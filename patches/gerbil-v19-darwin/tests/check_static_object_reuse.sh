@@ -24,27 +24,27 @@ cp module.o control.o
 export GAMBIT_DARWIN_STATIC_OBJECT_REUSE=1
 "$bin/gsc" -obj module.c > first.log 2>&1
 cmp control.o module.o
-rg -q '^GAMBIT-STATIC-OBJECT-MISS$' first.log
+grep -q '^GAMBIT-STATIC-OBJECT-MISS$' first.log
 "$bin/gsc" -obj module.c > repeat.log 2>&1
 cmp control.o module.o
-rg -q '^GAMBIT-STATIC-OBJECT-HIT$' repeat.log
+grep -q '^GAMBIT-STATIC-OBJECT-HIT$' repeat.log
 "$bin/gsc" -obj -cc-options '-O2' module.c > options.log 2>&1
-if rg -q 'warning:' options.log; then
-  if rg -q '^GAMBIT-STATIC-OBJECT-HIT$' options.log; then exit 1; fi
+if grep -q 'warning:' options.log; then
+  if grep -q '^GAMBIT-STATIC-OBJECT-HIT$' options.log; then exit 1; fi
 else
-  rg -q '^GAMBIT-STATIC-OBJECT-MISS$' options.log
+  grep -q '^GAMBIT-STATIC-OBJECT-MISS$' options.log
 fi
 cp module.o options.o
 unset GAMBIT_DARWIN_STATIC_OBJECT_REUSE
 "$bin/gsc" -obj -cc-options '-O2' module.c > options-control.log 2>&1
 cmp options.o module.o
-if rg -q 'warning:' options.log; then cmp options.log options-control.log; fi
+if grep -q 'warning:' options.log; then cmp options.log options-control.log; fi
 export GAMBIT_DARWIN_STATIC_OBJECT_REUSE=1
 printf 'tampered-object\n' > module.o
 "$bin/gsc" -obj -cc-options '-O2' module.c > tamper.log 2>&1
-if rg -q '^GAMBIT-STATIC-OBJECT-HIT$' tamper.log; then exit 1; fi
+if grep -q '^GAMBIT-STATIC-OBJECT-HIT$' tamper.log; then exit 1; fi
 cmp options.o module.o
-if rg -q 'warning:' options-control.log; then cmp tamper.log options-control.log; fi
+if grep -q 'warning:' options-control.log; then cmp tamper.log options-control.log; fi
 "$bin/gsc" -obj module.c > concurrent-establish.log 2>&1
 cmp control.o module.o
 "$bin/gsc" -obj module.c > concurrent-a.log 2>&1 &
@@ -53,20 +53,20 @@ first=$!
 second=$!
 wait "$first"
 wait "$second"
-test "$(rg -c '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$' concurrent-a.log)" = 1
-test "$(rg -c '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$' concurrent-b.log)" = 1
-rg -q '^GAMBIT-STATIC-OBJECT-HIT$' concurrent-a.log concurrent-b.log
+test "$(grep -Ec '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$' concurrent-a.log)" = 1
+test "$(grep -Ec '^GAMBIT-STATIC-OBJECT-(HIT|MISS)$' concurrent-b.log)" = 1
+grep -q '^GAMBIT-STATIC-OBJECT-HIT$' concurrent-a.log concurrent-b.log
 cmp control.o module.o
 printf '#define VALUE 17\n' > probe.h
 printf '#include "probe.h"\nint probe(void) { return VALUE; }\n' > probe.c
 "$bin/gsc" -obj probe.c > header-cold.log 2>&1
 "$bin/gsc" -obj probe.c > header-first.log 2>&1
 "$bin/gsc" -obj probe.c > header-hit.log 2>&1
-rg -q '^GAMBIT-STATIC-OBJECT-HIT$' header-hit.log
+grep -q '^GAMBIT-STATIC-OBJECT-HIT$' header-hit.log
 cp probe.o header-before.o
 printf '#define VALUE 29\n' > probe.h
 "$bin/gsc" -obj probe.c > header-change.log 2>&1
-rg -q '^GAMBIT-STATIC-OBJECT-MISS$' header-change.log
+grep -q '^GAMBIT-STATIC-OBJECT-MISS$' header-change.log
 if cmp -s header-before.o probe.o; then exit 1; fi
 cp probe.o header-after.o
 unset GAMBIT_DARWIN_STATIC_OBJECT_REUSE
