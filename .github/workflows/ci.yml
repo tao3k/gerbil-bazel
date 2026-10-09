@@ -143,6 +143,8 @@ jobs:
           cp patches/gerbil-v19-darwin/tests/static_snapshot_ci.c "$fixture/probe.c"
           bash patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh \
             "$GERBIL_HOME/bin" "$fixture/receipt" "$GERBIL_HOME" "$fixture/probe.c"
+          bash patches/gerbil-v19-darwin/tests/check_static_snapshot_path_fallback.sh \
+            "$GERBIL_HOME/bin" "$fixture/path-receipt" "$GERBIL_GCC"
 
       - name: Test multi-VM global growth and GC
         run: gxi tools/ci/multiple_vm_globals.ss

@@ -1,0 +1,17 @@
+Subject: [DARWIN HARDENING] gerbil: install the static reuse driver helpers
+
+Gerbil copies its Gambit tools explicitly rather than invoking Gambit's install
+target. Copy the two required helpers alongside their source-built command
+driver. A missing helper fails installation instead of yielding a broken prefix.
+
+diff --git a/src/build.sh b/src/build.sh
+--- a/src/build.sh
++++ b/src/build.sh
+@@ -122,3 +122,7 @@ build_gambit()
+   cp -v gambit/gsi/gsi "${GERBIL_STAGE0}/bin"
+   cp -v gambit/gsc/gsc gambit/bin/gambuild-C "${GERBIL_BUILD_PREFIX}/bin"
++  if [ "$(uname -s)" = Darwin ]; then
++    cp -v gambit/bin/gambit-static-object-reuse gambit/bin/gambit-file-sha256 \
++       "${GERBIL_BUILD_PREFIX}/bin" || die
++  fi
+   cp -v gambit/include/gambit.h gambit/include/gambit-not*.h "${GERBIL_BUILD_PREFIX}/include"

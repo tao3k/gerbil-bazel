@@ -26,6 +26,7 @@ if [[ "$platform" == Darwin ]]; then
     patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch
     patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch
     patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch
+    patches/gerbil-v19-darwin/static-reuse-helper-install.patch
   )
   gambit_patches+=(
     patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch
@@ -39,6 +40,7 @@ if [[ "$platform" == Darwin ]]; then
   while IFS= read -r patch; do
     gambit_patches+=("patches/gerbil-v19-darwin/$patch")
   done < "$root/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"
+  gambit_patches+=(patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch)
 fi
 
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
