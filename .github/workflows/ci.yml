@@ -49,6 +49,17 @@ jobs:
       - name: Test source provisioning contracts
         run: python3 tools/ci/test_source_toolchain.py
 
+      - name: Verify frozen Darwin patch and retained performance contracts
+        run: |
+          python3 -m venv .ci/patch-contracts
+          .ci/patch-contracts/bin/pip install pytest
+          .ci/patch-contracts/bin/python -m pytest -q \
+            patches/gerbil-v19-darwin/tests/test_patch_lock.py \
+            patches/gerbil-v19-darwin/tests/test_mcp_v4_patch_lock.py \
+            patches/gerbil-v19-darwin/tests/test_mcp_v4_replay_preflight.py \
+            patches/gerbil-v19-darwin/tests/test_frozen_performance_summary.py \
+            patches/gerbil-v19-darwin/tests/test_frozen_safety_bundle.py
+
       - name: Resolve isolated source build directories
         shell: bash
         run: |
@@ -122,6 +133,18 @@ jobs:
 
       - name: Test Darwin command substitution contracts
         run: python3 patches/gerbil-v19-darwin/tests/test_gambuild_literal_substitution.py
+
+      - name: Test source-built Darwin static snapshot object contracts
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          fixture="$GITHUB_WORKSPACE/.data/ci-static-snapshot"
+          mkdir -p "$fixture"
+          cp patches/gerbil-v19-darwin/tests/static_snapshot_ci.c "$fixture/probe.c"
+          bash patches/gerbil-v19-darwin/tests/check_static_object_reuse.sh \
+            "$GERBIL_HOME/bin" "$fixture/receipt" "$GERBIL_HOME" "$fixture/probe.c"
+          bash patches/gerbil-v19-darwin/tests/check_static_snapshot_path_fallback.sh \
+            "$GERBIL_HOME/bin" "$fixture/path-receipt" "$GERBIL_GCC"
 
       - name: Test multi-VM global growth and GC
         run: gxi tools/ci/multiple_vm_globals.ss

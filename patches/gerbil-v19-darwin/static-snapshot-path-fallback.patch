@@ -1,0 +1,18 @@
+Subject: [DARWIN HARDENING] gambit: keep multiline source paths uncached
+
+Apply after the frozen six-patch static snapshot series. Do not alter the
+historical patch lock. GCC accepts these paths, but snapshot #line directives
+and line-oriented normalization cannot represent them safely.
+
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -74,3 +74,7 @@ gambit_static_object_locked()
+-  case "$source" in *'"'*|*'\'*) gambit_static_original; return $? ;; esac
++  carriage_return=$(printf '\r')
++  case "$source" in
++    *'"'*|*'\'*|*"$carriage_return"*|*'
++'*) gambit_static_original; return $? ;;
++  esac
+   temporary=$(mktemp -d "${output}.gambit-static.XXXXXX") || return 2
+   trap 'rm -rf "$temporary"; rmdir "$lock"' 0

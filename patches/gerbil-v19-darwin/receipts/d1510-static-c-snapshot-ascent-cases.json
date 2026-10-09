@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "runs": [
+    {
+      "receipt": ".data/d1510-static-c-snapshot-ascent-receipt-v1",
+      "exitStatus": 0,
+      "completeSeconds": 77.73,
+      "userSeconds": 107.73,
+      "systemSeconds": 41.38,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 0,
+      "staticObjectMisses": 72,
+      "objectCalls": 73,
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "c18d5602f26351e864a6fed25e6f745ffc13af7746c8ec22f1539515dd03e466"
+    },
+    {
+      "receipt": ".data/d1510-static-c-snapshot-ascent-receipt-v2",
+      "exitStatus": 0,
+      "completeSeconds": 7.7,
+      "userSeconds": 6.47,
+      "systemSeconds": 2.31,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 0,
+      "staticObjectMisses": 0,
+      "objectCalls": 0,
+      "entryCacheHit": true,
+      "entryCacheMiss": false,
+      "outputSha256": "cf652e1f14d9f5ca0ee83ea2cb7533f89c50128afe73f7abdfe5979038a596e9"
+    }
+  ],
+  "correctnessPassed": true
+}

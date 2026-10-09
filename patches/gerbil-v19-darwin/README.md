@@ -1,5 +1,10 @@
 # Gerbil v0.19 Darwin build patch stack
 
+The [frozen six-patch static snapshot bundle](FROZEN-SNAPSHOT.md) preserves the
+35.552-37.770 second complete MCP cold builds and 86.924 second complete test
+pass. Source CI compiles this opt-in extension on Darwin; these retained timings
+are not new CI results or general release/ASCENT admission.
+
 This directory carries the local validation stack for the Gerbil v0.19
 Darwin build work. The release path is the measured four-patch performance
 stack. Later observability and architecture experiments remain separate until

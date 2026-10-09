@@ -15,6 +15,57 @@ SOURCE = SCRIPT.read_text()
 
 
 class SourceToolchainTests(unittest.TestCase):
+    def test_review_hardening_does_not_rewrite_frozen_lock(self):
+        self.assertIn('static-reuse-helper-install.patch', SOURCE)
+        self.assertIn('static-snapshot-path-fallback.patch', SOURCE)
+        self.assertLess(SOURCE.index('done < "$root/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"'),
+                        SOURCE.index('gambit_patches+=(patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch)'))
+        self.assertIn('check_static_snapshot_path_fallback.sh', CI)
+
+    def test_darwin_installs_required_helpers_and_linux_is_unchanged(self):
+        patch = (ROOT / 'patches/gerbil-v19-darwin/static-reuse-helper-install.patch').read_text()
+        block = '\n'.join(line[1:] for line in patch.splitlines()
+                          if line.startswith('+') and not line.startswith('+++'))
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            source = directory / 'gambit/bin'
+            source.mkdir(parents=True)
+            destination = directory / 'installed/bin'
+            destination.mkdir(parents=True)
+            helpers = ('gambit-static-object-reuse', 'gambit-file-sha256')
+            for name in helpers:
+                path = source / name
+                path.write_text('#!/bin/sh\nexit 0\n')
+                path.chmod(0o755)
+            env = dict(os.environ, GERBIL_BUILD_PREFIX=str(destination.parent))
+            def install(platform):
+                command = 'uname() { printf "%s\\n" ' + platform + '; }; die() { exit 77; };\n' + block
+                return subprocess.run(['bash', '-ec', command], cwd=directory,
+                                      env=env, capture_output=True, text=True)
+            linux = install('Linux')
+            self.assertEqual(linux.returncode, 0, linux.stderr)
+            self.assertEqual(list(destination.iterdir()), [])
+            darwin = install('Darwin')
+            self.assertEqual(darwin.returncode, 0, darwin.stderr)
+            for name in helpers:
+                self.assertEqual((destination / name).read_bytes(), (source / name).read_bytes())
+                self.assertTrue(os.access(destination / name, os.X_OK))
+            for name in helpers:
+                saved = source / (name + '.saved')
+                (source / name).rename(saved)
+                self.assertEqual(install('Darwin').returncode, 77)
+                saved.rename(source / name)
+
+    def test_static_snapshot_series_is_locked_and_darwin_only(self):
+        before_darwin, darwin = SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)
+        self.assertNotIn('static-c-snapshot-candidate.series', before_darwin)
+        self.assertIn('static-c-snapshot-candidate.series', darwin)
+        self.assertIn('--lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2', darwin)
+        self.assertIn('apply --reverse', SOURCE)
+        self.assertIn('gambit-file-sha256', SOURCE)
+        self.assertNotIn('export GAMBIT_DARWIN_STATIC_OBJECT_REUSE', SOURCE)
+        self.assertIn('check_static_object_reuse.sh', CI)
+
     def test_revision_matches_audited_profile(self):
         profile = json.loads((ROOT / 'patches/gerbil-v19-darwin/runtime-object-reuse.json').read_text())
         self.assertIn('GERBIL_SOURCE_REVISION: ' + profile['gerbilRevision'], CI)

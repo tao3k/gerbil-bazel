@@ -1,0 +1,40 @@
+{
+  "schema": "mcp-v4-driver-patch-lock-v1",
+  "series": "mcp-v4-driver.series",
+  "platform": "Darwin with genuine GNU GCC",
+  "defaultEnabled": false,
+  "runtimePrerequisite": "d1510-reader-whitespace-47-baseline.json",
+  "performancePolicy": "d1510-mcp-v4-performance-lock.json",
+  "measuredCheckpoint": "d1510-static-object-reuse-v4-checkpoint.json",
+  "receiptFiles": {
+    "d1510-reader-whitespace-47-baseline.json": "1bf348f39aeec7568137fb11602fb21a298dc64ca347400ec180829d76a912c8",
+    "d1510-mcp-v4-performance-lock.json": "7f0d4ae00bf6dfba3cc4e01ed5a788009851c79fda4d749c89d1adeba3fbb43d",
+    "d1510-static-object-reuse-v4-checkpoint.json": "584a35c650f43bfc99460cfcbee43749e321dc3f45203e37640ae7e5e4cd9433"
+  },
+  "sourceFiles": {
+    "gambit-file-sha256.c": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a"
+  },
+  "rawEvidenceFiles": {
+    ".data/d1510-static-reuse-mcp-v4/report.json": "4affc9a0c4c901e36eb50b16983d66eb67a67dcd33c17f43de3659f8f00a775d",
+    ".data/d1510-static-reuse-mcp-v4/tests/report.json": "b76e7ac843d1db2021745ae800731be3154bdbf2415779d277294045d458a294"
+  },
+  "patches": {
+    "0014-gambit-darwin-native-object-capture.patch": "118f06c6ea34cd4d43e8566ffbbe0e13c6c139d84bf0ee4e055bd6ca4caed051",
+    "0015-gambit-darwin-literal-build-substitution.patch": "73f3e74faad485a1a6678cbc1b398e9fa934247e642e24a588f0254b97a49e1f",
+    "0019-gambit-darwin-static-object-reuse-candidate.patch": "76168e41fba2978647d5fad5ca420f17a6133d0a0835fa4e81ada7aac18444fc",
+    "0020-gambit-darwin-static-object-reuse-hardening.patch": "aaaa3e820a8095e9421c5048397117e84adce2c019ec691aa0f4497e9ca46c16",
+    "0021-gambit-darwin-native-static-reuse-digests.patch": "4e7a6350595673febb39a4b6a555fd75db98ad68708940a98186548a25278604"
+  },
+  "helperSha256": "08d8ebe59d24a7098561c909c5b8e04c66aff78794d5f68f1cedddf1f2168646",
+  "runtimeFiles": {
+    "gerbil": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21"
+  },
+  "driverFiles": {
+    "gambuild-C": "d9d537df086e1e40fcd78f0f0713cdd16df71b4101f459bf6b6625c9c2e67779",
+    "gambit-static-object-reuse": "08d8ebe59d24a7098561c909c5b8e04c66aff78794d5f68f1cedddf1f2168646",
+    "gambit-file-sha256": "e0124f9b69561d6fc34b148aa57e1573aebb7f3adc0ef4470b657f895156f2df"
+  },
+  "nativeDigestSourceSha256": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a",
+  "excluded": ["generated-C dispatcher prototype", "MCP-specific business changes", "active ASCENT scheduling changes"],
+  "scope": "Exact measured driver extension. This is not a complete latest-staging toolchain rebuild or general ASCENT admission."
+}
