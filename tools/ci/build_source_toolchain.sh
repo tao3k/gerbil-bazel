@@ -7,8 +7,9 @@ GERBIL_SOURCE_REVISION="${GERBIL_SOURCE_REVISION:-$(jq -r .gerbilRevision "$prof
 GAMBIT_SOURCE_REVISION="${GAMBIT_SOURCE_REVISION:-$(jq -r .gambitRevision "$profile")}"
 : "${GERBIL_SOURCE_DIRECTORY:?isolated source directory required}"
 : "${GERBIL_PREFIX:?isolated install prefix required}"
-[[ "$GERBIL_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
-[[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
+# Bash 3.2 does not apply errexit to standalone conditional commands.
+[[ "$GERBIL_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 1
+[[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 1
 source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
 gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
@@ -57,10 +58,10 @@ if [[ "$platform" == Darwin ]]; then
   grep -Eq '^#define __GNUC__ 16$' <<< "$macros"
   cores="$(sysctl -n hw.physicalcpu)"
 else
-  [[ "$platform" == Linux ]]
+  [[ "$platform" == Linux ]] || exit 1
   cores="$(getconf _NPROCESSORS_ONLN)"
 fi
-[[ "$cores" =~ ^[1-9][0-9]*$ ]]
+[[ "$cores" =~ ^[1-9][0-9]*$ ]] || exit 1
 export CC="$compiler" GERBIL_GCC="$compiler" GERBIL_BUILD_CORES="$cores"
 compiler_hash="$(sha256_file "$compiler")"
 patchset_hash="$({
@@ -91,14 +92,14 @@ verify() {
 
 case "${1:-}" in
   prepare)
-    [[ ! -e "$source_dir" ]]
+    [[ ! -e "$source_dir" ]] || exit 1
     git init "$source_dir"
     git -C "$source_dir" remote add origin "$(jq -r .upstream "$profile")"
     git -C "$source_dir" fetch --depth=256 origin "$GERBIL_SOURCE_REVISION"
-    [[ "$(git -C "$source_dir" rev-parse FETCH_HEAD)" == "$GERBIL_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir" rev-parse FETCH_HEAD)" == "$GERBIL_SOURCE_REVISION" ]] || exit 1
     git -C "$source_dir" checkout --detach "$GERBIL_SOURCE_REVISION"
     git -C "$source_dir" submodule update --init --depth=1
-    [[ "$(git -C "$source_dir/src/gambit" rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir/src/gambit" rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]] || exit 1
     for patch in "${gerbil_patches[@]}"; do
       git -C "$source_dir" apply "$root/$patch"
     done
@@ -115,7 +116,7 @@ case "${1:-}" in
     printf 'cache_identity=%s\n' "$identity" >> "${GITHUB_OUTPUT:?}"
     ;;
   build)
-    [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$GERBIL_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$GERBIL_SOURCE_REVISION" ]] || exit 1
     unset GERBIL_HOME GERBIL_LOADPATH GERBIL_GSC GAMBOPT GERBIL_BUILD_PREFIX
     export GERBIL_PATH="$source_dir/ci-gerbil-path"
     export CFLAGS="-pipe${CFLAGS:+ $CFLAGS}"
@@ -128,7 +129,7 @@ case "${1:-}" in
     fi
     cd "$source_dir"
     ./configure "${args[@]}"
-    [[ "$(git -C src/gambit rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]]
+    [[ "$(git -C src/gambit rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]] || exit 1
     for patch in "${gambit_patches[@]}"; do
       git -C src/gambit apply "$root/$patch"
     done

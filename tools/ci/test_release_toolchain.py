@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = json.loads((ROOT / 'tools/toolchain/profile.json').read_text())
+SHELL = os.environ.get('TOOLCHAIN_TEST_SHELL', 'bash')
 
 
 class ReleaseTests(unittest.TestCase):
@@ -55,7 +56,7 @@ exit 99
         (directory / (self.tag + '.json')).write_text(json.dumps(self.receipt))
 
     def publish(self):
-        return subprocess.run(['bash', str(ROOT / 'tools/release/publish_toolchain.sh'),
+        return subprocess.run([SHELL, str(ROOT / 'tools/release/publish_toolchain.sh'),
                                str(self.artifacts)], env=self.env, text=True, capture_output=True)
 
     def test_new_release(self):
@@ -125,7 +126,7 @@ exit 99
         env = dict(self.env, GITHUB_OUTPUT=str(self.directory / 'outputs'),
                    GITHUB_REPOSITORY='tao3k/gerbil-bazel', SOURCE_RUN='', UPSTREAM_REF='')
         env.update(overrides)
-        return subprocess.run(['bash', str(ROOT / 'tools/release/plan_publish.sh')],
+        return subprocess.run([SHELL, str(ROOT / 'tools/release/plan_publish.sh')],
                               cwd=ROOT, env=env, text=True, capture_output=True)
 
     def test_manual_plan_defaults_to_both_platforms(self):
@@ -147,7 +148,7 @@ exit 99
         for changes in ({}, {'head_sha':'0' * 40}, {'head_branch':'feature'},
                         {'conclusion':'failure'}, {'name':'Other'}, {'event':'pull_request'}):
             env['API_RUN'] = json.dumps(dict(admitted, **changes))
-            result = subprocess.run(['bash', str(ROOT / 'tools/release/plan_publish.sh')],
+            result = subprocess.run([SHELL, str(ROOT / 'tools/release/plan_publish.sh')],
                                     cwd=ROOT, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode == 0, not changes, result.stderr)
             if not changes:
@@ -172,7 +173,7 @@ exit 99
                 (prefix / 'ci-source-toolchain.json').write_text(json.dumps(receipt))
                 output = self.directory / ('release-' + system)
                 env = dict(self.env, GERBIL_PREFIX=str(prefix), GERBIL_RELEASE_DIRECTORY=str(output))
-                result = subprocess.run(['bash', str(ROOT / 'tools/release/package_toolchain.sh')],
+                result = subprocess.run([SHELL, str(ROOT / 'tools/release/package_toolchain.sh')],
                                         env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 archive, = output.glob('*.tar.gz')

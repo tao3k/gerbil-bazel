@@ -99,6 +99,7 @@ jobs:
         run: |
           python3 tools/ci/test_source_toolchain.py
           python3 tools/ci/test_release_toolchain.py
+          TOOLCHAIN_TEST_SHELL=/bin/bash python3 tools/ci/test_release_toolchain.py
 
       - name: Check out exact staging and validate current patches
         id: source

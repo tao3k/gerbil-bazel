@@ -11,7 +11,7 @@ patchset=$(jq -r .patchsetHash "$receipt")
 platform=$(jq -r .platform "$receipt")
 profile=$(jq -r .buildProfile "$receipt")
 version=$(gxi -v)
-[[ "$version" == "Gerbil ${revision:0:7}"* ]]
+[[ "$version" == "Gerbil ${revision:0:7}"* ]] || exit 1
 identity_hash=$(jq -r .identity "$receipt" | shasum -a 256 | awk '{print $1}')
 tag="gerbil-v0.19-$revision-$platform-$profile-patch${patchset:0:12}-build${identity_hash:0:12}"
 output="${GERBIL_RELEASE_DIRECTORY:-$root/.ci/release}"
@@ -20,7 +20,7 @@ stage=$(mktemp -d "$output/.capability.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 name="gerbil-v0.19-$platform"
 cp -a "$GERBIL_PREFIX" "$stage/$name"
-(unset GAMBOPT; source "$stage/$name/activate"; [[ $(gxi -v) == "$version" ]])
+(unset GAMBOPT; source "$stage/$name/activate"; [[ $(gxi -v) == "$version" ]] || exit 1)
 jq -n --arg version "$version" --arg revision "$revision" --arg patchset "$patchset" \
   --arg platform "$platform" --arg profile "$profile" \
   '{schema:"gerbil-bazel.toolchain-release.v1", version:$version,
