@@ -66,15 +66,15 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.commit }}
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+        if: needs.plan.outputs.source_run == '' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends build-essential ca-certificates git jq libsqlite3-dev libssl-dev openssl pkg-config sqlite3 zlib1g-dev
       - name: Set up Homebrew
-        if: runner.os == 'macOS'
+        if: needs.plan.outputs.source_run == '' && runner.os == 'macOS'
         uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
       - name: Install macOS dependencies
-        if: runner.os == 'macOS'
+        if: needs.plan.outputs.source_run == '' && runner.os == 'macOS'
         run: |
           brew install gcc jq openssl@3 pkg-config sqlite zlib
           echo "CC=$(command -v gcc-16)" >> "$GITHUB_ENV"

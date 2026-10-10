@@ -150,6 +150,10 @@ exit 99
             result = subprocess.run(['bash', str(ROOT / 'tools/release/plan_publish.sh')],
                                     cwd=ROOT, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode == 0, not changes, result.stderr)
+            if not changes:
+                values = dict(line.split('=', 1) for line in (self.directory / 'outputs').read_text().splitlines())
+                self.assertEqual([row['runner'] for row in json.loads(values['matrix'])['include']],
+                                 ['ubuntu-latest', 'ubuntu-latest'])
 
     def test_package_both_platforms_and_preserve_manifest(self):
         for system, platform in PROFILE['platforms'].items():

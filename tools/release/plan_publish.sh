@@ -12,9 +12,10 @@ if [[ -n "$source_run" ]]; then
     jq -e --arg sha "$commit" '.head_sha == $sha and .head_branch == "main" and
       .conclusion == "success" and .name == "CI" and .event == "push"'
 fi
-matrix=$(jq -cn --arg platform "$platform" \
+matrix=$(jq -cn --arg platform "$platform" --arg source_run "$source_run" \
   '{include:[{platform:"linux-x86_64",runner:"ubuntu-latest",os:"Linux"},
              {platform:"darwin-aarch64",runner:"macos-26",os:"macOS"}] |
-    map(select($platform == "both" or .platform == $platform))}')
+    map(select($platform == "both" or .platform == $platform))} |
+    if $source_run != "" then .include[].runner = "ubuntu-latest" else . end')
 [[ $(jq '.include|length' <<< "$matrix") -gt 0 ]]
 printf 'matrix=%s\ncommit=%s\nsource_run=%s\n' "$matrix" "$commit" "$source_run" >> "${GITHUB_OUTPUT:?}"
