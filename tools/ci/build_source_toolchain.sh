@@ -2,12 +2,14 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-: "${GERBIL_SOURCE_REVISION:?exact Gerbil revision required}"
-: "${GAMBIT_SOURCE_REVISION:?exact Gambit gitlink required}"
+profile="$root/tools/toolchain/profile.json"
+GERBIL_SOURCE_REVISION="${GERBIL_SOURCE_REVISION:-$(jq -r .gerbilRevision "$profile")}"
+GAMBIT_SOURCE_REVISION="${GAMBIT_SOURCE_REVISION:-$(jq -r .gambitRevision "$profile")}"
 : "${GERBIL_SOURCE_DIRECTORY:?isolated source directory required}"
 : "${GERBIL_PREFIX:?isolated install prefix required}"
-[[ "$GERBIL_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
-[[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
+# Bash 3.2 does not apply errexit to standalone conditional commands.
+[[ "$GERBIL_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 1
+[[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 1
 source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
 gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
@@ -56,10 +58,10 @@ if [[ "$platform" == Darwin ]]; then
   grep -Eq '^#define __GNUC__ 16$' <<< "$macros"
   cores="$(sysctl -n hw.physicalcpu)"
 else
-  [[ "$platform" == Linux ]]
+  [[ "$platform" == Linux ]] || exit 1
   cores="$(getconf _NPROCESSORS_ONLN)"
 fi
-[[ "$cores" =~ ^[1-9][0-9]*$ ]]
+[[ "$cores" =~ ^[1-9][0-9]*$ ]] || exit 1
 export CC="$compiler" GERBIL_GCC="$compiler" GERBIL_BUILD_CORES="$cores"
 compiler_hash="$(sha256_file "$compiler")"
 patchset_hash="$({
@@ -67,6 +69,7 @@ patchset_hash="$({
   for patch in "${gambit_patches[@]}"; do sha256_file "$root/$patch"; done
   sha256_file "$root/tools/ci/build_source_toolchain.sh"
   sha256_file "$root/tools/release/activate-gerbil.sh"
+  sha256_file "$profile"
 } | shasum -a 256 | awk '{print $1}')"
 identity="$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash"
 
@@ -89,14 +92,14 @@ verify() {
 
 case "${1:-}" in
   prepare)
-    [[ ! -e "$source_dir" ]]
+    [[ ! -e "$source_dir" ]] || exit 1
     git init "$source_dir"
-    git -C "$source_dir" remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
+    git -C "$source_dir" remote add origin "$(jq -r .upstream "$profile")"
     git -C "$source_dir" fetch --depth=256 origin "$GERBIL_SOURCE_REVISION"
-    [[ "$(git -C "$source_dir" rev-parse FETCH_HEAD)" == "$GERBIL_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir" rev-parse FETCH_HEAD)" == "$GERBIL_SOURCE_REVISION" ]] || exit 1
     git -C "$source_dir" checkout --detach "$GERBIL_SOURCE_REVISION"
     git -C "$source_dir" submodule update --init --depth=1
-    [[ "$(git -C "$source_dir/src/gambit" rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir/src/gambit" rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]] || exit 1
     for patch in "${gerbil_patches[@]}"; do
       git -C "$source_dir" apply "$root/$patch"
     done
@@ -113,21 +116,20 @@ case "${1:-}" in
     printf 'cache_identity=%s\n' "$identity" >> "${GITHUB_OUTPUT:?}"
     ;;
   build)
-    [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$GERBIL_SOURCE_REVISION" ]]
+    [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$GERBIL_SOURCE_REVISION" ]] || exit 1
     unset GERBIL_HOME GERBIL_LOADPATH GERBIL_GSC GAMBOPT GERBIL_BUILD_PREFIX
     export GERBIL_PATH="$source_dir/ci-gerbil-path"
     export CFLAGS="-pipe${CFLAGS:+ $CFLAGS}"
     args=("--prefix=$GERBIL_PREFIX" "--with-gambit=$GAMBIT_SOURCE_REVISION"
-          "--version-string=${GERBIL_SOURCE_REVISION:0:7}" --enable-march=
-          --enable-single-host=0 --enable-multiple-vms --enable-smp)
-    if [[ "$platform" == Darwin ]]; then
+          "--version-string=${GERBIL_SOURCE_REVISION:0:7}")
+    while IFS= read -r flag; do args+=("$flag"); done < <(
+      jq -r --arg platform "$platform" '.configure[], .platforms[$platform].configure[]' "$profile")
+    if [[ $(jq -r --arg platform "$platform" '.platforms[$platform].aotTools' "$profile") == true ]]; then
       export GERBIL_BUILD_AOT_TOOLS=yes
-      args+=(--enable-c-opt=-O1 --enable-c-opt-rts=yes --enable-gcc-opts
-             --enable-inline-jumps --enable-dynamic-clib --enable-trust-c-tco)
     fi
     cd "$source_dir"
     ./configure "${args[@]}"
-    [[ "$(git -C src/gambit rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]]
+    [[ "$(git -C src/gambit rev-parse HEAD)" == "$GAMBIT_SOURCE_REVISION" ]] || exit 1
     for patch in "${gambit_patches[@]}"; do
       git -C src/gambit apply "$root/$patch"
     done
@@ -157,9 +159,14 @@ case "${1:-}" in
     jq -n --arg identity "$identity" --arg sourceRevision "$GERBIL_SOURCE_REVISION" \
       --arg gambitRevision "$GAMBIT_SOURCE_REVISION" --arg compilerHash "$compiler_hash" \
       --arg patchsetHash "$patchset_hash" --argjson cores "$cores" --argjson multipleVms "$multiple_vms" \
+      --arg platform "$(jq -r --arg platform "$platform" '.platforms[$platform].capability' "$profile")" \
+      --arg buildProfile "$(jq -r --arg platform "$platform" '.platforms[$platform].buildProfile' "$profile")" \
       '{identity:$identity, sourceRevision:$sourceRevision, gambitRevision:$gambitRevision,
         compilerHash:$compilerHash, patchsetHash:$patchsetHash, cores:$cores, multipleVms:$multipleVms,
+        platform:$platform, buildProfile:$buildProfile,
+        configureArguments:$ARGS.positional,
         scope:"source-toolchain-construction-not-D1510-performance-admission"}' \
+      --args -- "${args[@]}" \
       > "$GERBIL_PREFIX/ci-source-toolchain.json"
     verify
     ;;

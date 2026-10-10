@@ -17,6 +17,7 @@ gerbil.host(
         "Gerbil f0badc7",
         "Gerbil d801e7a",
         "Gerbil 1cfb032",
+        "Gerbil 1c6c153",
     ],
 )
 gerbil.host(
@@ -25,6 +26,7 @@ gerbil.host(
         "Gerbil f0badc7",
         "Gerbil d801e7a",
         "Gerbil 1cfb032",
+        "Gerbil 1c6c153",
     ],
     project_dependency_source_packages = ["clan"],
     project_library_relative_path = "project-library",

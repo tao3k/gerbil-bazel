@@ -79,7 +79,15 @@ source revisions, GNU compiler hash and applied patchset. Linux and Darwin both
 enable `--enable-multiple-vms` and `--enable-smp`, check the generated and
 installed headers, and exercise global growth across GC. The shared Gambit
 capacity patch keeps global-cell addresses stable while adding segments.
-Immutable publication remains a separate distribution release workflow.
+`tools/toolchain/profile.json` is the current source/gitlink/configure contract.
+CI and manual publication both use `tools/ci/build_source_toolchain.sh`; Bazel
+providers consume the resulting installation or immutable capability, without
+a separate set of source-build flags. Darwin-only additions remain scoped there.
+Successful main push CI automatically publishes both Linux x86_64 and Darwin
+ARM64 by distributing its exact validated artifacts, without another build.
+Manual publication defaults to both platforms and can distribute an exact
+successful main CI run using `source_run_id`. Existing immutable releases are
+reused only after identity and recorded checksum verification, never overwritten.
 The shared profile also carries Gambit's private global-setup state fix:
 the caller supplies its processor state rather than leaving
 `___GLOCELL` without one. This new VM profile is not the retained D1510

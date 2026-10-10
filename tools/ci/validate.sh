@@ -65,13 +65,13 @@ verify_gerbil_toolchain() {
   if [[ -n "${GERBIL_EXPECTED_VERSION_PREFIX:-}" ]]; then
     grep -F "$GERBIL_EXPECTED_VERSION_PREFIX" "$version_path" >/dev/null
   else
-    grep -E 'Gerbil (f0badc7|d801e7a|1cfb032)' "$version_path" >/dev/null
+    grep -E 'Gerbil (f0badc7|d801e7a|1cfb032|1c6c153)' "$version_path" >/dev/null
   fi
 }
 
 run_phase gerbil-toolchain verify_gerbil_toolchain
 gerbil_version="$(
-  grep -E 'Gerbil (f0badc7|d801e7a|1cfb032)' .ci/gerbil-version.txt | head -n 1
+  grep -E 'Gerbil (f0badc7|d801e7a|1cfb032|1c6c153)' .ci/gerbil-version.txt | head -n 1
 )"
 run_phase query "$bazel_bin" query //...
 run_phase build "$bazel_bin" build //tests/smoke:compile

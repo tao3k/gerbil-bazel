@@ -19,10 +19,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GERBIL_SOURCE_REVISION: 1cfb032c7a1612637da6205f5f8a15683eba3ba0
-  GAMBIT_SOURCE_REVISION: ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f
-
 jobs:
   bazel:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.refresh_lock }}
@@ -37,17 +33,14 @@ jobs:
         include:
           - runner: ubuntu-latest
             gerbil_provider: source-host
-            gerbil_version_label: v0.19-1cfb032
+            gerbil_version_label: v0.19-staging
           - runner: macos-26
             gerbil_provider: source-host
-            gerbil_version_label: v0.19-1cfb032
+            gerbil_version_label: v0.19-staging
 
     steps:
       - name: Check out gerbil-bazel
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Test source provisioning contracts
-        run: python3 tools/ci/test_source_toolchain.py
 
       - name: Verify frozen Darwin patch and retained performance contracts
         run: |
@@ -66,6 +59,7 @@ jobs:
           {
             echo "GERBIL_SOURCE_DIRECTORY=$RUNNER_TEMP/gerbil-ci-source"
             echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-ci-install"
+            python3 -c 'import json; p=json.load(open("tools/toolchain/profile.json")); print("GERBIL_SOURCE_REVISION="+p["gerbilRevision"]); print("GAMBIT_SOURCE_REVISION="+p["gambitRevision"])'
           } >> "$GITHUB_ENV"
 
       - name: Install Linux consumer dependencies
@@ -100,6 +94,12 @@ jobs:
           echo "CC=$(command -v gcc-16)" >> "$GITHUB_ENV"
           echo "CXX=$(command -v g++-16)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Test source provisioning and release contracts
+        run: |
+          python3 tools/ci/test_source_toolchain.py
+          python3 tools/ci/test_release_toolchain.py
+          TOOLCHAIN_TEST_SHELL=/bin/bash python3 tools/ci/test_release_toolchain.py
 
       - name: Check out exact staging and validate current patches
         id: source
@@ -186,11 +186,25 @@ jobs:
           jq -e '."$id" | endswith("gerbil-bazel.build-scenario-receipt.v1.schema.json")' \
             schemas/gerbil-bazel.build-scenario-receipt.v1.schema.json >/dev/null
 
+      - name: Package the validated source capability
+        id: capability
+        run: bash tools/release/package_toolchain.sh
+
+      - name: Upload the validated source capability
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: v19-source-${{ runner.os }}
+          include-hidden-files: true
+          path: .ci/release/*
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload validation receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-receipt
+          include-hidden-files: true
           path: |
             .ci/gerbil-version.txt
             .ci/receipts/*.json
