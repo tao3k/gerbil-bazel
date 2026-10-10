@@ -12,6 +12,7 @@ SCRIPT = ROOT / 'tools/ci/build_source_toolchain.sh'
 CI = (ROOT / '.github/workflows/ci.yml').read_text()
 PUBLISH = (ROOT / '.github/workflows/publish-v19.yml').read_text()
 SOURCE = SCRIPT.read_text()
+PROFILE = json.loads((ROOT / 'tools/toolchain/profile.json').read_text())
 
 
 class SourceToolchainTests(unittest.TestCase):
@@ -66,15 +67,13 @@ class SourceToolchainTests(unittest.TestCase):
             self.assertFalse((directory / 'missing-output').exists())
 
     def test_release_builds_and_hashes_frozen_darwin_bundle(self):
-        identity = PUBLISH.split('patchset_sha="$({', 1)[1].split('} | git hash-object --stdin)', 1)[0]
-        self.assertIn('if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]', identity)
-        self.assertIn('done < patches/gerbil-v19-darwin/static-c-snapshot-candidate.series', identity)
+        self.assertNotIn('git -C src/gambit apply', PUBLISH)
+        self.assertNotIn('./configure', PUBLISH)
+        for mode in ('prepare', 'build', 'verify'):
+            self.assertIn('bash tools/ci/build_source_toolchain.sh ' + mode, PUBLISH)
         for name in ('static-reuse-helper-install.patch', 'static-snapshot-path-fallback.patch'):
-            self.assertIn(name, identity)
-            self.assertRegex(PUBLISH, r'git -C .* apply .*' + re.escape(name))
-        self.assertIn('done < "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"', PUBLISH)
-        self.assertIn('--lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2', PUBLISH)
-        self.assertNotIn('apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0015-', PUBLISH)
+            self.assertIn(name, SOURCE)
+        self.assertIn('sha256_file "$profile"', SOURCE)
 
     def test_review_hardening_does_not_rewrite_frozen_lock(self):
         self.assertIn('static-reuse-helper-install.patch', SOURCE)
@@ -128,10 +127,11 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertIn('check_static_object_reuse.sh', CI)
 
     def test_revision_matches_audited_profile(self):
-        profile = json.loads((ROOT / 'patches/gerbil-v19-darwin/runtime-object-reuse.json').read_text())
-        self.assertIn('GERBIL_SOURCE_REVISION: ' + profile['gerbilRevision'], CI)
-        self.assertIn('GAMBIT_SOURCE_REVISION: ' + profile['gambitRevision'], CI)
-        self.assertIn('default: ' + profile['gerbilRevision'], PUBLISH)
+        self.assertIn('tools/toolchain/profile.json', CI)
+        self.assertIn('tools/toolchain/profile.json', (ROOT / 'tools/release/plan_publish.sh').read_text())
+        self.assertRegex(PROFILE['gerbilRevision'], r'^[0-9a-f]{40}$')
+        self.assertRegex(PROFILE['gambitRevision'], r'^[0-9a-f]{40}$')
+        self.assertIn('Gerbil ' + PROFILE['gerbilRevision'][:7], (ROOT / 'MODULE.bazel').read_text())
 
     def test_main_ci_builds_source_not_release_or_bottle(self):
         bazel_job = CI.split('  lock-linux-seed:', 1)[0]
@@ -150,22 +150,22 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertIn('.identity == $identity and .multipleVms == $multipleVms', SOURCE)
 
     def test_multiple_vm_flag_and_artifact_checks(self):
-        self.assertIn('--enable-multiple-vms', SOURCE)
-        self.assertIn('--enable-multiple-vms', PUBLISH)
+        self.assertIn('.configure[], .platforms[$platform].configure[]', SOURCE)
+        self.assertIn('--enable-multiple-vms', PROFILE['configure'])
         self.assertIn('multipleVms:$multipleVms', SOURCE)
         self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
-        self.assertIn('"--enable-multiple-vms"] -', PUBLISH)
         self.assertIn('multiple_vms=true', SOURCE)
         self.assertNotIn('multiple_vms=false', SOURCE)
-        self.assertIn('--enable-single-host=0 --enable-multiple-vms --enable-smp)', SOURCE)
-        self.assertIn('portable-full-single-host-unlimited-multiple-vms', PUBLISH)
+        self.assertIn('--enable-single-host=0', PROFILE['configure'])
+        self.assertIn('--enable-smp', PROFILE['configure'])
+        self.assertEqual(PROFILE['platforms']['Linux']['configure'], [])
         self.assertIn('gxi tools/ci/multiple_vm_globals.ss', CI)
-        self.assertIn('gxi "$GITHUB_WORKSPACE/tools/ci/multiple_vm_globals.ss"', PUBLISH)
+        self.assertIn('gxi tools/ci/multiple_vm_globals.ss', PUBLISH)
 
     def test_multiple_vm_setup_fix_is_in_both_build_paths(self):
         name = 'gambit-v19-multiple-vms-global-setup-state.patch'
         self.assertIn(name, SOURCE)
-        self.assertIn(name, PUBLISH)
+        self.assertIn('bash tools/ci/build_source_toolchain.sh build', PUBLISH)
         patch = (ROOT / 'patches' / name).read_text()
         self.assertIn('!defined(___SINGLE_VM)', patch)
         self.assertIn('+   ___P((___MAKE_GLOBAL_PSD', patch)
@@ -178,7 +178,7 @@ class SourceToolchainTests(unittest.TestCase):
         name = 'gambit-v19-multiple-vms-global-capacity.patch'
         patch = (ROOT / 'patches' / name).read_text()
         self.assertIn(name, SOURCE)
-        self.assertIn(name, PUBLISH)
+        self.assertIn('bash tools/ci/build_source_toolchain.sh build', PUBLISH)
         self.assertIn(name, SOURCE.split('if [[ "$platform" == Darwin ]]; then', 1)[0])
         self.assertIn('___GLO_SEGMENT_SIZE', patch)
         self.assertIn('ensure_glo_segment', patch)
@@ -194,7 +194,7 @@ class SourceToolchainTests(unittest.TestCase):
                      '0008-gerbil-darwin-pure-module-original-path.patch',
                      '0015-gambit-darwin-literal-build-substitution.patch'):
             self.assertIn(name, SOURCE)
-            self.assertIn(name, PUBLISH)
+            self.assertNotIn(name, PUBLISH)
         self.assertLess(SOURCE.index('0007-gerbil'), SOURCE.index('0008-gerbil'))
         self.assertIn('if [[ "$platform" == Darwin ]]; then', SOURCE)
 

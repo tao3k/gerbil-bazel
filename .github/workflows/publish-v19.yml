@@ -1,536 +1,121 @@
 name: Publish Gerbil v0.19 capability
 
 on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
-      upstream_ref:
-        description: Exact Gerbil v0.19 revision or ref
-        default: 1cfb032c7a1612637da6205f5f8a15683eba3ba0
-        required: true
-        type: string
       platform:
-        description: Platform capability to publish
-        default: linux-x86_64
-        required: true
+        description: Capability platforms
+        default: both
         type: choice
-        options:
-          - linux-x86_64
-          - darwin-aarch64
+        options: [both, linux-x86_64, darwin-aarch64]
+      upstream_ref:
+        description: Optional exact revision; must match the shared profile
+        default: ""
+        type: string
+      source_run_id:
+        description: Optional successful main CI run to distribute without rebuilding
+        default: ""
+        type: string
+
 permissions:
   contents: write
+  actions: read
 
 concurrency:
-  group: gerbil-v19-${{ inputs.platform }}-${{ inputs.upstream_ref }}
+  group: v19-publish-${{ github.event.workflow_run.head_sha || github.sha }}-${{ inputs.platform || 'both' }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      commit: ${{ steps.plan.outputs.commit }}
+      source_run: ${{ steps.plan.outputs.source_run }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: plan
+        env:
+          PLATFORM: ${{ inputs.platform || 'both' }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          SOURCE_RUN: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/release/plan_publish.sh
+
   publish:
-    name: Publish (${{ inputs.platform }})
-    runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-26' }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: Publish (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     steps:
-      - name: Check out gerbil-bazel
-        uses: actions/checkout@v7
-
-      - name: Resolve exact upstream revision
-        id: upstream
-        env:
-          TARGET_PLATFORM: ${{ inputs.platform }}
-          UPSTREAM_REF: ${{ inputs.upstream_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git init upstream-gerbil
-          git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
-          git -C upstream-gerbil fetch --depth=256 origin "$UPSTREAM_REF"
-          upstream_sha="$(git -C upstream-gerbil rev-parse FETCH_HEAD)"
-          git -C upstream-gerbil checkout --detach "$upstream_sha"
-          source_sha="$upstream_sha"
-          patchset_sha="$({
-            for patch in \
-              .github/workflows/publish-v19.yml \
-              patches/gerbil-v19-bio-integer-growth-upstream.patch \
-              patches/gambit-v19-multiple-vms-global-capacity.patch \
-              patches/gambit-v19-multiple-vms-global-setup-state.patch \
-              patches/gerbil-v19-ffi-release-pkey-once.patch \
-              patches/gerbil-v19-darwin-aot-tools.patch \
-              patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
-              patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
-              patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
-              patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch \
-              patches/gerbil-v19-darwin/0007-gerbil-darwin-executable-runtime-object-reuse.patch \
-              patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch \
-              patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch \
-              patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch \
-              patches/gerbil-v19-darwin/0015-gambit-darwin-literal-build-substitution.patch \
-              patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss; do
-              printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
-            done
-            if [[ "$TARGET_PLATFORM" == darwin-aarch64 ]]; then
-              for patch in \
-                patches/gerbil-v19-darwin/static-c-snapshot-candidate.series \
-                patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json \
-                patches/gerbil-v19-darwin/static-reuse-helper-install.patch \
-                patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch; do
-                printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
-              done
-              while IFS= read -r name; do
-                patch="patches/gerbil-v19-darwin/$name"
-                printf '%s %s\n' "$patch" "$(git hash-object "$patch")"
-              done < patches/gerbil-v19-darwin/static-c-snapshot-candidate.series
-            fi
-          } | git hash-object --stdin)"
-          case "$TARGET_PLATFORM" in
-            linux-x86_64)
-              release_os=linux
-              release_arch=x86_64
-              build_profile=portable-full-single-host-unlimited-multiple-vms
-              ;;
-            darwin-aarch64)
-              release_os=darwin
-              release_arch=aarch64
-              build_profile=gcc16-arm64-aot-tools-single-host-unlimited-multiple-vms
-              ;;
-            *)
-              echo "unsupported release platform: $TARGET_PLATFORM" >&2
-              exit 64
-              ;;
-          esac
-          release_tag="gerbil-v0.19-$source_sha-$TARGET_PLATFORM-$build_profile-patch${patchset_sha:0:12}"
-          archive="$release_tag.tar.gz"
-          {
-            echo "sha=$source_sha"
-            echo "staging_sha=$upstream_sha"
-            echo "ensemble_sha=$upstream_sha"
-            echo "patchset_sha=$patchset_sha"
-            echo "os=$release_os"
-            echo "arch=$release_arch"
-            echo "release_tag=$release_tag"
-            echo "archive=$archive"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-v19"
-            echo "RELEASE_TAG=$release_tag"
-            echo "RELEASE_ARCHIVE=$archive"
-            echo "GERBIL_BUILD_PROFILE=$build_profile"
-            echo "GERBIL_PATCHSET_SHA=$patchset_sha"
-          } >> "$GITHUB_ENV"
-
-      - name: Restore exact release toolchain
-        id: gerbil-cache
-        uses: actions/cache/restore@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}-${{ steps.upstream.outputs.patchset_sha }}
-
-      - name: Install Linux native dependencies
+          ref: ${{ needs.plan.outputs.commit }}
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            build-essential \
-            ca-certificates \
-            coreutils \
-            git \
-            jq \
-            libsqlite3-dev \
-            libssl-dev \
-            openssl \
-            pkg-config \
-            sqlite3 \
-            zlib1g-dev
-
-      - name: Install Darwin native dependencies
+          sudo apt-get install --yes --no-install-recommends build-essential ca-certificates git jq libsqlite3-dev libssl-dev openssl pkg-config sqlite3 zlib1g-dev
+      - name: Set up Homebrew
         if: runner.os == 'macOS'
-        shell: bash
+        uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
         run: |
-          set -euo pipefail
-          dependencies=(pkg-config openssl@3 sqlite zlib)
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            dependencies+=(gcc)
-          fi
-          brew install "${dependencies[@]}"
-
-      - name: Resolve native build capacity
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        shell: bash
+          brew install gcc jq openssl@3 pkg-config sqlite zlib
+          echo "CC=$(command -v gcc-16)" >> "$GITHUB_ENV"
+          echo "CXX=$(command -v g++-16)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig" >> "$GITHUB_ENV"
+      - name: Download the exact validated CI capability
+        if: needs.plan.outputs.source_run != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: v19-source-${{ matrix.os }}
+          run-id: ${{ needs.plan.outputs.source_run }}
+          github-token: ${{ github.token }}
+          path: .ci/release
+      - name: Configure isolated manual build directories
+        if: needs.plan.outputs.source_run == ''
         run: |
-          set -euo pipefail
-          if [[ "${{ runner.os }}" == macOS ]]; then
-            cores="$(sysctl -n hw.logicalcpu)"
-          else
-            cores="$(getconf _NPROCESSORS_ONLN)"
-          fi
-          [[ "$cores" =~ ^[1-9][0-9]*$ ]]
-          echo "GERBIL_BUILD_CORES=$cores" >> "$GITHUB_ENV"
-
-      - name: Materialize v0.19 sources
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git -C upstream-gerbil submodule update --init --depth=1
-
-      - name: Apply the remaining v0.19 buffered integer writer fix
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
-
-      - name: Apply audited Darwin whole-program patches
-        if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
-        shell: bash
-        run: |
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0007-gerbil-darwin-executable-runtime-object-reuse.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0008-gerbil-darwin-pure-module-original-path.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-reuse-helper-install.patch"
-
-      - name: Build exact v0.19 toolchain
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        working-directory: upstream-gerbil
-        shell: bash
-        env:
-          SINGLE_HOST_MODE: unlimited
-          GERBIL_BUILD_AOT_TOOLS: ${{ runner.os == 'macOS' && 'yes' || 'no' }}
-        run: |
-          set -euo pipefail
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            PATH="$(brew --prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-            export PATH
-            cc="$(command -v gcc-16)"
-            cxx="$(command -v g++-16)"
-            export CC="$cc" CXX="$cxx" GERBIL_GCC="$cc"
-            openssl_prefix="$(brew --prefix openssl@3)"
-            sqlite_prefix="$(brew --prefix sqlite)"
-            zlib_prefix="$(brew --prefix zlib)"
-            export PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig:$sqlite_prefix/lib/pkgconfig:$zlib_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-            export CFLAGS="-pipe${CFLAGS:+ $CFLAGS}"
-            link_probe="$RUNNER_TEMP/gerbil-gcc-link-probe"
-            printf '%s\n' \
-              '#include <stdio.h>' \
-              'int main(void) { FILE *f = fopen("gerbil-gcc-link-probe.out", "w"); return ferror(f) || fclose(f); }' \
-              > "$link_probe.c"
-            "$cc" "$link_probe.c" -o "$link_probe"
-            "$link_probe"
-            linker="$(xcrun --find ld) $(xcrun ld -v 2>&1)"
-            configure_args=(
-              "--prefix=$GERBIL_PREFIX"
-              --enable-march=
-              --enable-c-opt=-O1
-              --enable-c-opt-rts=yes
-              --enable-gcc-opts
-              --enable-inline-jumps
-              --enable-dynamic-clib
-              --enable-trust-c-tco
-            )
-          else
-            cc="${CC:-$(command -v cc)}"
-            cxx="${CXX:-$(command -v c++)}"
-            linker="$(command -v ld) $(ld --version 2>&1)"
-            configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
-          fi
-          source_revision="$(git rev-parse HEAD)"
-          gambit_revision="$(git -C src/gambit rev-parse HEAD)"
-          configure_args+=(
-            "--with-gambit=$gambit_revision"
-            "--version-string=${source_revision:0:7}"
-            --enable-single-host=0 --enable-multiple-vms --enable-smp
-          )
-          ./configure "${configure_args[@]}"
-          [[ "$(git -C src/gambit rev-parse HEAD)" == "$gambit_revision" ]]
-          git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gambit-v19-multiple-vms-global-capacity.patch"
-          git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gambit-v19-multiple-vms-global-setup-state.patch"
-          if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
-            echo "release build must not use runner-specific -march=native" >&2
-            exit 1
-          fi
-          # Gerbil configure resets the integrated Gambit submodule to the
-          # configured revision. Apply Darwin Gambit patches afterwards, then
-          # recheck configure so compiler capability flags reach gambuild-C.
-          if [[ "${{ runner.os }}" == macOS ]]; then
-            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch"
-            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0004-gambit-darwin-gcc-macro-expansion.patch"
-            python3 "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/tests/experiment_framework/patch_lock.py" \
-              "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/receipts/d1510-static-c-snapshot-patch-lock.json" \
-              --lock-sha256 a6c612404a9b9c6fde63e198ae25d590b814a57c5d628e6fcce203e0fdbe45a2 --performance
-            while IFS= read -r patch; do
-              git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/$patch"
-            done < "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"
-            git -C src/gambit apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch"
-            # Both generated configure and configure.ac are carried in the
-            # audited patch. Keep configure newest so Gambit's make rules do
-            # not regenerate it with an arbitrary host Autoconf version.
-            touch src/gambit/configure
-            # --recheck runs configure with --no-create, so explicitly
-            # regenerate the configured templates before checking the flag.
-            (cd src/gambit && ./config.status --recheck && ./config.status)
-            # The executable gambuild-C is created later by make.
-            grep -F -- '-ftrack-macro-expansion=0' src/gambit/bin/gambuild-C.unix
-          else
-            (cd src/gambit && ./config.status)
-          fi
-          gambit_config_header=src/gambit/include/config.h
-          gambit_public_header=src/gambit/include/gambit.h
-          grep -Eq '^#define ___SINGLE_HOST([[:space:]]|$)' "$gambit_config_header"
-          grep -Eq '^#define ___SINGLE_HOST_LIMIT 0$' "$gambit_public_header"
-          grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$gambit_public_header"
-          printf 'mode=%s\n' "$SINGLE_HOST_MODE" \
-            > "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
-          for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
-            target_cores="$GERBIL_BUILD_CORES"
-            target_started=$SECONDS
-            GERBIL_BUILD_FLAGS="-j$target_cores" ./build.sh "$target"
-            target_seconds=$((SECONDS - target_started))
-            printf '%s=%s\n' "$target" "$target_seconds" \
-              | tee -a "$RUNNER_TEMP/gerbil-v19-build-timings.txt"
-            echo "::notice title=Gerbil build timing::$target completed in ${target_seconds}s with ${target_cores} core(s)"
-          done
-          if [[ "${{ runner.os }}" == macOS ]]; then
-            (cd src/gambit/tests && \
-              ../gsi/gsi -:=.. run-unit-tests.scm \
-                unit-tests/12-os/process_spawn.scm)
-          fi
-          ./install.sh
-          cp "$RUNNER_TEMP/gerbil-v19-build-timings.txt" \
-            "$GERBIL_PREFIX/gerbil-build-timings.txt"
-          jq -n \
-            --arg schema gerbil-bazel.build-receipt.v1 \
-            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
-            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
-            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
-            --arg profile "$GERBIL_BUILD_PROFILE" \
-            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
-            --arg compiler "$cc $("$cc" -dumpfullversion)" \
-            --arg cxxCompiler "$cxx $("$cxx" -dumpfullversion)" \
-            --arg linker "$linker" \
-            --arg singleHostMode "$SINGLE_HOST_MODE" \
-            --arg toolLinkage "$([[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]] && echo whole-program-aot || echo dynamic)" \
-            --arg cFlags "${CFLAGS:-}" \
-            --arg pkgConfigPath "${PKG_CONFIG_PATH:-}" \
-            --argjson cores "$GERBIL_BUILD_CORES" \
-            '{schema: $schema,
-              sourceRevision: $sourceRevision,
-              stagingRevision: $stagingRevision,
-              ensembleRevision: $ensembleRevision,
-              profile: $profile, patchsetSha: $patchsetSha,
-              compiler: $compiler,
-              cxxCompiler: $cxxCompiler, linker: $linker, cores: $cores,
-              singleHostMode: $singleHostMode,
-              toolLinkage: $toolLinkage,
-              environment: {
-                cFlags: $cFlags,
-                pkgConfigPath: $pkgConfigPath
-              },
-              configureArguments: $ARGS.positional}' \
-            --args -- "${configure_args[@]}" \
-            > "$GERBIL_PREFIX/gerbil-build-receipt.json"
-
-      - name: Verify focused upstream runtime contracts
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test_log="$RUNNER_TEMP/gerbil-v19-focused-tests.log"
-          export GERBIL_HOME="$GITHUB_WORKSPACE/upstream-gerbil/build"
-          export GERBIL_LOADPATH="$GERBIL_HOME/lib"
-          export PATH="$GERBIL_HOME/bin:$PATH"
-          gxtest -v 3 \
-            upstream-gerbil/src/std/io/bio/bio-test.ss \
-            upstream-gerbil/src/std/encoding/json/json-test.ss \
-            upstream-gerbil/src/std/os/socket-test.ss \
-            upstream-gerbil/src/std/ensemble/ucan/did-test.ss \
-            upstream-gerbil/src/std/ensemble/ucan/context-test.ss \
-            upstream-gerbil/src/std/ensemble/network/auth-test.ss \
-            | tee "$test_log"
-          [[ "$(grep -c '^MODULE-OK ' "$test_log")" -eq 6 ]]
-          [[ "$(grep -c '^HARNESS-OK ' "$test_log")" -eq 1 ]]
-          ! grep -F 'ERROR' "$test_log"
-
-      - name: Save exact release toolchain
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+          echo "GERBIL_SOURCE_DIRECTORY=$RUNNER_TEMP/gerbil-ci-source" >> "$GITHUB_ENV"
+          echo "GERBIL_PREFIX=$RUNNER_TEMP/gerbil-ci-install" >> "$GITHUB_ENV"
+      - name: Prepare the shared source toolchain
+        if: needs.plan.outputs.source_run == ''
+        id: source
+        run: bash tools/ci/build_source_toolchain.sh prepare
+      - name: Restore the exact source toolchain
+        if: needs.plan.outputs.source_run == ''
+        id: source-cache
+        uses: actions/cache@v6
         with:
           path: ${{ env.GERBIL_PREFIX }}
-          key: gerbil-release-v0.19-full-v4-${{ inputs.platform }}-${{ env.GERBIL_BUILD_PROFILE }}-${{ steps.upstream.outputs.sha }}-${{ steps.upstream.outputs.patchset_sha }}
-
-      - name: Verify source toolchain
-        shell: bash
-        env:
-          SINGLE_HOST_MODE: unlimited
+          key: gerbil-source-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.plan.outputs.commit }}-${{ steps.source.outputs.cache_identity }}
+      - name: Build through the shared interface
+        if: needs.plan.outputs.source_run == '' && steps.source-cache.outputs.cache-hit != 'true'
+        run: bash tools/ci/build_source_toolchain.sh build
+      - name: Verify and package the shared source capability
+        if: needs.plan.outputs.source_run == ''
         run: |
-          set -euo pipefail
-          cp tools/release/activate-gerbil.sh "$GERBIL_PREFIX/activate"
-          chmod +x "$GERBIL_PREFIX/activate"
+          bash tools/ci/build_source_toolchain.sh verify
           source "$GERBIL_PREFIX/activate"
-          expected_sha="${{ steps.upstream.outputs.sha }}"
-          [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
-          jq -e \
-            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
-            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
-            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
-            --arg profile "$GERBIL_BUILD_PROFILE" \
-            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
-            '.schema == "gerbil-bazel.build-receipt.v1" and
-             .sourceRevision == $sourceRevision and
-             .stagingRevision == $stagingRevision and
-             .ensembleRevision == $ensembleRevision and
-             .profile == $profile and
-             .patchsetSha == $patchsetSha and
-             (.configureArguments | type == "array")' \
-            "$GERBIL_PREFIX/gerbil-build-receipt.json"
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            test -x "$GERBIL_HOME/bin/gambit-file-sha256"
-            test ! -L "$GERBIL_HOME/bin/gambit-file-sha256"
-            grep -F 'bound_input_sha=' "$GERBIL_HOME/bin/gambit-static-object-reuse"
-            openssl_pkgconfig="$(brew --prefix openssl@3)/lib/pkgconfig"
-            sqlite_pkgconfig="$(brew --prefix sqlite)/lib/pkgconfig"
-            zlib_pkgconfig="$(brew --prefix zlib)/lib/pkgconfig"
-            jq -e \
-              --arg singleHostMode "$SINGLE_HOST_MODE" \
-              --arg opensslPkgconfig "$openssl_pkgconfig" \
-              --arg sqlitePkgconfig "$sqlite_pkgconfig" \
-              --arg zlibPkgconfig "$zlib_pkgconfig" \
-              '(.singleHostMode == $singleHostMode) and
-               (["--enable-march=", "--enable-smp", "--enable-gcc-opts", "--enable-multiple-vms"] -
-                .configureArguments | length == 0) and
-               (.environment.cFlags | contains("-pipe")) and
-               (.environment.pkgConfigPath | contains($opensslPkgconfig)) and
-               (.environment.pkgConfigPath | contains($sqlitePkgconfig)) and
-               (.environment.pkgConfigPath | contains($zlibPkgconfig))' \
-              "$GERBIL_PREFIX/gerbil-build-receipt.json"
-          fi
-          jq -e \
-            '.singleHostMode == "unlimited" and
-             (["--enable-single-host=0", "--enable-multiple-vms", "--enable-smp"] -
-              .configureArguments | length == 0)' \
-            "$GERBIL_PREFIX/gerbil-build-receipt.json"
-          if [[ "$GERBIL_BUILD_PROFILE" == portable-* ]]; then
-            jq -e '(.configureArguments | any(. == "--enable-march="))' \
-              "$GERBIL_PREFIX/gerbil-build-receipt.json"
-            if grep -F -- '-march=native' "$GERBIL_HOME/bin/gambuild-C"; then
-              echo "installed Linux toolchain contains runner-specific -march=native" >&2
-              exit 1
-            fi
-          fi
-          if [[ "$GERBIL_BUILD_PROFILE" == *-aot-tools-* ]]; then
-            jq -e '.toolLinkage == "whole-program-aot"' \
-              "$GERBIL_PREFIX/gerbil-build-receipt.json"
-            for tool in gxpkg gxtags; do
-              [[ -x "$GERBIL_HOME/bin/$tool" ]]
-              [[ ! -L "$GERBIL_HOME/bin/$tool" ]]
-            done
-          fi
-          /usr/bin/time -p gxpkg version
-          /usr/bin/time -p gxtags --help >/dev/null
-          gxi "$GITHUB_WORKSPACE/tools/ci/multiple_vm_globals.ss"
-          gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
-          gxi -e '(begin
-            (import :std/encoding/json)
-            (##set-max-heap! 134217728)
-            (let* ((value (make-string 100000 #\a))
-                   (encoded (json->string value)))
-              (unless (and (= (string-length encoded) 100002)
-                           (equal? (string->json encoded) value))
-                (error "buffered JSON memory writer regression")))
-            (displayln "buffered JSON memory writer ready"))'
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            for cores in 1 3; do
-              GERBIL_BUILD_CORES="$cores" \
-                gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
-            done
-            env -u GERBIL_BUILD_CORES \
-              gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
-          fi
-
-      - name: Package relocatable capability
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_root="$RUNNER_TEMP/release"
-          capability_name="gerbil-v0.19-${{ inputs.platform }}"
-          capability="$release_root/$capability_name"
-          mkdir -p "$capability"
-          cp -a "$GERBIL_PREFIX/." "$capability/"
-          version="$(
-            source "$capability/activate"
-            gxi -v
-          )"
-          jq -n \
-            --arg schema gerbil-bazel.toolchain-release.v1 \
-            --arg version "$version" \
-            --arg upstreamRevision "${{ steps.upstream.outputs.sha }}" \
-            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
-            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
-            --arg os "${{ steps.upstream.outputs.os }}" \
-            --arg arch "${{ steps.upstream.outputs.arch }}" \
-            --arg buildProfile "$GERBIL_BUILD_PROFILE" \
-            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
-            '{schema: $schema, version: $version,
-              upstreamRevision: $upstreamRevision,
-              stagingRevision: $stagingRevision,
-              ensembleRevision: $ensembleRevision,
-              patchsetSha: $patchsetSha,
-              platform: {os: $os, arch: $arch},
-              buildProfile: $buildProfile,
-              activation: "source ./activate"}' \
-            > "$capability/gerbil-toolchain-release.json"
-          tar -czf "$release_root/$RELEASE_ARCHIVE" -C "$release_root" "$capability_name"
-          (
-            cd "$release_root"
-            if command -v sha256sum >/dev/null 2>&1; then
-              sha256sum "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
-            else
-              shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE.sha256"
-            fi
-          )
-
-      - name: Verify relocated release bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          verify_root="$RUNNER_TEMP/relocated-release"
-          mkdir -p "$verify_root"
-          tar -xzf "$RUNNER_TEMP/release/$RELEASE_ARCHIVE" -C "$verify_root"
-          source "$verify_root/gerbil-v0.19-${{ inputs.platform }}/activate"
-          expected_sha="${{ steps.upstream.outputs.sha }}"
-          [[ "$(gxi -v)" == *"${expected_sha:0:7}"* ]]
-          jq -e \
-            --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
-            --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
-            --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
-            --arg profile "$GERBIL_BUILD_PROFILE" \
-            --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
-            '.sourceRevision == $sourceRevision and
-             .stagingRevision == $stagingRevision and
-             .ensembleRevision == $ensembleRevision and
-             .profile == $profile and
-             .patchsetSha == $patchsetSha' \
-            "$verify_root/gerbil-v0.19-${{ inputs.platform }}/gerbil-build-receipt.json"
-          gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
-          /usr/bin/time -p gxpkg version
-          /usr/bin/time -p gxtags --help >/dev/null
-
-      - name: Publish immutable central release
+          gxi tools/ci/multiple_vm_globals.ss
+          bash tools/release/package_toolchain.sh
+      - name: Publish or verify the immutable release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "immutable release already exists: $RELEASE_TAG" >&2
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" \
-            "$RUNNER_TEMP/release/$RELEASE_ARCHIVE" \
-            "$RUNNER_TEMP/release/$RELEASE_ARCHIVE.sha256" \
-            --target "${{ github.sha }}" \
-            --title "$RELEASE_TAG" \
-            --notes "Central Gerbil v0.19 ${{ inputs.platform }} capability at ${{ steps.upstream.outputs.sha }} using profile $GERBIL_BUILD_PROFILE. Source the bundled activate file after extraction; inspect gerbil-build-receipt.json for the exact compiler and configure arguments."
+          RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+        run: bash tools/release/publish_toolchain.sh .ci/release
