@@ -147,11 +147,15 @@ class SourceToolchainTests(unittest.TestCase):
         self.assertIn('${{ github.sha }}-${{ steps.source.outputs.cache_identity }}', CI)
         self.assertNotIn('restore-keys:', CI)
         self.assertIn('$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash', SOURCE)
-        self.assertIn('.identity == $identity and .multipleVms == $multipleVms', SOURCE)
+        self.assertIn('.identity == $identity and .multipleVms == $multipleVms and .multipleThreadedVms == true', SOURCE)
 
     def test_multiple_vm_flag_and_artifact_checks(self):
         self.assertIn('.configure[], .platforms[$platform].configure[]', SOURCE)
         self.assertIn('--enable-multiple-vms', PROFILE['configure'])
+        self.assertIn('--enable-multiple-threaded-vms', PROFILE['configure'])
+        self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_THREADED_VMS"), 2)
+        self.assertEqual(SOURCE.count('END {exit !enabled}'), 2)
+        self.assertIn('multipleThreadedVms:true', SOURCE)
         self.assertIn('multipleVms:$multipleVms', SOURCE)
         self.assertEqual(SOURCE.count("grep -Eq '^#define ___MULTIPLE_VMS"), 2)
         self.assertIn('multiple_vms=true', SOURCE)

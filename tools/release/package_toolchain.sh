@@ -3,7 +3,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 : "${GERBIL_PREFIX:?selected built prefix required}"
 receipt="$GERBIL_PREFIX/ci-source-toolchain.json"
-jq -e '.multipleVms == true and (.identity | type == "string") and
+jq -e '.multipleVms == true and .multipleThreadedVms == true and (.identity | type == "string") and
        (.platform == "darwin-aarch64" or .platform == "linux-x86_64")' "$receipt" >/dev/null
 source "$GERBIL_PREFIX/activate"
 revision=$(jq -r .sourceRevision "$receipt")
