@@ -114,9 +114,16 @@ jobs:
           key: gerbil-source-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-${{ steps.source.outputs.cache_identity }}
 
       - name: Build current patched Gerbil and Gambit sources
+        id: source-build
         if: steps.source-cache.outputs.cache-hit != 'true'
         shell: bash
         run: bash tools/ci/build_source_toolchain.sh build
+
+      - name: Diagnose native bootstrap failure
+        if: failure() && steps.source-build.conclusion == 'failure'
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then sudo apt-get install --yes --no-install-recommends gdb; fi
+          python3 tools/ci/diagnose_gambit_bootstrap.py
 
       - name: Verify and activate the source-built host capability
         shell: bash
@@ -208,6 +215,7 @@ jobs:
           path: |
             .ci/gerbil-version.txt
             .ci/receipts/*.json
+            .ci/receipts/*.log
             .data/ci-static-snapshot/**/*.log
             .data/ci-static-snapshot/**/*.sha256
           if-no-files-found: warn
