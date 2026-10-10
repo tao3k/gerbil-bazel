@@ -4,17 +4,17 @@
   "branch": "v0.19-staging",
   "gerbilRevision": "1c6c15385979f0092574fbc2b828f3fb656319b3",
   "gambitRevision": "7c490c3ab5b5a4238b26f4a59d8cd9fd4b085882",
-  "configure": ["--enable-march=", "--enable-single-host=0", "--enable-multiple-vms", "--enable-smp"],
+  "configure": ["--enable-march=", "--enable-single-host=0", "--enable-multiple-vms", "--enable-multiple-threaded-vms", "--enable-smp"],
   "platforms": {
     "Darwin": {
       "capability": "darwin-aarch64",
-      "buildProfile": "gcc16-arm64-aot-tools-single-host-unlimited-multiple-vms",
+      "buildProfile": "gcc16-arm64-aot-tools-single-host-unlimited-multiple-threaded-vms",
       "aotTools": true,
       "configure": ["--enable-c-opt=-O1", "--enable-c-opt-rts=yes", "--enable-gcc-opts", "--enable-inline-jumps", "--enable-dynamic-clib", "--enable-trust-c-tco"]
     },
     "Linux": {
       "capability": "linux-x86_64",
-      "buildProfile": "portable-full-single-host-unlimited-multiple-vms",
+      "buildProfile": "portable-full-single-host-unlimited-multiple-threaded-vms",
       "aotTools": false,
       "configure": []
     }

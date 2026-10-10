@@ -76,7 +76,8 @@ and Gambit sources with the current patches, then validates the Bazel host
 provider. It does not require an existing Gerbil Release or bottle. Its
 toolchain cache has no fallback keys and includes the repository commit,
 source revisions, GNU compiler hash and applied patchset. Linux and Darwin both
-enable `--enable-multiple-vms` and `--enable-smp`, check the generated and
+enable `--enable-multiple-vms`, `--enable-multiple-threaded-vms` and
+`--enable-smp`, check the generated and
 installed headers, and exercise global growth across GC. The shared Gambit
 capacity patch keeps global-cell addresses stable while adding segments.
 `tools/toolchain/profile.json` is the current source/gitlink/configure contract.

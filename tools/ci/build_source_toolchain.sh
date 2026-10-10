@@ -75,11 +75,13 @@ identity="$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchs
 
 verify() {
   jq -e --arg identity "$identity" --argjson multipleVms "$multiple_vms" \
-    '.identity == $identity and .multipleVms == $multipleVms' \
+    '.identity == $identity and .multipleVms == $multipleVms and .multipleThreadedVms == true' \
     "$GERBIL_PREFIX/ci-source-toolchain.json" >/dev/null
   source "$GERBIL_PREFIX/activate"
   "$GERBIL_PREFIX/bin/gxi" -v 2>&1 | grep -F "Gerbil ${GERBIL_SOURCE_REVISION:0:7}"
   grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
+  grep -Eq '^#define ___MULTIPLE_THREADED_VMS([[:space:]]|$)' "$GERBIL_HOME/include/gambit.h"
+  awk '/^#define ___MAX_PROCESSORS / {if ($3 > 1) enabled=1} END {exit !enabled}' "$GERBIL_HOME/include/gambit.h"
   if [[ "$platform" == Darwin ]]; then
     grep -F 'replace_literal()' "$GERBIL_HOME/bin/gambuild-C"
     test -x "$GERBIL_HOME/bin/gambit-file-sha256"
@@ -141,6 +143,8 @@ case "${1:-}" in
       (cd src/gambit && ./config.status)
     fi
     grep -Eq '^#define ___MULTIPLE_VMS([[:space:]]|$)' src/gambit/include/gambit.h
+    grep -Eq '^#define ___MULTIPLE_THREADED_VMS([[:space:]]|$)' src/gambit/include/gambit.h
+    awk '/^#define ___MAX_PROCESSORS / {if ($3 > 1) enabled=1} END {exit !enabled}' src/gambit/include/gambit.h
     for target in prepare gambit boot-gxi stage0 stage1 stdlib libgerbil lang tools; do
       printf 'BUILD %s (%s cores)\n' "$target" "$cores"
       GERBIL_BUILD_FLAGS="-j$cores" ./build.sh "$target"
@@ -163,6 +167,7 @@ case "${1:-}" in
       --arg buildProfile "$(jq -r --arg platform "$platform" '.platforms[$platform].buildProfile' "$profile")" \
       '{identity:$identity, sourceRevision:$sourceRevision, gambitRevision:$gambitRevision,
         compilerHash:$compilerHash, patchsetHash:$patchsetHash, cores:$cores, multipleVms:$multipleVms,
+        multipleThreadedVms:true,
         platform:$platform, buildProfile:$buildProfile,
         configureArguments:$ARGS.positional,
         scope:"source-toolchain-construction-not-D1510-performance-admission"}' \

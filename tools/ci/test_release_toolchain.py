@@ -169,7 +169,8 @@ exit 99
                 receipt = dict(identity='qualified-' + system, sourceRevision=PROFILE['gerbilRevision'],
                                gambitRevision=PROFILE['gambitRevision'], patchsetHash='1' * 64,
                                platform=platform['capability'], buildProfile=platform['buildProfile'],
-                               multipleVms=True, configureArguments=PROFILE['configure'] + platform['configure'])
+                               multipleVms=True, multipleThreadedVms=True,
+                               configureArguments=PROFILE['configure'] + platform['configure'])
                 (prefix / 'ci-source-toolchain.json').write_text(json.dumps(receipt))
                 output = self.directory / ('release-' + system)
                 env = dict(self.env, GERBIL_PREFIX=str(prefix), GERBIL_RELEASE_DIRECTORY=str(output))
@@ -185,6 +186,11 @@ exit 99
                 self.assertEqual(packaged['identity'], receipt['identity'])
                 self.assertEqual(packaged['archiveSha256'], hashlib.sha256(archive.read_bytes()).hexdigest())
                 self.assertFalse(list(output.glob('.capability.*')))
+                receipt['multipleThreadedVms'] = False
+                (prefix / 'ci-source-toolchain.json').write_text(json.dumps(receipt))
+                denied = subprocess.run([SHELL, str(ROOT / 'tools/release/package_toolchain.sh')],
+                                        env=env, text=True, capture_output=True)
+                self.assertNotEqual(denied.returncode, 0)
 
 
 if __name__ == '__main__':
