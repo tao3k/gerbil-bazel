@@ -1,0 +1,27 @@
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+index ab45133..2d34e2e 100644
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -20,6 +20,13 @@ namespace: gxc
+ (def default-gerbil-ar "ar")
+
+ (def +driver-mutex+ (make-mutex 'compiler/driver))
++;; Separate executables regenerate shared static C before consuming its objects.
++;; Treat that read/write closure as one compiler-owned transaction. Module jobs
++;; remain parallel; no downstream target ordering or extra executor is needed.
++(def +executable-output-mutex+ (make-mutex 'compiler/executable-outputs))
++(def (add-executable-job! thunk)
++  (add-compile-job!
++    (lambda () (with-lock +executable-output-mutex+ thunk))))
+ (defrules with-driver-mutex ()
+   ((_ expr)
+    (with-lock +driver-mutex+ (lambda () expr))))
+@@ -335,7 +342,7 @@ namespace: gxc
+                 ;; clean up
+                 (for-each delete-file [output-c output_-c output-o output_-o])))
+           (if (current-compile-parallel)
+-            (add-compile-job! compile-it)
++            (add-executable-job! compile-it)
+             (compile-it))))))
+
+   (let* ((output-bin (compile-exe-output-file ctx opts))
