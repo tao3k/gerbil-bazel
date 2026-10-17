@@ -273,7 +273,7 @@ diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
 +                  (schedule-darwin-objects-and-link))
 +                `(prepare-executable-link ,output-bin)))
                (else
-                (add-compile-job! compile-it)))
+                (add-executable-job! compile-it)))
              (compile-it))))))
 @@ -752,14 +805,23 @@
             (scmrt (compile-output-file ctx #f ".scm"))

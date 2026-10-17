@@ -10,7 +10,10 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 [[ "$GAMBIT_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]
 source_dir="$GERBIL_SOURCE_DIRECTORY"
 platform="$(uname -s)"
-gerbil_patches=(patches/gerbil-v19-bio-integer-growth-upstream.patch)
+gerbil_patches=(
+  patches/gerbil-v19-bio-integer-growth-upstream.patch
+  patches/gerbil-v19-shared-executable-outputs.patch
+)
 gambit_patches=(
   patches/gambit-v19-multiple-vms-global-capacity.patch
   patches/gambit-v19-multiple-vms-global-setup-state.patch
@@ -66,6 +69,7 @@ patchset_hash="$({
   for patch in "${gerbil_patches[@]}"; do sha256_file "$root/$patch"; done
   for patch in "${gambit_patches[@]}"; do sha256_file "$root/$patch"; done
   sha256_file "$root/tools/ci/build_source_toolchain.sh"
+  sha256_file "$root/tools/ci/check_executable_outputs.py"
   sha256_file "$root/tools/release/activate-gerbil.sh"
 } | shasum -a 256 | awk '{print $1}')"
 identity="$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash"
@@ -83,6 +87,7 @@ verify() {
     test ! -L "$GERBIL_HOME/bin/gambit-file-sha256"
     grep -F 'bound_input_sha=' "$GERBIL_HOME/bin/gambit-static-object-reuse"
   fi
+  python3 "$root/tools/ci/check_executable_outputs.py"
   mkdir -p "$root/.ci/receipts"
   cp "$GERBIL_PREFIX/ci-source-toolchain.json" "$root/.ci/receipts/source-toolchain.json"
 }

@@ -127,13 +127,13 @@ index ab45133..f124e83 100644
 +                      (link-executable)))
 +                  `(link-executable ,output-bin))))))
            (if (current-compile-parallel)
--            (add-compile-job! compile-it)
+-            (add-executable-job! compile-it)
 +            (cond-expand
 +              (darwin
 +               (prepare-link)
 +               (schedule-darwin-objects-and-link))
 +              (else
-+               (add-compile-job! compile-it)))
++               (add-executable-job! compile-it)))
              (compile-it))))))
  
    (let* ((output-bin (compile-exe-output-file ctx opts))
