@@ -51,7 +51,9 @@ jobs:
               .github/workflows/publish-v19.yml \
               patches/gerbil-v19-bio-integer-growth-upstream.patch \
               patches/gerbil-v19-shared-executable-outputs.patch \
+              patches/gerbil-v19-compile-job-drain.patch \
               tools/ci/check_executable_outputs.py \
+              tools/ci/compile_job_drain.ss \
               patches/gambit-v19-multiple-vms-global-capacity.patch \
               patches/gambit-v19-multiple-vms-global-setup-state.patch \
               patches/gerbil-v19-ffi-release-pkey-once.patch \
@@ -181,6 +183,9 @@ jobs:
           set -euo pipefail
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-shared-executable-outputs.patch"
+          if [[ "${{ inputs.platform }}" == linux-x86_64 ]]; then
+            git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-compile-job-drain.patch"
+          fi
 
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
@@ -434,6 +439,7 @@ jobs:
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
           gxi "$GITHUB_WORKSPACE/tools/ci/multiple_vm_globals.ss"
+          gxi "$GITHUB_WORKSPACE/tools/ci/compile_job_drain.ss"
           python3 "$GITHUB_WORKSPACE/tools/ci/check_executable_outputs.py"
           gxi -e '(begin (import :std/make) (displayln "std/make import ready"))'
           gxi -e '(begin

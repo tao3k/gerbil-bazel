@@ -1,0 +1,33 @@
+diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
+--- a/src/gerbil/compiler/base.ss
++++ b/src/gerbil/compiler/base.ss
+@@ -305,11 +305,24 @@
+     result))
+
+ (def (execute-pending-compile-jobs!)
+-  (let loop ()
+-    (let (pending (pending-compile-jobs))
+-      (unless (null? pending)
+-        (for-each thread-start! pending)
+-        (for-each join! pending)))))
++  ;; Joining one failed producer must not abandon its peers or their follow-ups.
++  ;; Preserve the first raised object, including #f, until all jobs quiesce.
++  (let ((failed? #f) (first-error #f))
++    (let drain ()
++      (let (pending (pending-compile-jobs))
++        (unless (null? pending)
++          (for-each thread-start! pending)
++          (for-each
++           (lambda (job)
++             (with-catch
++              (lambda (failure)
++                (unless failed?
++                  (set! failed? #t)
++                  (set! first-error failure)))
++              (cut join! job)))
++           pending)
++          (drain))))
++    (when failed? (raise first-error))))
+
+ (def (make-compile-job thunk name)
+   (make-thread

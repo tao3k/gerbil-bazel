@@ -44,6 +44,8 @@ if [[ "$platform" == Darwin ]]; then
     gambit_patches+=("patches/gerbil-v19-darwin/$patch")
   done < "$root/patches/gerbil-v19-darwin/static-c-snapshot-candidate.series"
   gambit_patches+=(patches/gerbil-v19-darwin/static-snapshot-path-fallback.patch)
+else
+  gerbil_patches+=(patches/gerbil-v19-compile-job-drain.patch)
 fi
 
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
@@ -70,6 +72,7 @@ patchset_hash="$({
   for patch in "${gambit_patches[@]}"; do sha256_file "$root/$patch"; done
   sha256_file "$root/tools/ci/build_source_toolchain.sh"
   sha256_file "$root/tools/ci/check_executable_outputs.py"
+  sha256_file "$root/tools/ci/compile_job_drain.ss"
   sha256_file "$root/tools/release/activate-gerbil.sh"
 } | shasum -a 256 | awk '{print $1}')"
 identity="$GERBIL_SOURCE_REVISION-$GAMBIT_SOURCE_REVISION-$compiler_hash-$patchset_hash"
@@ -87,6 +90,7 @@ verify() {
     test ! -L "$GERBIL_HOME/bin/gambit-file-sha256"
     grep -F 'bound_input_sha=' "$GERBIL_HOME/bin/gambit-static-object-reuse"
   fi
+  gxi "$root/tools/ci/compile_job_drain.ss"
   python3 "$root/tools/ci/check_executable_outputs.py"
   mkdir -p "$root/.ci/receipts"
   cp "$GERBIL_PREFIX/ci-source-toolchain.json" "$root/.ci/receipts/source-toolchain.json"

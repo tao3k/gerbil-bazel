@@ -73,6 +73,8 @@ def main():
                                 timeout=120)
         if failed.returncode == 0:
             raise AssertionError("failed executable producer was admitted")
+        if (root / "shared-writer.guard").exists():
+            raise AssertionError("failed compiler returned with an active shared C writer")
         subprocess.run(["gxi", "build.ss", "compile"], cwd=root, env=env,
                        check=True, timeout=120)
         for name in ("first", "second"):
