@@ -1,0 +1,65 @@
+{
+  "schema": "native-generated-c-component-timings-v1",
+  "scope": "55-module component; not complete consumer qualification",
+  "wholeConsumerAdmitted": false,
+  "mcpAbiGscSha256": "6493053bdc3c6f544e47642ba2de0888768010acad949351b6887d3b482d5d5c",
+  "ascentAbiGscSha256": "a3362162b859c951ed1269ab148fc1015e3508bff803e2c7d469d83d018060da",
+  "runs": [
+    {
+      "receipt": ".data/d1510-real-native-generated-c-gsc-v5",
+      "inProcessDigests": true,
+      "originalProduceSeconds": 6.53,
+      "nativeProduceSeconds": 7.81,
+      "originalLinkSeconds": 3.87,
+      "nativeLinkSeconds": 0.31,
+      "timeFileSha256": {
+        "original-produce.time": "da30561c55e41e1e7664e35c6e0a84a4fcfde274332c0d8961bbb51d0b6d38af",
+        "native-produce.time": "8fee0aad8f98c8d7ab646169426fd8c7b1e140de661277335f7d987cd11937df",
+        "original-link.time": "1d1bfffb7099859230c271c4971fd1d1ab7832305717d17d19030dd455e846a9",
+        "native-link.time": "34485cde3b71e1a61af3244e410751e8a4195e90e44f8fe91fc3ca528d0cd2c3"
+      }
+    },
+    {
+      "receipt": ".data/d1510-real-native-generated-c-gsc-v6",
+      "inProcessDigests": false,
+      "originalProduceSeconds": 6.82,
+      "nativeProduceSeconds": 10.47,
+      "originalLinkSeconds": 3.76,
+      "nativeLinkSeconds": 0.89,
+      "timeFileSha256": {
+        "original-produce.time": "fee8a774fe127c128434ab53c24dc648eacb957ed92b110069e4ae9137210614",
+        "native-produce.time": "ce3cf8ba6f3a56cd3687dc2a4f4b80b96213d96c7d4eef2f213fb237631d4e6f",
+        "original-link.time": "6e10d0aef23c63a5289ebb625922c724cdd79d6f250b4482f91c799dea8eaed3",
+        "native-link.time": "4fb315b6210aed9ad39d05bd77c3af25be4e00f2b6500e8b73d6fa6f117f83e8"
+      }
+    },
+    {
+      "receipt": ".data/d1510-real-native-generated-c-gsc-v7",
+      "inProcessDigests": true,
+      "originalProduceSeconds": 5.80,
+      "nativeProduceSeconds": 7.80,
+      "originalLinkSeconds": 5.89,
+      "nativeLinkSeconds": 0.49,
+      "timeFileSha256": {
+        "original-produce.time": "66e36888307e7475a123a1da424bd966d009114f36306056ce27e74e6e43a326",
+        "native-produce.time": "897b8654579b39455bbab3508bc8bdce881e76e55fc543d25b640c5dd63d02dc",
+        "original-link.time": "de021ba63f5df037143e45ff89db7d773fbaf90c6effc9873efa85faafdddf84",
+        "native-link.time": "8beb5de6e410740073f97f8ff3b4a6f563dbb5edd0599669fbb3292fb974ec41"
+      }
+    },
+    {
+      "receipt": ".data/d1510-real-native-generated-c-ascent-gsc-v1",
+      "inProcessDigests": true,
+      "originalProduceSeconds": 9.25,
+      "nativeProduceSeconds": 11.27,
+      "originalLinkSeconds": 9.15,
+      "nativeLinkSeconds": 0.69,
+      "timeFileSha256": {
+        "original-produce.time": "46843a5b1aca6f07b6068825ccb0bef692792608718d198d47a45f7bf6c7437d",
+        "native-produce.time": "fe3965f5ec6f9e1d1f77916a91b2476b0e223133bd4251dbf2674116a84a5a66",
+        "original-link.time": "710890ec6f36fdbf82800aada533e19bb9ba6148a44cb357878008fd7ea1c464",
+        "native-link.time": "6dd42c7d27f7a0b52e45cbe18ae647e8c4a565be8d25ffba00c148e8e1f1d5c9"
+      }
+    }
+  ]
+}

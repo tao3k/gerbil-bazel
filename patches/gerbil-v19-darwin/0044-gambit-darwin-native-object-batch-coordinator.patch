@@ -1,0 +1,279 @@
+diff --git a/bin/gambit-static-object-batch.c b/bin/gambit-static-object-batch.c
+new file mode 100644
+index 0000000..3f86edc
+--- /dev/null
++++ b/bin/gambit-static-object-batch.c
+@@ -0,0 +1,258 @@
++/* Experimental request coordinator; retain every per-object content check. */
++
++#include <pthread.h>
++#include <limits.h>
++
++struct batch_job {
++  char *a[25];
++  char *target, *target_proof, *lock, *directory, *pin, *environment;
++  char environment_sha[65], request_tools_sha[65];
++  int locked, status;
++};
++
++struct batch_queue {
++  struct batch_job *jobs;
++  size_t count, next;
++  pthread_mutex_t mutex;
++};
++
++static int copy_regular(const char *source, const char *target) {
++  if (!regular_file(source)) return -1;
++  FILE *out = fopen(target, "wb");
++  if (!out) return -1;
++  int failed = append_file(out, source) != 0;
++  if (fclose(out) != 0) failed = 1;
++  return failed ? -1 : 0;
++}
++
++static int canonical_source(const char *path) {
++  char resolved[PATH_MAX];
++  return path[0] == '/' && regular_file(path) && realpath(path, resolved) &&
++         strcmp(path, resolved) == 0;
++}
++
++static int canonical_target(const char *path) {
++  char resolved[PATH_MAX], *copy = strdup(path);
++  if (!copy) return 0;
++  char *slash = strrchr(copy, '/');
++  int valid = slash && slash != copy && slash[1] &&
++              strcmp(slash + 1, ".") && strcmp(slash + 1, "..");
++  if (valid) {
++    *slash = 0;
++    valid = realpath(copy, resolved) && strcmp(copy, resolved) == 0 &&
++            regular_or_absent(path);
++  }
++  free(copy);
++  return valid;
++}
++
++static int compare_job_targets(const void *left, const void *right) {
++  const struct batch_job *const *a = left, *const *b = right;
++  return strcmp((*a)->target, (*b)->target);
++}
++
++static int same_tool_paths(char **a, char **b) {
++  for (int i = 10; i <= 22; ++i)
++    if ((i == 10 || i >= 16) && strcmp(a[i], b[i])) return 0;
++  return 1;
++}
++
++static int batch_recipe_supported(char **a) {
++  const char *denied[] = {" -M", " -B", " -save-temps", " -fprofile", " --coverage",
++    " -g", " -fplugin", " -wrapper", " -specs", " --specs", " -fdump", " -fopt-info",
++    " -S ", " -E ", " -o ", " @", " -ffile-prefix-map=", " -fmacro-prefix-map=",
++    " -fdebug-prefix-map="};
++  char *flags = NULL;
++  if (asprintf(&flags, " %s %s %s %s %s ", a[11], a[12], a[13], a[14], a[24]) < 0) return 0;
++  int supported = plain_flags(flags);
++  for (size_t i = 0; i < sizeof(denied) / sizeof(*denied); ++i)
++    if (strstr(flags, denied[i])) supported = 0;
++  free(flags);
++  char cwd[PATH_MAX];
++  return supported && getcwd(cwd, sizeof(cwd)) && !strcmp(cwd, a[8]);
++}
++
++static void *batch_worker(void *data) {
++  struct batch_queue *queue = data;
++  for (;;) {
++    pthread_mutex_lock(&queue->mutex);
++    size_t index = queue->next++;
++    pthread_mutex_unlock(&queue->mutex);
++    if (index >= queue->count) return NULL;
++    queue->jobs[index].status = capture(25, queue->jobs[index].a);
++  }
++}
++
++static int capture_batch(const char *manifest, const char *directory, int workers) {
++  int result = 2, descriptor = -1;
++  char *buffer = NULL, manifest_sha[65];
++  struct batch_job *jobs = NULL, **ordered = NULL;
++  size_t count = 0;
++  if (workers < 1 || workers > 256 || !canonical_source(manifest) ||
++      hex_digest(manifest, manifest_sha) != 0) return 2;
++  descriptor = open(manifest, O_RDONLY | O_NOFOLLOW);
++  struct stat status;
++  if (descriptor < 0 || fstat(descriptor, &status) != 0 || status.st_size < 1 ||
++      status.st_size > 16 * 1024 * 1024) goto done;
++  size_t size = (size_t)status.st_size, offset = 0;
++  buffer = malloc(size);
++  if (!buffer) goto done;
++  while (offset < size) {
++    ssize_t bytes = read(descriptor, buffer + offset, size - offset);
++    if (bytes < 0 && errno == EINTR) continue;
++    if (bytes <= 0) goto done;
++    offset += (size_t)bytes;
++  }
++  close(descriptor); descriptor = -1;
++  const char magic[] = "gambit-native-object-batch-v1";
++  if (size <= sizeof(magic) || memcmp(buffer, magic, sizeof(magic))) goto done;
++  offset = sizeof(magic);
++  while (offset < size) {
++    if (count >= 4096) goto done;
++    struct batch_job *grown = realloc(jobs, (count + 1) * sizeof(*jobs));
++    if (!grown) goto done;
++    jobs = grown;
++    struct batch_job *job = &jobs[count++];
++    memset(job, 0, sizeof(*job));
++    for (int i = 0; i < 25; ++i) {
++      char *end = memchr(buffer + offset, 0, size - offset);
++      if (!end) goto done;
++      job->a[i] = buffer + offset;
++      offset = (size_t)(end - buffer) + 1;
++    }
++    if (strcmp(job->a[1], "--capture") || !batch_recipe_supported(job->a) || !canonical_source(job->a[2]) ||
++        !canonical_target(job->a[3]) || !canonical_source(job->a[9]) ||
++        strlen(job->a[6]) != 64 || !same_digest(job->a[2], job->a[6])) goto done;
++    job->target = job->a[3];
++    job->environment = job->a[9];
++    if (hex_digest(job->environment, job->environment_sha) != 0) goto done;
++    if (asprintf(&job->target_proof, "%s.gambit-static-proof", job->target) < 0 ||
++        asprintf(&job->lock, "%s.gambit-static-lock", job->target) < 0 ||
++        !regular_or_absent(job->target_proof)) goto done;
++  }
++  if (!count || !same_digest(manifest, manifest_sha)) goto done;
++  ordered = malloc(count * sizeof(*ordered));
++  if (!ordered) goto done;
++  for (size_t i = 0; i < count; ++i) ordered[i] = &jobs[i];
++  qsort(ordered, count, sizeof(*ordered), compare_job_targets);
++  for (size_t i = 1; i < count; ++i)
++    if (!strcmp(ordered[i - 1]->target, ordered[i]->target)) goto done;
++  for (size_t i = 0; i < count; ++i) {
++    if (!strcmp(jobs[i].target, manifest)) goto done;
++    for (size_t j = 0; j < count; ++j) {
++      if (!strcmp(jobs[i].target, jobs[j].a[2]) ||
++          !strcmp(jobs[i].target, jobs[j].a[9]) ||
++          !strcmp(jobs[i].target_proof, jobs[j].target)) goto done;
++      for (int k = 10; k <= 22; ++k)
++        if ((k == 10 || k >= 16) && !strcmp(jobs[i].target, jobs[j].a[k])) goto done;
++    }
++  }
++  /* The same ordering is used even when two callers supply reverse manifests. */
++  for (size_t i = 0; i < count; ++i) {
++    for (int attempt = 0; mkdir(ordered[i]->lock, 0700) != 0; ++attempt) {
++      if (errno != EEXIST || attempt >= 999) goto done;
++      struct timespec delay = {0, 10000000};
++      nanosleep(&delay, NULL);
++    }
++    ordered[i]->locked = 1;
++  }
++  if (mkdir(directory, 0700) != 0) goto done;
++  for (size_t i = 0; i < count; ++i) {
++    struct batch_job *job = &jobs[i];
++    char *object = NULL, *proof = NULL, *environment = NULL;
++    if (asprintf(&job->directory, "%s/job-%zu", directory, i) < 0 ||
++        mkdir(job->directory, 0700) != 0 ||
++        asprintf(&job->pin, "%s.gambit-batch.XXXXXX", job->a[2]) < 0) goto done;
++    int pin = mkstemp(job->pin);
++    if (pin < 0) goto done;
++    close(pin);
++    object = child_path(job->directory, "selected.o");
++    environment = child_path(job->directory, "environment");
++    if (!object || asprintf(&proof, "%s.gambit-static-proof", object) < 0) goto done;
++    if (!environment || copy_regular(job->environment, environment) != 0 ||
++        !same_digest(environment, job->environment_sha)) goto done;
++    if (regular_file(job->target) && copy_regular(job->target, object) != 0) goto done;
++    if (regular_file(job->target_proof) && copy_regular(job->target_proof, proof) != 0) goto done;
++    job->a[3] = object;
++    job->a[4] = job->directory;
++    job->a[5] = job->pin;
++    job->a[9] = environment;
++    free(proof);
++  }
++  struct batch_queue queue = {jobs, count, 0, PTHREAD_MUTEX_INITIALIZER};
++  pthread_t threads[256];
++  pthread_attr_t attributes;
++  if (pthread_attr_init(&attributes) != 0) goto done;
++  /* The retained digest implementation uses a 1 MiB stack buffer. */
++  if (pthread_attr_setstacksize(&attributes, 4 * 1024 * 1024) != 0) {
++    pthread_attr_destroy(&attributes); goto done;
++  }
++  int launched = 0, launch_failed = 0;
++  for (; launched < workers && (size_t)launched < count; ++launched)
++    if (pthread_create(&threads[launched], &attributes, batch_worker, &queue) != 0) {
++      launch_failed = 1; break;
++    }
++  pthread_attr_destroy(&attributes);
++  for (int i = 0; i < launched; ++i) pthread_join(threads[i], NULL);
++  pthread_mutex_destroy(&queue.mutex);
++  if (launch_failed || !same_digest(manifest, manifest_sha)) goto done;
++  /* No public target is changed by a partial compile failure. */
++  size_t tool_sets = 0;
++  for (size_t i = 0; i < count; ++i) {
++    struct batch_job *job = &jobs[i];
++    if (job->status != 0 || !same_digest(job->a[2], job->a[6]) ||
++        !canonical_target(job->target) || !regular_or_absent(job->target_proof) ||
++        !same_digest(job->environment, job->environment_sha) ||
++        !same_digest(job->a[9], job->environment_sha)) goto done;
++    char *after = child_path(job->directory, "tools.request-complete");
++    char *before = child_path(job->directory, "tools.before");
++    char *tools[] = {job->a[10], job->a[16], job->a[17], job->a[18],
++                    job->a[19], job->a[20], job->a[21], job->a[22]};
++    char expected[65];
++    if (!after || !before || hex_digest(before, expected) != 0) goto done;
++    size_t prior = 0;
++    while (prior < i && !same_tool_paths(jobs[prior].a, job->a)) ++prior;
++    if (prior < i) memcpy(job->request_tools_sha, jobs[prior].request_tools_sha, 65);
++    else {
++      if (tools_digest(after, tools) != 0 || hex_digest(after, job->request_tools_sha) != 0) goto done;
++      ++tool_sets;
++    }
++    if (strcmp(expected, job->request_tools_sha)) goto done;
++    free(after); free(before);
++  }
++  for (size_t i = 0; i < count; ++i) {
++    struct batch_job *job = &jobs[i];
++    char *proof = NULL;
++    if (asprintf(&proof, "%s.gambit-static-proof", job->a[3]) < 0 ||
++        rename(job->a[3], job->target) != 0 || rename(proof, job->target_proof) != 0) {
++      free(proof); goto done;
++    }
++    free(proof);
++  }
++  puts("GAMBIT-STATIC-OBJECT-BATCH-COMMIT");
++  printf("GAMBIT-STATIC-OBJECT-BATCH-TOOL-SETS %zu\n", tool_sets);
++  result = 0;
++done:
++  if (descriptor >= 0) close(descriptor);
++  for (size_t i = 0; i < count; ++i) {
++    if (jobs[i].pin) unlink(jobs[i].pin);
++    if (jobs[i].locked) rmdir(jobs[i].lock);
++    free(jobs[i].target_proof); free(jobs[i].lock);
++    free(jobs[i].directory); free(jobs[i].pin);
++  }
++  free(ordered); free(jobs); free(buffer);
++  if (result != 0) fputs("GAMBIT-STATIC-OBJECT-BATCH-DENY\n", stderr);
++  return result;
++}
++
++int main(int argc, char **argv) {
++  if (argc > 1 && !strcmp(argv[1], "--batch")) {
++    const char *enabled = getenv("GAMBIT_DARWIN_NATIVE_OBJECT_BATCH");
++    if (argc != 5 || !enabled || strcmp(enabled, "1")) return 77;
++    char *end;
++    long workers = strtol(argv[4], &end, 10);
++    if (*end || workers < 1 || workers > 256) return 2;
++    return capture_batch(argv[2], argv[3], (int)workers);
++  }
++  return capture_single_main(argc, argv);
++}
+diff --git a/bin/gambit-static-object-native.c b/bin/gambit-static-object-native.c
+index cd6e57e..c3761b9 100644
+--- a/bin/gambit-static-object-native.c
++++ b/bin/gambit-static-object-native.c
+@@ -279,7 +279,9 @@ static int capture(int argc, char **a) {
+   return 0;
+ }
+ 
+-int main(int argc, char **argv) {
++int capture_single_main(int argc, char **argv) {
+   if (argc > 1 && strcmp(argv[1], "--capture") == 0) return capture(argc, argv);
+   return digest_cli_main(argc, argv);
+ }
++
++#include "gambit-static-object-batch.c"

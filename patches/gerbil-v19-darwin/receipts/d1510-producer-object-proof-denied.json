@@ -1,0 +1,43 @@
+{
+  "schema": "darwin-producer-proof-denial-v1",
+  "decision": "DENY",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "firstCompileSeconds": 4.053162457999861,
+  "coldBuildCompleted": false,
+  "completeBuildSeconds": null,
+  "completeTestSeconds": null,
+  "observedStopSeconds": 42.029596583000966,
+  "limitsSeconds": {
+    "firstLog": 4.5,
+    "completeBuild": 42,
+    "completeTest": 97
+  },
+  "cleanup": {
+    "errors": [],
+    "reaped": true,
+    "terminalExitCode": -9
+  },
+  "sourceUnchanged": true,
+  "counters": {
+    "boundSinglePassCaptures": 183,
+    "objectHits": 0,
+    "closedLinkSelectedEvents": 0
+  },
+  "moduleHandoff": {
+    "decision": "PASS",
+    "scope": "one real Gerbil module, producer capture and dependent native executable",
+    "objectAndProofBytesUnchanged": true,
+    "nativeExecutionPassed": true
+  },
+  "rawEvidenceFiles": {
+    ".data/d1510-producer-proof-mcp-qualification-v2/report.json": "29d09da19b6b88af3eff9f5e8823d0b2796a77c332425e4bb096f98915420957",
+    ".data/d1510-producer-proof-mcp-qualification-v2/0-candidate/build.log": "862640918fcc8eae77d1dc0acc7a15fc4f45de388c9dc357cd61d29324d247e6",
+    ".data/d1510-producer-proof-mcp-qualification-v2/progressive-admission.json": "288334ecd1c0ba1ead3ba2cc66c55a548583717bb0fc659f0aba7655d2ace559",
+    ".data/d1510-producer-proof-mcp-aot-v2/report.json": "2603f1f2f3e24695fbd4b29833b1e8737f2752cd7bd1b5c0a42e6b45273c6dbe",
+    "patches/gerbil-v19-darwin/0034-gerbil-darwin-producer-object-proof.patch": "70004cb47cc8cc8766fb7e2cd19975cfb5700344eb8e8c831c288ba56ce5e515",
+    ".data/d1510-producer-object-handoff-v7/build.log": "fabd9b5f9826a01010daa60c2b5a6ab2bfd6aa39d3313a1504525a7646886a6a",
+    ".data/d1510-producer-object-handoff-v7/native.stdout": "78cc190939c169a253f120697e10efbcc7076348f8216da47f8e6101f3913cf1",
+    ".data/d1510-producer-object-handoff-v7/exit-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  }
+}

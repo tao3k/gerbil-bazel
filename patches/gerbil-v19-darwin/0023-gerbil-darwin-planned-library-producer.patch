@@ -1,0 +1,76 @@
+diff --git a/src/std/make.ss b/src/std/make.ss
+index 880fc1f..00b218d 100644
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -207,10 +207,20 @@ TODO:
+ (def (make-build buildspec-in settings)
+   (parameterize ((current-compilation-target (settings-target settings)))
+     (def buildspec (normalize-buildspec buildspec-in))
+-    (def compile-static-runtime-objects?
++    (def executable-consumer?
+       (ormap (lambda (spec)
+                (memq (spec-type spec) '(exe: static-exe:)))
+              buildspec))
++    (def native-generated-c-proof?
++      (and (not (ormap (lambda (spec)
++                        (memq (spec-type spec)
++                              '(exe: static-exe: optimized-exe: optimized-static-exe:)))
++                      buildspec))
++           (cond-expand
++             (darwin (equal? (getenv "GAMBIT_DARWIN_NATIVE_GENERATED_C" "") "1"))
++             (else #f))))
++    (def compile-static-runtime-objects?
++      (or executable-consumer? native-generated-c-proof?))
+     ;; detect and report duplicate files in the buildspec up front
+     (let (file-counts (make-hash-table))
+       (for (spec buildspec)
+@@ -296,7 +306,7 @@ TODO:
+     (def (build-worker)
+       (try
+        (for (spec workch)
+-         (build spec settings compile-static-runtime-objects?)
++         (build spec settings compile-static-runtime-objects? native-generated-c-proof?)
+          (completion-post! (hash-ref completions (module-id spec)) 'done))
+        (catch (e)
+          (barrier-error! build-barrier e)
+@@ -464,19 +474,19 @@ TODO:
+      (else
+       `("-e" ,include-gambit-sharp)))))
+ 
+-(def (build spec settings (compile-static-runtime-objects? #f))
++(def (build spec settings (compile-static-runtime-objects? #f) (native-generated-c-proof? #f))
+   (match spec
+     ((? string? modf)
+-     (gxc-compile modf #f settings #t compile-static-runtime-objects?))
++     (gxc-compile modf #f settings #t compile-static-runtime-objects? native-generated-c-proof?))
+     ([gxc: modf [submodules: submodules . _] . opts]
+-     (for-each (cut build <> settings compile-static-runtime-objects?) submodules)
+-     (gxc-compile modf opts settings #t compile-static-runtime-objects?))
++     (for-each (cut build <> settings compile-static-runtime-objects? native-generated-c-proof?) submodules)
++     (gxc-compile modf opts settings #t compile-static-runtime-objects? native-generated-c-proof?))
+     ([gxc: modf . opts]
+-     (gxc-compile modf opts settings #t compile-static-runtime-objects?))
++     (gxc-compile modf opts settings #t compile-static-runtime-objects? native-generated-c-proof?))
+     ([gsc: modf . opts]
+      (gsc-compile modf opts settings))
+     ([ssi: modf . submodules]
+-     (for-each (cut build <> settings compile-static-runtime-objects?) submodules)
++     (for-each (cut build <> settings compile-static-runtime-objects? native-generated-c-proof?) submodules)
+      (compile-ssi modf '() settings))
+     ([exe:  modf . opts]
+      (compile-exe/context modf opts settings))
+@@ -504,9 +514,12 @@ TODO:
+     (_ (listify opts))))
+ 
+ ;; TODO: split that (and more?) into many action. See :gerbil/compiler/driver
+-(def (gxc-compile mod opts settings (invoke-gsc? #t) (compile-static-runtime-objects? #f))
++(def (gxc-compile mod opts settings (invoke-gsc? #t) (compile-static-runtime-objects? #f)
++                  (native-generated-c-proof? #f))
+   (message "... compile " mod)
+-  (def gsc-opts (gsc-compile-opts opts))
++  (def gsc-opts
++    (append (if native-generated-c-proof? ["-generated-c-proof"] [])
++            (gsc-compile-opts opts)))
+   (def srcpath (source-path mod ".ss" settings))
+   (let (gxc-opts
+         [invoke-gsc: invoke-gsc?

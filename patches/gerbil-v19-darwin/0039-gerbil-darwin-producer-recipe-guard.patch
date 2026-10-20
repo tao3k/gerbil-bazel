@@ -1,0 +1,146 @@
+diff --git a/src/gerbil/compiler/base.ss b/src/gerbil/compiler/base.ss
+index 24caffc..3ae67d8 100644
+--- a/src/gerbil/compiler/base.ss
++++ b/src/gerbil/compiler/base.ss
+@@ -308,6 +308,11 @@ namespace: gxc
+   (def first-error? #f)
+   (def first-error #f)
+   (def output-results (make-hash-table))
++  (def output-recipes
++    (cond-expand
++      (darwin (and (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_RECIPE_PROOF" #f) "1")
++                   (make-hash-table)))
++      (else #f)))
+   (def worker-count (max 1 __available-cores))
+ 
+   (def (submit! job)
+@@ -326,10 +331,18 @@ namespace: gxc
+         (hash-put! output-results output
+                    (make-compile-output-result #f #f [])))))
+ 
+-  (def (output-produced? output)
+-    (with-lock mx (lambda () (and (hash-get output-results output) #t))))
+-
+-  (def (publish-output! output failed?)
++  (def (output-produced? output (recipe? #f))
++    (with-lock mx
++      (lambda ()
++        (let (result (hash-get output-results output))
++          (if recipe?
++            (and output-recipes result (compile-output-result-completed? result)
++                 (not (compile-output-result-failed? result))
++                 (let (recipe (hash-get output-recipes output))
++                   (and recipe (map string-copy recipe))))
++            (and result #t))))))
++
++  (def (publish-output! output failed? (recipe #f))
+     (def callbacks
+       (with-lock mx
+         (lambda ()
+@@ -339,6 +352,8 @@ namespace: gxc
+               (error "compile output published twice" output))
+             (set! (compile-output-result-completed? result) #t)
+             (set! (compile-output-result-failed? result) failed?)
++            (when (and output-recipes recipe (not failed?))
++              (hash-put! output-recipes output recipe))
+             (let (callbacks (compile-output-result-callbacks result))
+               (set! (compile-output-result-callbacks result) [])
+               callbacks)))))
+@@ -456,7 +471,7 @@ namespace: gxc
+   (let (executor (current-or-open-compile-executor))
+     ((compile-executor-submit executor) (make-compile-job thunk name))))
+ 
+-(def (add-compile-output-job! output thunk (name (current-compile-context)))
++(def (add-compile-output-job! output thunk (name (current-compile-context)) (recipe #f))
+   (let (executor (current-or-open-compile-executor))
+     ((compile-executor-register-output executor) output)
+     ((compile-executor-submit executor)
+@@ -467,8 +482,15 @@ namespace: gxc
+            ((compile-executor-publish-output executor) output #t)
+            (raise error))
+          (lambda ()
+-           (thunk)
+-           ((compile-executor-publish-output executor) output #f))))
++           (let (produced-recipe
++                 (cond-expand
++                   (darwin
++                    (and recipe
++                         (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_RECIPE_PROOF" #f) "1")
++                         (map string-copy (recipe))))
++                   (else #f)))
++             (thunk)
++             ((compile-executor-publish-output executor) output #f produced-recipe)))))
+       name))))
+ 
+ (def (add-compile-dependent-job! outputs thunk (name (current-compile-context)))
+@@ -480,6 +502,13 @@ namespace: gxc
+   (let (executor (current-or-open-compile-executor))
+     ((compile-executor-output-produced? executor) output)))
+ 
++(def (current-compile-output-recipe output)
++  (cond-expand
++    (darwin
++     (let (executor (current-or-open-compile-executor))
++       ((compile-executor-output-produced? executor) output #t)))
++    (else #f)))
++
+ (def (execute-pending-compile-jobs!)
+   (let (executor
+         (with-lock __compile-executor-mx
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+index bd6bee6..098d3d8 100644
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -292,6 +292,11 @@ namespace: gxc
+ 
+       (def selected-c [])
+       (def produced-dynamic-c [])
++      (def produced-recipes [])
++      (def recipe-proof?
++        (cond-expand
++          (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_RECIPE_PROOF" #f) "1"))
++          (else #f)))
+       (def producer-proof?
+         (cond-expand
+           (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_PRODUCER_PROOF" #f) "1"))
+@@ -384,7 +389,10 @@ namespace: gxc
+                         (file-newer? c-path o-path))
+                 (let* ((gsc-cc-opts (gsc-cc-options static: #f))
+                        (args
+-                        (if (and selected producer-proof? (member c-path produced-dynamic-c))
++                        (if (and selected producer-proof? (member c-path produced-dynamic-c)
++                                 (or (not recipe-proof?)
++                                     (let (recipe (assoc c-path produced-recipes))
++                                       (and recipe (equal? gsc-cc-opts (cdr recipe))))))
+                           ["-obj" gsc-cc-opts ... "-cc-options" "-D___DYNAMIC -fPIC" c-path]
+                           ["-obj" gsc-cc-opts ... gsc-static-opts ... c-path])))
+                   (if (not selected)
+@@ -422,6 +430,13 @@ namespace: gxc
+                              src-deps-scm src-deps-runtime-c ready-deps) ...
+                         (if ready-bin src-bin-runtime-c src-bin-scm) output-scm]))
+                  (when (and closed-link? producer-proof?)
++                   (when recipe-proof?
++                     (set! produced-recipes
++                       (filter (lambda (entry) (cdr entry))
++                         (map (lambda (static-c runtime-c)
++                                (cons static-c (current-compile-output-recipe runtime-c)))
++                              [src-deps-c ... src-bin-c]
++                              [src-deps-runtime-c ... src-bin-runtime-c]))))
+                    (set! produced-dynamic-c
+                      (append
+                       (filter (lambda (path) path)
+@@ -1035,7 +1050,13 @@ namespace: gxc
+             (lambda () (gsc-compile-file path phi? static-path))))
+       (if (current-compile-parallel)
+         (if runtime-c
+-          (add-compile-output-job! runtime-c compile-it `(compile-file ,path))
++          (cond-expand
++            (darwin
++             (if (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_RECIPE_PROOF" #f) "1")
++               (add-compile-output-job! runtime-c compile-it `(compile-file ,path)
++                 (lambda () (gsc-cc-options phi?)))
++               (add-compile-output-job! runtime-c compile-it `(compile-file ,path))))
++            (else (add-compile-output-job! runtime-c compile-it `(compile-file ,path))))
+           (add-compile-job! compile-it `(compile-file ,path)))
+         (compile-it)))))
+ 

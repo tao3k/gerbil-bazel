@@ -1,0 +1,148 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gerbil: bind closed-link C per object job
+
+Requires the closed-link GSC consumer and experimental 0027 backend. Disabled
+unless GAMBIT_DARWIN_CLOSED_LINK_REUSE=1 on Darwin. Unsupported GSC envelopes
+retain ordinary work. No MCP/ASCENT whole-consumer performance admission yet.
+
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -289,9 +289,71 @@
+              (append gerbil-runtime-modules
+                      (map (lambda (mod) (symbol->string (expander-context-id mod)))
+                           (cons ctx deps))))))
++
++      (def selected-c [])
++      (def closed-link?
++        (cond-expand
++          (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_REUSE" #f) "1"))
++          (else #f)))
++
++      (def (source-sha path)
++        (let* ((tool (path-expand "gambit-file-sha256" (path-directory (gerbil-gsc))))
++               (proc (open-process [path: tool arguments: ["--raw" path]
++                                              stdout-redirection: #t]))
++               (sha (read-line proc))
++               (extra (read-line proc))
++               (status (process-status proc)))
++          (close-port proc)
++          (unless (and (zero? status) (string? sha) (= (string-length sha) 64)
++                       (eof-object? extra))
++            (raise-compile-error "Closed link source digest failed" path))
++          sha))
++
++      (def (prepare-bound-link inputs object-inputs thunk)
++        (if (not closed-link?)
++          (thunk [])
++          (let* ((work (##create-temporary-directory (string-append output-scm ".binding-")))
++                 (binding (path-expand "selected-c" work)))
++            (unwind-protect
++              (begin
++                (thunk ["-closed-c-binding" binding])
++                ;; Unsupported GSC options deliberately retain ordinary work.
++                (when (file-exists? binding)
++                  (let* ((record (call-with-input-file binding
++                                   (lambda (port)
++                                     (let (record (read port))
++                                       (unless (eof-object? (read port))
++                                         (raise-compile-error "Trailing closed link binding" binding))
++                                       record))))
++                         (entries (and (list? record) (= (length record) 2)
++                                       (eq? (car record) 'gambit-closed-link-binding-v1)
++                                       (cadr record))))
++                    (unless (and (list? entries)
++                                 (let loop ((rest entries))
++                                   (or (null? rest)
++                                       (and (list? (car rest)) (= (length (car rest)) 3)
++                                            (string? (caar rest)) (string? (cadar rest))
++                                            (string? (caddar rest)) (= (string-length (caddar rest)) 64)
++                                            (equal? (cadar rest) (replace-extension-with-c (caar rest)))
++                                            (loop (cdr rest)))))
++                                 (equal? (map car entries) (map path-normalize inputs)))
++                      (raise-compile-error "Closed link binding inventory mismatch" binding))
++                    (for-each
++                     (lambda (input target)
++                       (let (entry (assoc (path-normalize input) entries))
++                         (unless entry
++                           (raise-compile-error "Missing closed link C binding" input))
++                         (set! selected-c (cons (cons target (caddr entry)) selected-c))))
++                     object-inputs [src-deps-c ... src-bin-c output-c])
++                    (set! selected-c
++                      (cons (cons output_-c (source-sha output_-c)) selected-c)))))
++              (begin
++                (when (file-exists? binding) (delete-file binding))
++                (delete-directory work))))))
+ 
+       (def (compile-obj scm-path c-path)
+-        (let (o-path (replace-extension c-path compiler-obj-suffix))
++        (let ((o-path (replace-extension c-path compiler-obj-suffix))
++              (selected (assoc c-path selected-c)))
+           (let* ((lock (string-append o-path ".lock"))
+                  (locked #f)
+                  (unlock
+@@ -310,16 +372,28 @@
+                     (retry)))))
+ 
+             (unwind-protect
+-              (when (or (not (file-exists? o-path))
++              (when (or selected
++                        (not (file-exists? o-path))
+                         (not scm-path)
+                         (file-newer? scm-path o-path)
+                         (file-newer? c-path o-path))
+-                (let (gsc-cc-opts (gsc-cc-options static: #f))
+-                  (invoke (gerbil-gsc)
+-                          ["-obj"
+-                           gsc-cc-opts ...
+-                           gsc-static-opts ...
+-                           c-path])))
++                (let* ((gsc-cc-opts (gsc-cc-options static: #f))
++                       (args ["-obj" gsc-cc-opts ... gsc-static-opts ... c-path]))
++                  (if (not selected)
++                    (invoke (gerbil-gsc) args)
++                    ;; Each job owns its environment; never setenv in the
++                    ;; threaded compiler parent or bypass the backend proof.
++                    (let* ((environment
++                            (cons (string-append "GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA=" (cdr selected))
++                                  (filter (lambda (entry)
++                                            (not (string-prefix? "GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA=" entry)))
++                                          (##os-environ))))
++                           (proc (open-process [path: (gerbil-gsc) arguments: args
++                                                      environment: environment]))
++                           (status (process-status proc)))
++                      (close-port proc)
++                      (unless (zero? status)
++                        (raise-compile-error "Bound C object compilation failed" c-path status))))))
+               (unlock)))))
+ 
+       (with-driver-mutex (create-directory* (path-directory output-bin)))
+@@ -331,18 +405,18 @@
+           (def (prepare-link)
+             (cond-expand
+               (darwin
+-               (let ((ready-deps (map current-compile-output-produced?
++               (let* ((ready-deps (map current-compile-output-produced?
+                                       src-deps-runtime-c))
+-                     (ready-bin (current-compile-output-produced? src-bin-runtime-c)))
+-                 (invoke (gerbil-gsc)
+-                         ["-link"
+-                          gsc-link-opts ...
+-                          libgerbil-c ...
+-                          (map (lambda (scm runtime-c ready?)
+-                                 (if ready? runtime-c scm))
+-                               src-deps-scm src-deps-runtime-c ready-deps) ...
+-                          (if ready-bin src-bin-runtime-c src-bin-scm)
+-                          output-scm])
++                      (ready-bin (current-compile-output-produced? src-bin-runtime-c))
++                      (selected-inputs
++                       [(map (lambda (scm runtime-c ready?) (if ready? runtime-c scm))
++                             src-deps-scm src-deps-runtime-c ready-deps) ...
++                        (if ready-bin src-bin-runtime-c src-bin-scm) output-scm]))
++                 (prepare-bound-link [libgerbil-c ... selected-inputs ...] selected-inputs
++                   (lambda (binding-options)
++                     (invoke (gerbil-gsc)
++                             ["-link" binding-options ... gsc-link-opts ...
++                              libgerbil-c ... selected-inputs ...])))
+                  ;; The executable object jobs retain their existing static C
+                  ;; paths.  Dynamic C lives elsewhere, so late producers and
+                  ;; Scheme fallback never race on the same output file.

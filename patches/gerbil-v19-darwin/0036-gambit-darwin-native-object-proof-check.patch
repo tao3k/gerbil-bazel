@@ -1,0 +1,145 @@
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+index 65277bb..4fdc805 100644
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -90,7 +90,7 @@ gambit_static_object_locked()
+   trap 'rm -rf "$temporary"; rmdir "$lock"' 0
+   env > "$temporary/environment.raw" || return 2
+   LC_ALL=C sort "$temporary/environment.raw" > "$temporary/environment" || return 2
+-  if test "${GAMBIT_DARWIN_NATIVE_OBJECT_CAPTURE-}" = 1 && test "${GAMBIT_DARWIN_BOUND_SINGLE_PASS-}" = 1 && test -n "$expected_source_sha" && { test ! -f "$output" || test ! -f "$proof"; }; then
++  if test "${GAMBIT_DARWIN_NATIVE_OBJECT_CAPTURE-}" = 1 && test "${GAMBIT_DARWIN_BOUND_SINGLE_PASS-}" = 1 && test -n "$expected_source_sha" && { test "${GAMBIT_DARWIN_NATIVE_OBJECT_CHECK-}" = 1 || test ! -f "$output" || test ! -f "$proof"; }; then
+     cc1=$("$compiler" -print-prog-name=cc1) || return 2
+     assembler=$("$compiler" -print-prog-name=as) || return 2
+     case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
+diff --git a/bin/gambit-static-object-native.c b/bin/gambit-static-object-native.c
+index af02d72..eec5a59 100644
+--- a/bin/gambit-static-object-native.c
++++ b/bin/gambit-static-object-native.c
+@@ -110,6 +110,40 @@ static int regular_or_absent(const char *path) {
+   return errno == ENOENT;
+ }
+ 
++static int regular_file(const char *path) {
++  struct stat status;
++  return lstat(path, &status) == 0 && S_ISREG(status.st_mode);
++}
++
++static int object_arguments(char **arguments, char **a, const char *output,
++                            const char *input, const char *mapping, int mode) {
++  int count = 0;
++  arguments[count++] = a[10];
++  if (add_flags(arguments, &count, a[11], 0) != 0 || add_flags(arguments, &count, a[12], mode == 0) != 0) return -1;
++  if (mode == 0) {
++    arguments[count++] = "-save-temps=obj";
++    arguments[count++] = "-x";
++    arguments[count++] = "c";
++    arguments[count++] = (char *)mapping;
++  }
++  if (add_flags(arguments, &count, a[13], 0) != 0) return -1;
++  char *include = NULL;
++  if (asprintf(&include, "-I%s", a[15]) < 0) return -1;
++  arguments[count++] = include;
++  arguments[count++] = mode == 1 ? "-E" : "-c";
++  arguments[count++] = "-o";
++  arguments[count++] = (char *)output;
++  if (add_flags(arguments, &count, a[14], 0) != 0) return -1;
++  if (mode == 1) {
++    arguments[count++] = (char *)mapping;
++    arguments[count++] = "-x";
++    arguments[count++] = "c";
++  }
++  arguments[count++] = (char *)input;
++  arguments[count] = NULL;
++  return 0;
++}
++
+ static int bind_source(const char *source, const char *pin, const char *expected) {
+   int in = open(source, O_RDONLY | O_NOFOLLOW);
+   int out = open(pin, O_WRONLY | O_TRUNC | O_NOFOLLOW);
+@@ -175,10 +209,11 @@ static int capture(int argc, char **a) {
+   char *after = child_path(directory, "tools.compiled"), *context = child_path(directory, "context");
+   char *proof = child_path(directory, "proof"), *stdout_path = child_path(directory, "native.stdout");
+   char *stderr_path = child_path(directory, "native.stderr"), *published_proof = NULL;
+-  char *include = NULL, *mapping = NULL;
++  char *mapping = NULL;
+   if (!object || !input || !normalized || !before || !after || !context || !proof ||
+       !stdout_path || !stderr_path || asprintf(&published_proof, "%s.gambit-static-proof", output) < 0 ||
+-      asprintf(&include, "-I%s", a[15]) < 0 || asprintf(&mapping, "-fmacro-prefix-map=%s=%s", pin, source) < 0) return 2;
++      asprintf(&mapping, "-fmacro-prefix-map=%s=%s", pin, source) < 0) return 2;
++  int captured = !regular_file(output) || !regular_file(published_proof);
+   char *tools[] = {a[10], a[16], a[17], a[18], a[19], a[20], a[21], a[22]};
+   char pin_sha[65], tool_sha[65], source_sha[65], cpp_sha[65], object_sha[65], key[65];
+   if (!same_digest(source, a[6])) {
+@@ -188,21 +223,7 @@ static int capture(int argc, char **a) {
+   if (bind_source(source, pin, a[6]) != 0 ||
+       hex_digest(pin, pin_sha) != 0 || tools_digest(before, tools) != 0 || hex_digest(before, tool_sha) != 0) return 2;
+   char *arguments[512];
+-  int count = 0;
+-  arguments[count++] = a[10];
+-  if (add_flags(arguments, &count, a[11], 0) != 0 || add_flags(arguments, &count, a[12], 1) != 0) return 77;
+-  arguments[count++] = "-save-temps=obj";
+-  arguments[count++] = "-x";
+-  arguments[count++] = "c";
+-  arguments[count++] = mapping;
+-  if (add_flags(arguments, &count, a[13], 0) != 0) return 77;
+-  arguments[count++] = include;
+-  arguments[count++] = "-c";
+-  arguments[count++] = "-o";
+-  arguments[count++] = object;
+-  if (add_flags(arguments, &count, a[14], 0) != 0) return 77;
+-  arguments[count++] = (char *)pin;
+-  arguments[count] = NULL;
++  if (object_arguments(arguments, a, captured ? object : input, pin, mapping, captured ? 0 : 1) != 0) return 77;
+   int status = compile_object(arguments, stdout_path, stderr_path);
+   if (status != 0) {
+     append_file(stdout, stdout_path); append_file(stderr, stderr_path);
+@@ -210,7 +231,8 @@ static int capture(int argc, char **a) {
+   }
+   if (!empty_file(stdout_path) || !empty_file(stderr_path)) return 77;
+   if (normalize_input(input, normalized, pin, source) != 0 ||
+-      hex_digest(normalized, cpp_sha) != 0 || hex_digest(object, object_sha) != 0 ||
++      hex_digest(normalized, cpp_sha) != 0 ||
++      hex_digest(captured ? object : output, object_sha) != 0 ||
+       hex_digest(source, source_sha) != 0 || strcmp(source_sha, a[6]) != 0 ||
+       !same_digest(pin, pin_sha) || tools_digest(after, tools) != 0 || !same_digest(after, tool_sha)) return 2;
+   FILE *record = fopen(context, "wb");
+@@ -219,13 +241,37 @@ static int capture(int argc, char **a) {
+   int failed = append_file(record, a[9]) != 0 || append_file(record, before) != 0;
+   fprintf(record, "%s\n", cpp_sha);
+   if (ferror(record) || fclose(record) != 0 || failed || hex_digest(context, key) != 0) return 2;
++  if (!captured) {
++    char existing[132], expected[132];
++    FILE *prior = fopen(published_proof, "rb");
++    if (!prior) return 2;
++    size_t length = fread(existing, 1, sizeof(existing), prior);
++    int eof = feof(prior), read_failed = ferror(prior);
++    fclose(prior);
++    int expected_length = snprintf(expected, sizeof(expected), "%s\n%s\n", key, object_sha);
++    if (!read_failed && eof && length == (size_t)expected_length && memcmp(existing, expected, length) == 0) {
++      puts("GAMBIT-STATIC-BOUND-NATIVE-CHECK");
++      puts("GAMBIT-STATIC-OBJECT-HIT");
++      return 0;
++    }
++    char *cc_stdout = child_path(directory, "native.cc.stdout"), *cc_stderr = child_path(directory, "native.cc.stderr");
++    if (!cc_stdout || !cc_stderr || object_arguments(arguments, a, object, normalized, mapping, 2) != 0) return 77;
++    status = compile_object(arguments, cc_stdout, cc_stderr);
++    if (status != 0) {
++      append_file(stdout, cc_stdout); append_file(stderr, cc_stderr);
++      return 2;
++    }
++    if (!empty_file(cc_stdout) || !empty_file(cc_stderr)) return 77;
++    if (!same_digest(source, a[6]) || !same_digest(pin, pin_sha) ||
++        tools_digest(after, tools) != 0 || !same_digest(after, tool_sha) || hex_digest(object, object_sha) != 0) return 2;
++  }
+   record = fopen(proof, "wb");
+   if (!record) return 2;
+   fprintf(record, "%s\n%s\n", key, object_sha);
+   if (ferror(record) || fclose(record) != 0 || !regular_or_absent(output) || !regular_or_absent(published_proof)) return 2;
+   if (rename(object, output) != 0 || rename(proof, published_proof) != 0) return 2;
+-  puts("GAMBIT-STATIC-BOUND-NATIVE-CAPTURE");
+-  puts("GAMBIT-STATIC-BOUND-SINGLE-PASS");
++  puts(captured ? "GAMBIT-STATIC-BOUND-NATIVE-CAPTURE" : "GAMBIT-STATIC-BOUND-NATIVE-CHECK");
++  if (captured) puts("GAMBIT-STATIC-BOUND-SINGLE-PASS");
+   puts("GAMBIT-STATIC-OBJECT-MISS");
+   return 0;
+ }

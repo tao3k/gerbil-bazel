@@ -1,0 +1,65 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gambit: bind static C preprocessing to a snapshot
+
+Apply after 0021. Preserve the frozen five-patch series separately. GNU GCC
+reads a private same-directory snapshot, not the mutable original C path.
+Preserve quote-include lookup, filename macros and the source timestamp.
+Debug/prefix-map invocations retain the original uncached command because
+the preprocessed-object path does not establish exact debug metadata parity.
+Default-off and Darwin-only through the existing platform gate. This patch
+does not qualify complete consumer performance or snapshot transitive headers.
+
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -68,5 +68,10 @@ gambit_static_object_locked()
+       gambit_static_original; return $? ;;
+   esac
++  case " $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
++    *' -g'*|*' -ffile-prefix-map='*|*' -fmacro-prefix-map='*|*' -fdebug-prefix-map='*)
++      gambit_static_original; return $? ;;
++  esac
++  case "$source" in *'"'*|*'\'*) gambit_static_original; return $? ;; esac
+   temporary=$(mktemp -d "${output}.gambit-static.XXXXXX") || return 2
+   trap 'rm -rf "$temporary"; rmdir "$lock"' 0
+   env > "$temporary/environment.raw" || return 2
+@@ -75,14 +80,25 @@ gambit_static_object_locked()
+   source_before=$(gambit_static_sha "$source") || return 2
++  cp -p "$source" "$temporary/source.c" || return 2
++  snapshot_sha=$(gambit_static_sha "$temporary/source.c") || return 2
++  test "$source_before" = "$snapshot_sha" || return 2
++  # A same-directory snapshot preserves quote-include lookup and header filenames.
++  snapshot_input=$(mktemp "${source}.gambit-static.XXXXXX") || return 2
++  trap 'rm -f "$snapshot_input"; rm -rf "$temporary"; rmdir "$lock"' 0
++  printf '#line 1 "%s"\n' "$source" > "$snapshot_input" || return 2
++  cat "$temporary/source.c" >> "$snapshot_input" || return 2
++  touch -r "$temporary/source.c" "$snapshot_input" || return 2
++  bound_input_sha=$(gambit_static_sha "$snapshot_input") || return 2
+   cc1=$("$compiler" -print-prog-name=cc1) || return 2
+   assembler=$("$compiler" -print-prog-name=as) || return 2
+   case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
+   apple_as=$(/usr/bin/xcrun --find as) || return 2
+   gambit_static_tools > "$temporary/tools.before" || return 2
+-  BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
++  BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} -fmacro-prefix-map="${snapshot_input}=${original_input}" -x c ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
++  BUILD_OBJ_INPUT_FILENAMES_PARAM=$snapshot_input
+   BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/input.i"
+   preprocess=$(substitute_obj "$BUILD_OBJ") || return 2
+   # Warning-producing invocations never enter the cache: preserve original diagnostics.
+-  if ! eval "$preprocess" > "$temporary/cpp.stdout" 2> "$temporary/cpp.stderr"; then
++  if ! eval "$preprocess" > "$temporary/cpp.stdout" 2> "$temporary/cpp.stderr"; then
+     cat "$temporary/cpp.stdout"
+     cat "$temporary/cpp.stderr" >&2
+     return 2
+@@ -91,5 +107,12 @@ gambit_static_object_locked()
+     gambit_static_original; return $?
+   fi
++  # Only GCC's main-input marker is synthetic; source/header markers are untouched.
++  awk -v snapshot="$snapshot_input" -v source="$source" '{ if ($0 == "# 0 \"" snapshot "\"") print "# 0 \"" source "\""; else if ($0 == "# 1 \"" snapshot "\"") print "# 1 \"" source "\""; else print }' "$temporary/input.i" > "$temporary/normalized.i" || return 2
++  mv "$temporary/normalized.i" "$temporary/input.i" || return 2
++  snapshot_after=$(gambit_static_sha "$temporary/source.c") || return 2
++  test "$snapshot_sha" = "$snapshot_after" || return 2
++  bound_input_after=$(gambit_static_sha "$snapshot_input") || return 2
++  test "$bound_input_sha" = "$bound_input_after" || return 2
+   gambit_static_tools > "$temporary/tools.after" || return 2
+   cmp -s "$temporary/tools.before" "$temporary/tools.after" || return 2
+   preprocessed_sha=$(gambit_static_sha "$temporary/input.i") || return 2

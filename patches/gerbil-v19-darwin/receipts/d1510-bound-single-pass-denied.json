@@ -1,0 +1,34 @@
+{
+  "schema": "darwin-bound-single-pass-denied-v1",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "firstCompileSeconds": 3.8186064580004313,
+  "performanceStops": [
+    {
+      "decision": "DENY",
+      "phase": "build",
+      "reason": "complete-time-deadline",
+      "observedElapsedSeconds": 42.03406058300243,
+      "ceilingSeconds": 42
+    }
+  ],
+  "cleanup": {
+    "errors": [],
+    "reaped": true,
+    "terminalExitCode": -9
+  },
+  "completeBuildSeconds": null,
+  "completeTestSeconds": null,
+  "events": {
+    "GAMBIT-STATIC-BOUND-SINGLE-PASS": 66,
+    "GAMBIT-STATIC-OBJECT-MISS": 66,
+    "GAMBIT-STATIC-OBJECT-HIT": 0,
+    "GAMBIT-GENERATED-C-MISS": 2,
+    "GAMBIT-GENERATED-C-HIT": 0
+  },
+  "rawEvidenceFiles": {
+    ".data/d1510-bound-single-pass-mcp-qualification-v1/report.json": "9a4a2c7e6e0f269a753faa8b1f15313b95607480afa78a0f30dd07143f0fea72",
+    ".data/d1510-bound-single-pass-mcp-qualification-v1/progressive-admission.json": "288334ecd1c0ba1ead3ba2cc66c55a548583717bb0fc659f0aba7655d2ace559",
+    ".data/d1510-bound-single-pass-mcp-qualification-v1/0-candidate/build.log": "49909da125215fb81e6b737b9327f9f21b5698164a1a100ad5f74d7a0abcda60"
+  }
+}

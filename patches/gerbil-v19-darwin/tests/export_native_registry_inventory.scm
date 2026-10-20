@@ -1,0 +1,28 @@
+;; Read the generated registry as data; never load its test modules.
+(define (export-native-registry-inventory! source destination)
+  (let ((paths
+         (call-with-input-file source
+           (lambda (port)
+             (read-line port)
+             (read-line port)
+             (let loop ()
+               (let ((form (read port)))
+                 (if (eof-object? form) (error "native registry missing")
+                     (if (and (list? form) (= (length form) 3)
+                              (eq? (car form) 'def) (eq? (cadr form) 'registry))
+                         (let ((entries (caddr form)))
+                           (if (not (and (pair? entries) (eq? (car entries) 'list)))
+                               (error "unsupported native registry"))
+                           (map (lambda (entry)
+                                  (if (not (and (list? entry) (= (length entry) 3)
+                                                (eq? (car entry) 'cons) (string? (cadr entry))))
+                                      (error "invalid native registry entry"))
+                                  (cadr entry)) (cdr entries)))
+                         (loop)))))))))
+    (if (or (null? paths)
+            (let duplicate? ((paths paths))
+              (and (pair? paths)
+                   (or (member (car paths) (cdr paths)) (duplicate? (cdr paths))))))
+        (error "empty or duplicate native inventory"))
+    (call-with-output-file destination
+      (lambda (port) (for-each (lambda (path) (display path port) (newline port)) paths)))))

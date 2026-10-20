@@ -1,0 +1,76 @@
+diff --git a/gsc/gambit-generated-c-closure.scm b/gsc/gambit-generated-c-closure.scm
+index 1df78b9..8d62cfc 100644
+--- a/gsc/gambit-generated-c-closure.scm
++++ b/gsc/gambit-generated-c-closure.scm
+@@ -215,23 +215,33 @@
+                                   (equal? environment (generation-environment))
+                                   pinned)))))))))))
+ 
+-(define (reuse-generated-c-closure! inputs options directory work proof hash-tool tools)
++(define (reuse-generated-c-closure! inputs options directory work proof hash-tool tools
++                                   #!optional (tool-snapshot #f))
+   (let ((os (symbol->string (caddr (system-type)))))
+     (if (not (and (>= (string-length os) 6) (string=? (substring os 0 6) "darwin")))
+         (error "Darwin-only generation prototype")))
+   (if (not (generation-supported-options? options))
+       (set! generated-c-observed-macro-context? #t))
++  ;; Only the member coordinator supplies a full content snapshot; it owns
++  ;; complete before/after tool validation for this one request, not a memo.
++  (if (and tool-snapshot
++           (not (and (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_MEMBER_TOOLS_BATCH" #f) "1")
++                     (list? tool-snapshot) (equal? tools (map car tool-snapshot)))))
++      (error "invalid member tool snapshot"))
+   (let* ((inputs (map path-normalize inputs))
+          (directory (path-normalize directory))
+          (outputs (map (lambda (input)
+                          (string-append directory "/"
+                            (path-strip-extension (path-strip-directory input)) ".c")) inputs))
+-         (tools-before (generation-file-digests hash-tool tools))
++         (tools-before (or tool-snapshot (generation-file-digests hash-tool tools)))
+          (inputs-before (generation-file-digests hash-tool inputs))
+          (context (list 'closed-generated-c-adapter-v1 inputs options directory
+                         (current-directory) (system-type) (generation-environment) tools-before inputs-before))
+          (lock (string-append proof ".lock"))
+          (attempts 0))
++    (define (tools-current?)
++      (if tool-snapshot #t
++          (equal? tools-before (generation-file-digests hash-tool tools))))
+     (if (or (null? inputs)
+             (let duplicates? ((remaining outputs))
+               (and (pair? remaining)
+@@ -271,7 +281,7 @@
+                                record)))))))
+           (if hit
+               (begin
+-                (if (not (equal? tools-before (generation-file-digests hash-tool tools)))
++                (if (not (tools-current?))
+                     (error "generation tools changed during hit"))
+                 (let ((pinned (generation-pin-outputs hash-tool
+                                 (map (lambda (entry)
+@@ -281,7 +291,7 @@
+                   (if (not (and (generation-digests-current? hash-tool (list-ref hit 2))
+                                 (generation-digests-current? hash-tool (list-ref hit 3))
+                                 (equal? inputs-before (generation-file-digests hash-tool inputs))
+-                                (equal? tools-before (generation-file-digests hash-tool tools))
++                                (tools-current?)
+                                 (equal? (list-ref context 6) (generation-environment))))
+                       (error "generation context changed during hit"))
+                   (display "GAMBIT-GENERATED-C-HIT\n")
+@@ -315,7 +325,7 @@
+                   inputs outputs)
+                 (if (not (and (generation-digests-current? hash-tool dependencies)
+                               (equal? inputs-before (generation-file-digests hash-tool inputs))
+-                              (equal? tools-before (generation-file-digests hash-tool tools))
++                              (tools-current?)
+                               (equal? (list-ref context 6) (generation-environment))))
+                     (error "generation context changed"))
+                 (let* ((digests (map (lambda (entry)
+@@ -329,7 +339,7 @@
+                                  lock)))
+                   (if (not (and (generation-digests-current? hash-tool dependencies)
+                                 (equal? inputs-before (generation-file-digests hash-tool inputs))
+-                                (equal? tools-before (generation-file-digests hash-tool tools))
++                                (tools-current?)
+                                 (equal? (list-ref context 6) (generation-environment))))
+                       (error "generation context changed before publication"))
+                   (if cacheable?

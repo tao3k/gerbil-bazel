@@ -1,0 +1,51 @@
+{
+  "schema": "darwin-fresh-produced-object-mcp-v1",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "scope": "Experimental current-executor successful producer handoff preserving original Darwin object scheduling; older objects retain full bound content proof. No eager producer proof.",
+  "files": {
+    "gsc": "c2966d7e31df8e833bca97ffd22fe751cb5c2fac712c595fa41ceb6e5a5e1855",
+    "gsc-original": "9a1b842156fe15bb0c9415b87aebad0e72707bd793fe00353e7b68956929ab00",
+    "gambuild-C": "78eeb8c4e9cec4e9ddfb612662d734d45b1a04ef345fb7c8917cf4f11fe85367",
+    "gambit-static-object-reuse": "2a086754a8fa6f0eb5fda60e91b25c92b572b4261bd13c679cf4247baebc28f7",
+    "gambit-file-sha256": "464fc4f9567f1c8a207d03d23ce34b2988a6a00048d1c7fd6d9a81a4242324e2",
+    "gerbil": "e18eb11e437897ca49e12bf5c7375ce78a297a958e21d8291b9065ff8b9c5fa8"
+  },
+  "entrySources": {
+    "gsi/main.scm": "820a089f7bff8914658f94a092e5ca38822120f6617c1dc38b5f185d52952b3f",
+    "gsc/_gsc.scm": "fd1d9e91a6b0d770419b481c0198674c344712ec417029909bad97ad066b2c32",
+    "gsc/gambit-generated-c-closed-link.scm": "dfe8e10707cba3350c10d2a541d7503dde76f5a6c45fb84b49797d13a46420b7",
+    "gsc/gambit-generated-c-closure.scm": "18dd5a45a3026646f83412f36cc51f039f1046c7d507a3412828c93c9a05e8a4",
+    "gsc/gambit-generated-c-native-digest-install.scm": "36a87afc7084ccfba3088f16e1ccbfaf4677c45f3ec172311641b3f1d629345b",
+    "gsc/gambit-generated-c-native-digest.scm": "4d1c5f71a0118471c61bb6aeb713cbf4aa85032c923f83036bae0cbbf43c1ca8",
+    "gsc/gambit-generated-c-reads.scm": "af8e298fa6a07f90a269ef7d9f305293d6ae849849c11276e5a10e80589f6b1c"
+  },
+  "sources": {
+    "gambit-generated-c-closed-link.scm": "dfe8e10707cba3350c10d2a541d7503dde76f5a6c45fb84b49797d13a46420b7"
+  },
+  "inputs": {
+    "prepare_native_generated_c_gsc.py": "c8e4c4ce885d195b9931fca3f8a8e8bb3c66a9dee03957a6d6b4398899680603",
+    "gambit-generated-c-snapshot-reads.scm": "97b790d3ea7546f1cbd89dd9029d2c4f2c51e3fdeca08d6259cb02f553679687",
+    "prepare_closed_link_aot_driver.scm": "6efb3e119829816ba3295a15d1cc7a81ce68f7722f066cb8fa7114514d4efc04",
+    "gambit-static-object-native.c": "4c07899a4b12f16f79c24a6347b075678010a7e430a0940897bc1ff0972f2f90",
+    "gambit-file-sha256.c": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a",
+    "gambit-static-object-native-v2.c": "2bbdcafb22bc89e836745e30f5cc6846d6b5536fca260c3201eb32208d16652c"
+  },
+  "patches": {
+    "0024-gambit-darwin-planned-generated-c-reuse.patch": "21a8d8654bdf2d1c855f96decae56b90598cf376717cf19f0c509caf1cb249c0",
+    "0025-gambit-darwin-generated-c-snapshot-reader.patch": "b9c3d77450c214db149a6fb1f5a75fba4b3ade80b399e62df284f57ca91d718e",
+    "0027-gambit-darwin-bound-static-c-digest.patch": "fc5cf3192a13e387912c0ec99147a1640a4005ba6951f6494bd64a1bb4608ee8",
+    "0029-gambit-darwin-closed-link-consumer.patch": "715ab573ccbe58c693351e13b96924ee4562718524c5c8976b9a310b47d7c0cf",
+    "0030-gambit-darwin-closed-link-entry-role.patch": "7af0fcd529525ab64397f7cb32aeb2632e67a4dcf35bd95fa00e96a72b91202e",
+    "0033-gambit-darwin-bound-single-pass-object-proof.patch": "ba5c1d67d75849ff91360879cf02461d991e5742f827af9c0a344d004505dab8",
+    "0031-gerbil-darwin-closed-link-entry-role.patch": "c17a27332cba644975ae388a60819b1b4cb24e30a3a165b57cd044441eb899b8",
+    "0035-gambit-darwin-native-object-proof-capture.patch": "be8811a222dfb1dc7e824aa2cea4ae36919e25fce2ef248a2685579fdb9f848c",
+    "0036-gambit-darwin-native-object-proof-check.patch": "43b7908233929d17b46a923aa4e0248d03f3ffe5bb0dda774e21576977ba26f5",
+    "0037-gerbil-darwin-fresh-produced-object-handoff.patch": "f0294a04eec47ba0fedf52d29187fd0c13e87e3e6e0dc181798270de6256379d"
+  },
+  "runtimeFiles": {
+    "include/gambit.h": "ce2b5c387f5334e2bb0a7302a265e2487cd707fc45f6ace4cb19bc763a9c6b89",
+    "lib/libgambit.a": "fd3725c9cc68525efbd8c0385f242f72334de37d5c56a96fd7db8666bb873501",
+    "lib/libgambitgsc.a": "3cf5298d9f1083986e6102c5620cfe97b8a102244245c56e9193b2a4bcedab86"
+  }
+}

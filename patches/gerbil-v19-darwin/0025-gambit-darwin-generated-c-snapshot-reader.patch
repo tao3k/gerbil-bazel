@@ -1,0 +1,27 @@
+diff --git a/gsc/gambit-generated-c-reads.scm b/gsc/gambit-generated-c-reads.scm
+--- a/gsc/gambit-generated-c-reads.scm
++++ b/gsc/gambit-generated-c-reads.scm
+@@ -28,12 +28,21 @@
+                (set! ##read-all-as-a-begin-expr-from-path
+                  (lambda args
++                   ;; Only GSC's explicit original-container wrap/unwrap shape
++                   ;; is admitted; default port-derived locations are unsafe.
++                   (if (not (and (= (length args) 4)
++                                 (string? (car args))
++                                 (procedure? (caddr args))
++                                 (procedure? (cadddr args))))
++                       (error "unsupported snapshot compiler reader"))
+                    (let* ((path (car args))
+                           (snapshot (string-append scratch "/"
+-                                      (number->string count) ".source")))
++                                      (number->string count) (path-extension path))))
+                      (set! count (+ count 1))
+                      (copy-file path snapshot)
+                      (set! reads (cons (list path snapshot) reads))
+-                     (let ((source (apply original args)))
++                     ;; Preserve start syntax and the caller's original source
++                     ;; locations, while reading the bytes bound by the proof.
++                     (let ((source (apply original (cons snapshot (cdr args)))))
+                        (if (not (and (vector? source) (= (vector-length source) 3)))
+                            (error "unsupported compiler source-read result"))
+                        (set! macro-context?

@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "runs": [
+    {
+      "receipt": ".data/d1510-closed-link-ascent-receipt-v3",
+      "exitStatus": 0,
+      "completeSeconds": 50.48,
+      "userSeconds": 105.74,
+      "systemSeconds": 37.44,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 0,
+      "staticObjectMisses": 74,
+      "objectCalls": 0,
+      "generatedCHits": 0,
+      "generatedCMisses": 3,
+      "generatedCUncacheable": 0,
+      "closedLinkSelections": [
+        224
+      ],
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "1473b934c35d6fa06a9b288ba31c2398c7689d0b62cb45985f89f20ac7189060"
+    },
+    {
+      "receipt": ".data/d1510-closed-link-ascent-receipt-v4",
+      "exitStatus": 0,
+      "completeSeconds": 44.55,
+      "userSeconds": 56.56,
+      "systemSeconds": 29.69,
+      "cases": 30,
+      "finalOk": true,
+      "correctnessPassed": true,
+      "staticObjectHits": 71,
+      "staticObjectMisses": 3,
+      "objectCalls": 0,
+      "generatedCHits": 1,
+      "generatedCMisses": 2,
+      "generatedCUncacheable": 0,
+      "closedLinkSelections": [
+        224
+      ],
+      "entryCacheHit": false,
+      "entryCacheMiss": true,
+      "outputSha256": "fc83f4f83c822785f3fb77ef367f39bbb23341d12fcf91153f3fa282490f975a"
+    }
+  ],
+  "correctnessPassed": true
+}

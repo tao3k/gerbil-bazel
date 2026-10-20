@@ -6,7 +6,7 @@ index ce87691c..f0123c65 100644
  }
  
  
-+#if defined(__APPLE__) && defined(__MACH__) && defined(___MULTIPLE_VMS)
++#if !defined(___SINGLE_VM)
 +#define ___MAKE_GLOBAL_PSD ___processor_state ___ps,
 +#define ___MAKE_GLOBAL_PSV ___ps,
 +#define ___MAKE_GLOBAL_PSDKR ___processor_state ___ps;

@@ -1,0 +1,799 @@
+diff --git a/gsc/_gsc.scm b/gsc/_gsc.scm
+index abaa875..1f71453 100644
+--- a/gsc/_gsc.scm
++++ b/gsc/_gsc.scm
+@@ -7,6 +7,12 @@
+ (##define-macro (interpreter-or x)
+   x)
+ 
++(##include "gambit-generated-c-reads.scm")
++(##include "gambit-generated-c-closure.scm")
++(##include "gambit-generated-c-native.scm")
++(##include "gambit-generated-c-native-digest.scm")
++(##include "gambit-generated-c-native-digest-install.scm")
++(##include "gambit-generated-c-planned-producer.scm")
+ (##include "../gsi/main.scm")
+ 
+ ;;;============================================================================
+diff --git a/gsc/gambit-file-sha256.c b/gsc/gambit-file-sha256.c
+new file mode 100644
+index 0000000..848b343
+--- /dev/null
++++ b/gsc/gambit-file-sha256.c
+@@ -0,0 +1,84 @@
++#if !defined(__APPLE__) || !defined(__MACH__) || !defined(__GNUC__) || defined(__clang__)
++#error This experimental backend requires Darwin and GNU GCC.
++#endif
++
++#include <CommonCrypto/CommonDigest.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++static int file_digest(const char *path, unsigned char *digest) {
++  unsigned char buffer[1024 * 1024];
++  CC_SHA256_CTX context;
++  struct stat status;
++  int file = open(path, O_RDONLY);
++  if (file < 0) return -1;
++  if (fstat(file, &status) != 0) {
++    int saved = errno;
++    close(file);
++    errno = saved;
++    return -1;
++  }
++  if (!S_ISREG(status.st_mode)) {
++    close(file);
++    errno = EINVAL;
++    return -1;
++  }
++  if (!CC_SHA256_Init(&context)) {
++    close(file);
++    errno = EIO;
++    return -1;
++  }
++  for (;;) {
++    ssize_t count = read(file, buffer, sizeof(buffer));
++    if (count < 0 && errno == EINTR) continue;
++    if (count < 0) {
++      int saved = errno;
++      close(file);
++      errno = saved;
++      return -1;
++    }
++    if (count == 0) break;
++    if (!CC_SHA256_Update(&context, buffer, (CC_LONG)count)) {
++      close(file);
++      errno = EIO;
++      return -1;
++    }
++  }
++  if (close(file) != 0) return -1;
++  if (!CC_SHA256_Final(digest, &context)) {
++    errno = EIO;
++    return -1;
++  }
++  return 0;
++}
++
++int main(int argc, char **argv) {
++  int raw = argc == 3 && strcmp(argv[1], "--raw") == 0;
++  int start = raw ? 2 : 1;
++  if (argc <= start) return 2;
++  for (int index = start; index < argc; ++index) {
++    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
++    const char *path = argv[index];
++    int escaped = !raw && (strchr(path, '\\') || strchr(path, '\n'));
++    if (file_digest(path, digest) != 0) {
++      fprintf(stderr, "gambit-file-sha256: %s: %s\n", path, strerror(errno));
++      return 2;
++    }
++    if (escaped) putchar('\\');
++    for (int byte = 0; byte < CC_SHA256_DIGEST_LENGTH; ++byte) printf("%02x", (unsigned int)digest[byte]);
++    if (!raw) {
++      printf("  ");
++      for (const char *character = path; *character; ++character) {
++        if (*character == '\\') printf("\\\\");
++        else if (*character == '\n') printf("\\n");
++        else putchar(*character);
++      }
++    }
++    putchar('\n');
++  }
++  return fflush(stdout) == 0 && !ferror(stdout) ? 0 : 2;
++}
+diff --git a/gsc/gambit-generated-c-closure.scm b/gsc/gambit-generated-c-closure.scm
+new file mode 100644
+index 0000000..1df78b9
+--- /dev/null
++++ b/gsc/gambit-generated-c-closure.scm
+@@ -0,0 +1,351 @@
++;; Experimental closed-adapter prototype, not arbitrary GSC API cache admission.
++(define (generation-file-sha tool path)
++  (let* ((port (open-process (list path: tool arguments: (list "--raw" path)
++                                stdout-redirection: #t)))
++         (digest (read-line port))
++         (status (process-status port)))
++    (close-port port)
++    (if (not (and (= status 0) (string? digest) (= (string-length digest) 64)
++                  (let loop ((index 0))
++                    (or (= index 64)
++                        (and (memv (string-ref digest index)
++                                   '(#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9 #\a #\b #\c #\d #\e #\f))
++                             (loop (+ index 1)))))))
++        (error "generation digest failed" path))
++    digest))
++
++(define (generation-file-digests tool paths)
++  (if (or (null? paths) (not (equal? (getenv "GAMBIT_GENERATED_C_BATCH_DIGESTS" #f) "1")))
++      (map (lambda (path) (list path (generation-file-sha tool path))) paths)
++      (let ((port (open-process (list path: tool arguments: (cons "--raw-many" paths)
++                                     stdout-redirection: #t))))
++        (dynamic-wind
++          (lambda () #f)
++          (lambda ()
++            (let* ((entries
++                    (map (lambda (path)
++                           (let ((digest (read-line port)))
++                             (if (not (and (string? digest) (= (string-length digest) 64)
++                                           (let loop ((index 0))
++                                             (or (= index 64)
++                                                 (and (memv (string-ref digest index)
++                                                        '(#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9 #\a #\b #\c #\d #\e #\f))
++                                                      (loop (+ index 1)))))))
++                                 (error "invalid batch digest" path))
++                             (list path digest))) paths))
++                   (extra (read-line port))
++                   (status (process-status port)))
++              (if (not (and (eof-object? extra) (= status 0)))
++                  (error "batch digest failed or count mismatch"))
++              entries))
++          (lambda () (close-port port))))))
++
++(define (generation-regular? path)
++  (and (file-exists? path)
++       (eq? (file-info-type (file-info path #f)) 'regular)))
++
++(define (generation-digests-current? tool entries)
++  (with-exception-catcher (lambda (error) #f)
++    (lambda ()
++      (and (list? entries)
++           (let loop ((entries entries))
++             (or (null? entries)
++                 (and (list? (car entries)) (= (length (car entries)) 2)
++                      (string? (caar entries)) (generation-regular? (caar entries))
++                      (loop (cdr entries)))))
++           (equal? entries (generation-file-digests tool (map car entries)))))))
++
++(define (generation-environment)
++  (define (insert entry entries)
++    (if (or (null? entries) (string<? (car entry) (caar entries)))
++        (cons entry entries)
++        (cons (car entries) (insert entry (cdr entries)))))
++  (let loop ((input (get-environment-variables)) (result '()))
++    (if (null? input) result (loop (cdr input) (insert (car input) result)))))
++
++(define (generation-context-sha tool context path)
++  (let ((created? #f))
++   (dynamic-wind
++    (lambda () #f)
++    (lambda ()
++      (if (file-exists? path) (error "unexpected context scratch file"))
++      (call-with-output-file (list path: path permissions: #o600)
++        (lambda (port) (set! created? #t) (write context port) (newline port)))
++      (generation-file-sha tool path))
++    (lambda () (if (and created? (file-exists? path)) (delete-file path))))))
++
++(define (generation-pin-outputs tool entries scratch)
++  ;; Publish once per content/basename. Returned paths are never replaced by
++  ;; this producer, even when a later request replaces the logical C files.
++  (map
++    (lambda (entry)
++      (let* ((source (car entry)) (logical (cadr entry)) (sha (caddr entry))
++             (parent (path-normalize (path-expand "../" (path-directory logical))))
++             (bucket (string-append parent ".gambit-c-" sha))
++             (pinned (string-append bucket "/" (path-strip-directory logical)))
++             (pending (string-append scratch "/pinned-c")))
++        (with-exception-catcher
++          (lambda (error)
++            (if (not (and (file-exists? bucket)
++                          (eq? (file-info-type (file-info bucket #f)) 'directory)))
++                (raise error)))
++          (lambda () (create-directory bucket)))
++        (if (file-exists? pinned)
++            (if (not (and (generation-regular? pinned)
++                          (equal? sha (generation-file-sha tool pinned))))
++                (error "corrupt pinned C publication"))
++            (dynamic-wind
++              (lambda () #f)
++              (lambda ()
++                (if (file-exists? pending) (error "unexpected pinned C scratch"))
++                (copy-file source pending)
++                (if (not (equal? sha (generation-file-sha tool pending)))
++                    (error "C changed during pinning"))
++                (with-exception-catcher
++                  (lambda (error)
++                    (if (not (and (generation-regular? pinned)
++                                  (equal? sha (generation-file-sha tool pinned))))
++                        (raise error)))
++                  (lambda () (rename-file pending pinned #f))))
++              (lambda () (if (file-exists? pending) (delete-file pending)))))
++        pinned))
++    entries))
++
++(define (generation-supported-options? options)
++  (and (list? options)
++       (let loop ((remaining options) (seen '()) (module #f) (linker #f))
++         (if (null? remaining)
++             (or (and (not module) (not linker))
++                 (and module linker (string=? (symbol->string module) linker)))
++             (let ((option (car remaining)))
++               (and (list? option) (= (length option) 2)
++                    (not (memq (car option) seen))
++                    (case (car option)
++                      ((target)
++                       (and (eq? (cadr option) 'C)
++                            (loop (cdr remaining) (cons 'target seen) module linker)))
++                      ((module-ref)
++                       (and (symbol? (cadr option))
++                            (loop (cdr remaining) (cons 'module-ref seen) (cadr option) linker)))
++                      ((linker-name)
++                       (and (string? (cadr option)) (> (string-length (cadr option)) 0)
++                            (loop (cdr remaining) (cons 'linker-name seen) module (cadr option))))
++                      (else #f))))))))
++
++;; A static-link consumer may only adopt an already-proven single-source
++;; producer. No generation, publication, lock acquisition or cache repair here.
++(define (lookup-produced-generated-c static-input dynamic-input options directory proof scratch hash-tool tools)
++  (lookup-produced-generated-c/internal static-input dynamic-input options directory proof scratch hash-tool tools #f))
++
++(define (lookup-produced-generated-c-batch requests scratch hash-tool tools)
++  (with-exception-catcher (lambda (failure) #f)
++    (lambda ()
++      (let* ((environment (generation-environment))
++             (sources (apply append
++                        (map (lambda (request)
++                               (if (not (= (length request) 5)) (error "invalid producer lookup request"))
++                               (list (path-normalize (car request))
++                                     (path-normalize (cadr request))
++                                     (path-normalize (list-ref request 4)))) requests)))
++             (sources-before (generation-file-digests hash-tool sources))
++             (before (generation-file-digests hash-tool tools))
++             (pins (map (lambda (request)
++                          (if (not (= (length request) 5)) (error "invalid producer lookup request"))
++                          (apply lookup-produced-generated-c/internal
++                            (append request (list scratch hash-tool tools before)))) requests)))
++        ;; A later lookup must not hide changes to an earlier request. Admit
++        ;; only after rechecking the complete batch, including immutable pins.
++        (and (pair? pins) (not (memq #f pins))
++             (generation-digests-current? hash-tool sources-before)
++             (generation-digests-current? hash-tool
++               (map (lambda (request pin)
++                      (let* ((record (call-with-input-file (list-ref request 4) read))
++                             (sha (cadr (car (list-ref record 3)))))
++                        (list pin sha))) requests pins))
++             (equal? before (generation-file-digests hash-tool tools))
++             (equal? environment (generation-environment))
++             pins)))))
++
++(define (lookup-produced-generated-c/internal static-input dynamic-input options directory proof scratch hash-tool tools tool-snapshot)
++  (with-exception-catcher (lambda (failure) #f)
++    (lambda ()
++      (let* ((static-input (path-normalize static-input))
++             (input (path-normalize dynamic-input))
++             (directory (path-normalize directory))
++             (output (string-append directory "/"
++                       (path-strip-extension (path-strip-directory input)) ".c"))
++             (alias (path-strip-extension (path-strip-directory static-input)))
++             (module (assq 'module-ref options)) (linker (assq 'linker-name options))
++             (os (symbol->string (caddr (system-type)))))
++        (and (>= (string-length os) 6) (string=? (substring os 0 6) "darwin")
++             (not generated-c-observed-macro-context?)
++             (generation-supported-options? options)
++             module linker (eq? (cadr module) (string->symbol alias))
++             (string=? (cadr linker) alias)
++             (generation-regular? static-input) (generation-regular? input)
++             (generation-regular? proof)
++             (let* ((tools-before (or tool-snapshot (generation-file-digests hash-tool tools)))
++                    (inputs-before (generation-file-digests hash-tool (list input)))
++                    (source-sha (cadar inputs-before))
++                    (environment (generation-environment))
++                    (context (list 'closed-generated-c-adapter-v1 (list input) options directory
++                                   (current-directory) (system-type) environment tools-before inputs-before))
++                    (record (call-with-input-file proof read))
++                    (context-file (string-append scratch "/context")))
++               (and (equal? source-sha (generation-file-sha hash-tool static-input))
++                    (list? record) (= (length record) 4)
++                    (eq? (car record) 'generated-c-closure-v2)
++                    (equal? (cadr record) (generation-context-sha hash-tool context context-file))
++                    ;; An include or other read context cannot be projected onto
++                    ;; a different Scheme path merely because main bytes match.
++                    (equal? (list-ref record 2) inputs-before)
++                    (list? (list-ref record 3)) (= (length (list-ref record 3)) 1)
++                    (let* ((entry (car (list-ref record 3)))
++                           (sha (and (list? entry) (= (length entry) 2) (cadr entry))))
++                      (and (equal? (car entry) output) (string? sha) (= (string-length sha) 64)
++                           (let ((pinned (string-append
++                                          (path-normalize (path-expand "../" (path-directory output)))
++                                          ".gambit-c-" sha "/" (path-strip-directory output))))
++                             (and (generation-regular? pinned)
++                                  (equal? sha (generation-file-sha hash-tool pinned))
++                                  (generation-digests-current? hash-tool inputs-before)
++                                  (equal? source-sha (generation-file-sha hash-tool static-input))
++                                  (or tool-snapshot
++                                      (equal? tools-before (generation-file-digests hash-tool tools)))
++                                  (equal? environment (generation-environment))
++                                  pinned)))))))))))
++
++(define (reuse-generated-c-closure! inputs options directory work proof hash-tool tools)
++  (let ((os (symbol->string (caddr (system-type)))))
++    (if (not (and (>= (string-length os) 6) (string=? (substring os 0 6) "darwin")))
++        (error "Darwin-only generation prototype")))
++  (if (not (generation-supported-options? options))
++      (set! generated-c-observed-macro-context? #t))
++  (let* ((inputs (map path-normalize inputs))
++         (directory (path-normalize directory))
++         (outputs (map (lambda (input)
++                         (string-append directory "/"
++                           (path-strip-extension (path-strip-directory input)) ".c")) inputs))
++         (tools-before (generation-file-digests hash-tool tools))
++         (inputs-before (generation-file-digests hash-tool inputs))
++         (context (list 'closed-generated-c-adapter-v1 inputs options directory
++                        (current-directory) (system-type) (generation-environment) tools-before inputs-before))
++         (lock (string-append proof ".lock"))
++         (attempts 0))
++    (if (or (null? inputs)
++            (let duplicates? ((remaining outputs))
++              (and (pair? remaining)
++                   (or (member (car remaining) (cdr remaining))
++                       (duplicates? (cdr remaining))))))
++        (error "empty or duplicate generated C targets"))
++    (for-each (lambda (input)
++                (if (not (generation-regular? input)) (error "nonregular Scheme input" input))) inputs)
++    (for-each (lambda (path)
++                (if (and (file-exists? path) (not (generation-regular? path)))
++                    (error "nonregular generated C publication" path))) (cons proof outputs))
++    (let acquire ()
++      (if (not (with-exception-catcher (lambda (error) #f)
++                 (lambda () (create-directory lock) #t)))
++          (begin
++            (set! attempts (+ attempts 1))
++            (if (>= attempts 1000) (error "generation lock timeout"))
++            (thread-sleep! .01)
++            (acquire))))
++    (dynamic-wind
++      (lambda () #f)
++      (lambda ()
++        (let* ((context-sha (generation-context-sha hash-tool context
++                              (string-append lock "/context")))
++               (hit
++               (and (not generated-c-observed-macro-context?)
++                    (generation-supported-options? options) (generation-regular? proof)
++                    (with-exception-catcher (lambda (error) #f)
++                      (lambda ()
++                        (let ((record (call-with-input-file proof read)))
++                          (and (list? record) (= (length record) 4)
++                               (eq? (car record) 'generated-c-closure-v2)
++                               (equal? (cadr record) context-sha)
++                               (equal? (map car (list-ref record 3)) outputs)
++                               (generation-digests-current? hash-tool (list-ref record 2))
++                               (generation-digests-current? hash-tool (list-ref record 3))
++                               record)))))))
++          (if hit
++              (begin
++                (if (not (equal? tools-before (generation-file-digests hash-tool tools)))
++                    (error "generation tools changed during hit"))
++                (let ((pinned (generation-pin-outputs hash-tool
++                                (map (lambda (entry)
++                                       (list (car entry) (car entry) (cadr entry)))
++                                     (list-ref hit 3))
++                                lock)))
++                  (if (not (and (generation-digests-current? hash-tool (list-ref hit 2))
++                                (generation-digests-current? hash-tool (list-ref hit 3))
++                                (equal? inputs-before (generation-file-digests hash-tool inputs))
++                                (equal? tools-before (generation-file-digests hash-tool tools))
++                                (equal? (list-ref context 6) (generation-environment))))
++                      (error "generation context changed during hit"))
++                  (display "GAMBIT-GENERATED-C-HIT\n")
++                  pinned))
++              (let ((dependencies '()) (private-outputs '())
++                    (cacheable? (and (generation-supported-options? options)
++                                     (not generated-c-observed-macro-context?))))
++                (for-each
++                  (lambda (input output)
++                    (let* ((stem (path-strip-extension (path-strip-directory input)))
++                           (private (string-append work "/" stem ".c"))
++                           (scratch (string-append work "/" stem ".snapshots"))
++                           (manifest (string-append private ".reads")))
++                      (create-directory scratch)
++                      (record-generated-c-reads! input options private scratch manifest)
++                      (let ((record (call-with-input-file manifest read)))
++                        (if (not (and (eq? (car record) 'generated-c-source-reads-v2)
++                                      (equal? (cadr record) input)
++                                      (equal? (list-ref record 3) private)))
++                            (error "generation journal drift"))
++                        (if (not (equal? (list-ref record 5) '(source-macro-context #f)))
++                            (set! cacheable? #f))
++                        (for-each
++                          (lambda (entry)
++                            (let ((sha (generation-file-sha hash-tool (cadr entry))))
++                              (if (not (equal? sha (generation-file-sha hash-tool (car entry))))
++                                  (error "source changed during generation" (car entry)))
++                              (set! dependencies (cons (list (car entry) sha) dependencies))))
++                          (list-ref record 4)))
++                      (set! private-outputs (cons (list private output) private-outputs))))
++                  inputs outputs)
++                (if (not (and (generation-digests-current? hash-tool dependencies)
++                              (equal? inputs-before (generation-file-digests hash-tool inputs))
++                              (equal? tools-before (generation-file-digests hash-tool tools))
++                              (equal? (list-ref context 6) (generation-environment))))
++                    (error "generation context changed"))
++                (let* ((digests (map (lambda (entry)
++                                      (list (cadr entry) (generation-file-sha hash-tool (car entry))))
++                                    (reverse private-outputs)))
++                       (pending (string-append work "/closure.proof"))
++                       (pinned (generation-pin-outputs hash-tool
++                                 (map (lambda (entry digest)
++                                        (list (car entry) (cadr entry) (cadr digest)))
++                                      (reverse private-outputs) digests)
++                                 lock)))
++                  (if (not (and (generation-digests-current? hash-tool dependencies)
++                                (equal? inputs-before (generation-file-digests hash-tool inputs))
++                                (equal? tools-before (generation-file-digests hash-tool tools))
++                                (equal? (list-ref context 6) (generation-environment))))
++                      (error "generation context changed before publication"))
++                  (if cacheable?
++                      (call-with-output-file (list path: pending permissions: #o600)
++                        (lambda (port)
++                          (write (list 'generated-c-closure-v2 context-sha (reverse dependencies) digests) port)
++                          (newline port))))
++                  (for-each
++                    (lambda (entry)
++                      (if (and (file-exists? (cadr entry)) (not (generation-regular? (cadr entry))))
++                          (error "publication target changed"))
++                      (rename-file (car entry) (cadr entry) #t))
++                    (reverse private-outputs))
++                  (if cacheable? (rename-file pending proof #t)
++                      (if (file-exists? proof) (delete-file proof)))
++                  (display (if cacheable? "GAMBIT-GENERATED-C-MISS\n"
++                               "GAMBIT-GENERATED-C-UNCACHEABLE\n"))
++                  pinned)))))
++      (lambda () (delete-directory lock)))))
+diff --git a/gsc/gambit-generated-c-native-digest-install.scm b/gsc/gambit-generated-c-native-digest-install.scm
+new file mode 100644
+index 0000000..afce4ba
+--- /dev/null
++++ b/gsc/gambit-generated-c-native-digest-install.scm
+@@ -0,0 +1,16 @@
++;; Only a compiled, explicitly enabled Darwin backend replaces the digest calls.
++(if (equal? (getenv "GAMBIT_GENERATED_C_IN_PROCESS_DIGESTS" #f) "1")
++    (let ((external-single generation-file-sha)
++          (external-many generation-file-digests)
++          (selected (string-append (path-directory (path-normalize (executable-path)))
++                                   "gambit-file-sha256")))
++      (set! generation-file-sha
++        (lambda (tool path)
++          (if (equal? (path-normalize tool) selected)
++              (generation-native-file-sha path)
++              (external-single tool path))))
++      (set! generation-file-digests
++        (lambda (tool paths)
++          (if (equal? (path-normalize tool) selected)
++              (map (lambda (path) (list path (generation-native-file-sha path))) paths)
++              (external-many tool paths))))))
+diff --git a/gsc/gambit-generated-c-native-digest.scm b/gsc/gambit-generated-c-native-digest.scm
+new file mode 100644
+index 0000000..f5aee83
+--- /dev/null
++++ b/gsc/gambit-generated-c-native-digest.scm
+@@ -0,0 +1,33 @@
++;; Experimental in-process digest bridge; no global backend replacement.
++(c-declare #<<c-end
++#define main gambit_digest_unused_main
++#include "gambit-file-sha256.c"
++#undef main
++c-end
++)
++
++(define generation-native-file-sha
++  (let ((digest-into!
++         (c-lambda (char-string scheme-object) int
++#<<c-end
++unsigned char digest[CC_SHA256_DIGEST_LENGTH];
++if (file_digest(___arg1, digest) != 0) {
++  ___result = errno ? errno : EIO;
++} else {
++  for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i)
++    ___U8VECTORSET(___arg2, ___FIX(i), ___FIX(digest[i]));
++  ___result = 0;
++}
++c-end
++)))
++   (lambda (path)
++  (let* ((bytes (make-u8vector 32 0))
++         (status (digest-into! path bytes)))
++    (if (not (= status 0)) (error "native generation digest failed" path status))
++    (let ((hex "0123456789abcdef") (result (make-string 64 #\0)))
++      (let loop ((index 0))
++        (if (= index 32) result
++            (let ((byte (u8vector-ref bytes index)))
++              (string-set! result (* index 2) (string-ref hex (quotient byte 16)))
++              (string-set! result (+ (* index 2) 1) (string-ref hex (modulo byte 16)))
++              (loop (+ index 1))))))))))
+diff --git a/gsc/gambit-generated-c-native.scm b/gsc/gambit-generated-c-native.scm
+new file mode 100644
+index 0000000..57f93b6
+--- /dev/null
++++ b/gsc/gambit-generated-c-native.scm
+@@ -0,0 +1,134 @@
++;; Native GSC hook. Only explicit-output closed C requests are admitted.
++(define (generated-c-native-register! file options directory proof work)
++  (let ((index (getenv "GAMBIT_GENERATED_C_PRODUCER_INDEX" #f))
++        (module (assq 'module-ref options)))
++    (if (and index module (generation-regular? proof))
++        (let* ((alias (symbol->string (cadr module)))
++               (pending (string-append work "/producer-index")))
++          (if (not (and (string=? alias (path-strip-directory alias))
++                        (not (member alias '("." "..")))))
++              (error "invalid native producer index alias"))
++          (call-with-output-file (list path: pending permissions: #o600)
++            (lambda (port)
++              (write (list 'native-generated-c-producer-v1 (path-normalize file)
++                           options (path-normalize directory) proof alias) port)
++              (newline port)))
++          (rename-file pending (path-expand (string-append alias ".producer") index))))))
++
++(define (generated-c-native-link-options? options)
++  (let loop ((remaining options) (link-count 0) (seen '()))
++    (if (null? remaining)
++        (= link-count 1)
++        (let ((option (car remaining)))
++          (and (list? option) (pair? option)
++               (not (memq (car option) seen))
++               (case (car option)
++                 ((link) (and (= (length option) 1)
++                              (loop (cdr remaining) (+ link-count 1) (cons 'link seen))))
++                 ((target) (and (equal? option '(target C))
++                                (loop (cdr remaining) link-count (cons 'target seen))))
++                 ((o l) (and (= (length option) 2) (string? (cadr option))
++                             (loop (cdr remaining) link-count (cons (car option) seen))))
++                 (else #f)))))))
++
++(define (generated-c-native-link-arguments options arguments)
++  (with-exception-catcher (lambda (failure) arguments)
++    (lambda ()
++      (let ((index (getenv "GAMBIT_GENERATED_C_PRODUCER_INDEX" #f))
++            (os (symbol->string (caddr (system-type)))))
++        (if (not (and index (>= (string-length os) 6)
++                      (string=? (substring os 0 6) "darwin")
++                      (equal? (getenv "GAMBIT_DARWIN_NATIVE_GENERATED_C" #f) "1")
++                      (generated-c-native-link-options? options)))
++            arguments
++            (let ((selected '()) (requests '()))
++              (for-each
++                (lambda (input)
++                  (if (and (string? input) (string=? (path-extension input) ".scm")
++                           (generation-regular? input))
++                      (let* ((alias (path-strip-extension (path-strip-directory input)))
++                             (record-path (path-expand (string-append alias ".producer") index)))
++                        (if (generation-regular? record-path)
++                            (let ((record (call-with-input-file record-path read)))
++                              (if (not (and (list? record) (= (length record) 6)
++                                            (eq? (car record) 'native-generated-c-producer-v1)
++                                            (equal? (list-ref record 5) alias)))
++                                  (error "invalid native producer index record"))
++                              (set! selected (cons input selected))
++                              (set! requests
++                                (cons (list input (cadr record) (caddr record)
++                                            (list-ref record 3) (list-ref record 4)) requests)))))))
++                arguments)
++              (if (null? requests) arguments
++                  (let* ((executable (path-normalize (executable-path)))
++                         (hash-tool (string-append (path-directory executable) "gambit-file-sha256"))
++                         (tools (list executable hash-tool))
++                         (scratch (create-temporary-directory (path-expand "lookup-" index))))
++                    (dynamic-wind
++                      (lambda () #f)
++                      (lambda ()
++                        (let ((pins (lookup-produced-generated-c-batch (reverse requests) scratch hash-tool tools)))
++                          (if (not pins) arguments
++                              (let ((mapping (map cons (reverse selected) pins)))
++                                (display "GAMBIT-NATIVE-PRODUCED-C-LINK-HIT ")
++                                (write (length pins)) (newline)
++                                (map (lambda (input)
++                                       (let ((entry (assoc input mapping)))
++                                         (if entry (cdr entry) input))) arguments)))))
++                      (lambda () (delete-directory scratch)))))))))))
++
++(define (generated-c-native-options options output)
++  ;; The CLI envelope selects this operation/output; it is not a compiler
++  ;; transformation option. Validate it before projecting effective options.
++  (let loop ((remaining options) (result '()) (c-count 0) (o-count 0))
++    (if (null? remaining)
++        (and (= c-count 1) (= o-count 1) (reverse result))
++        (let ((option (car remaining)))
++          (cond
++            ((equal? option '(c)) (loop (cdr remaining) result (+ c-count 1) o-count))
++            ((and (pair? option) (eq? (car option) 'o))
++             (and (list? option) (= (length option) 2) (string? (cadr option))
++                  output (equal? (path-normalize (cadr option)) (path-normalize output))
++                  (loop (cdr remaining) result c-count (+ o-count 1))))
++            (else (loop (cdr remaining) (cons option result) c-count o-count)))))))
++
++(define (generated-c-native-compile-file-to-target file #!key options output)
++  (let* ((os (symbol->string (caddr (system-type))))
++         (native? (and (>= (string-length os) 6)
++                       (string=? (substring os 0 6) "darwin")
++                       (equal? (getenv "GAMBIT_DARWIN_NATIVE_GENERATED_C" #f) "1")))
++         (effective (generated-c-native-options options output))
++         (module (assq 'module-ref options))
++         (linker (assq 'linker-name options)))
++    (if (not (and native? output (string? output)
++                  effective (generation-supported-options? effective) module linker
++                  (string=? (symbol->string (cadr module)) (cadr linker))
++                  (generation-regular? file)
++                  (string=? (path-extension output) ".c")
++                  (string=? (path-strip-extension (path-strip-directory file))
++                            (path-strip-extension (path-strip-directory output)))))
++        (compile-file-to-target file options: options output: output)
++        (let* ((output (path-normalize output))
++               (executable (path-normalize (executable-path)))
++               (bin (path-directory executable))
++               (hash-tool (string-append bin "gambit-file-sha256"))
++               (tools (list executable hash-tool))
++               (work (create-temporary-directory (string-append output ".generation-work-"))))
++          (define (remove-owned path)
++            (if (eq? (file-info-type (file-info path #f)) 'directory)
++                (begin
++                  (for-each (lambda (name) (remove-owned (path-expand name path)))
++                            (directory-files path))
++                  (delete-directory path))
++                (delete-file path)))
++          (with-exception-catcher (lambda (failure) (raise failure))
++            (lambda ()
++              (dynamic-wind
++                (lambda () #f)
++                (lambda ()
++                  (reuse-generated-c-closure! (list file) effective (path-directory output)
++                    work (string-append output ".generation-proof") hash-tool tools)
++                  (generated-c-native-register! file effective (path-directory output)
++                    (string-append output ".generation-proof") work)
++                  output)
++                (lambda () (remove-owned work)))))))))
+diff --git a/gsc/gambit-generated-c-planned-producer.scm b/gsc/gambit-generated-c-planned-producer.scm
+new file mode 100644
+index 0000000..57e17c3
+--- /dev/null
++++ b/gsc/gambit-generated-c-planned-producer.scm
+@@ -0,0 +1,20 @@
++;; CLI-local admission policy, not a compiler transformation or shared env edit.
++(define generated-c-native-producer-request? #f)
++
++(define (generated-c-native-select-producer-options options)
++  (let loop ((rest options) (ordinary '()) (requests 0))
++    (if (null? rest)
++        (begin
++          (if (> requests 1) (error "duplicate generated-C proof request"))
++          (set! generated-c-native-producer-request? (= requests 1))
++          (reverse ordinary))
++        (if (equal? (car rest) '(generated-c-proof))
++            (loop (cdr rest) ordinary (+ requests 1))
++            (loop (cdr rest) (cons (car rest) ordinary) requests)))))
++
++(let ((produce generated-c-native-compile-file-to-target))
++  (set! generated-c-native-compile-file-to-target
++    (lambda (file #!key options output)
++      (if generated-c-native-producer-request?
++          (produce file options: options output: output)
++          (compile-file-to-target file options: options output: output)))))
+diff --git a/gsc/gambit-generated-c-reads.scm b/gsc/gambit-generated-c-reads.scm
+new file mode 100644
+index 0000000..cdc987b
+--- /dev/null
++++ b/gsc/gambit-generated-c-reads.scm
+@@ -0,0 +1,71 @@
++;; Source-read journal only; not a complete cache-admission proof.
++(define generated-c-observed-macro-context? #f)
++(define (generated-c-source-macro-context? value)
++  (define (unwrap x) (if (##source? x) (##source-code x) x))
++  (let ((value (unwrap value)))
++    (and (pair? value)
++         (let ((head (unwrap (car value))))
++           (cond
++             ((memq head '(quote ##quote)) #f)
++             ((memq head '(define-macro ##define-macro define-syntax ##define-syntax
++                           namespace ##namespace macro-scope ##macro-scope)) #t)
++             (else
++               (or (generated-c-source-macro-context? (car value))
++                   (generated-c-source-macro-context? (cdr value)))))))))
++
++(define (record-generated-c-reads! input options output scratch manifest)
++  (if (file-exists? manifest) (error "fresh manifest required"))
++  (let ((original ##read-all-as-a-begin-expr-from-path)
++        (reads '())
++        (macro-context? #f)
++        (count 0))
++    (let ((result
++           (dynamic-wind
++             (lambda ()
++               (set! ##read-all-as-a-begin-expr-from-path
++                 (lambda args
++                   (let* ((path (car args))
++                          (snapshot (string-append scratch "/"
++                                      (number->string count) ".source")))
++                     (set! count (+ count 1))
++                     (copy-file path snapshot)
++                     (set! reads (cons (list path snapshot) reads))
++                     (let ((source (apply original args)))
++                       (if (not (and (vector? source) (= (vector-length source) 3)))
++                           (error "unsupported compiler source-read result"))
++                       (set! macro-context?
++                         (or macro-context?
++                             (generated-c-source-macro-context? (vector-ref source 1))))
++                       (if macro-context? (set! generated-c-observed-macro-context? #t))
++                       source)))))
++             (lambda ()
++               (compile-file-to-target input options: options output: output))
++             (lambda ()
++               (set! ##read-all-as-a-begin-expr-from-path original)))))
++      (if (not result) (error "generation failed; no read manifest published"))
++      (call-with-output-file manifest
++        (lambda (port)
++          (write (list 'generated-c-source-reads-v2 input options output
++                       (reverse reads) (list 'source-macro-context macro-context?)) port)
++          (newline port)))
++      result)))
++
++(define (record-paired-generated-c-reads! directory output scratch)
++  (let ((count 0))
++    (for-each
++      (lambda (name)
++        (let ((size (string-length name)))
++          (if (and (> size 4)
++                   (string=? (substring name (- size 4) size) ".scm"))
++              (let* ((stem (substring name 0 (- size 4)))
++                     (input (string-append directory "/" name))
++                     (private (string-append output "/" stem ".c"))
++                     (snapshots (string-append scratch "/" stem)))
++                (create-directory snapshots)
++                (record-generated-c-reads! input '() private snapshots
++                  (string-append private ".reads"))
++                (set! count (+ count 1))))))
++      (directory-files directory))
++    (display "GENERATED-C-READS-BATCH-OK modules=")
++    (display count)
++    (newline)))
+diff --git a/gsi/main.scm b/gsi/main.scm
+index 56e1b6b..9e3083a 100644
+--- a/gsi/main.scm
++++ b/gsi/main.scm
+@@ -287,6 +287,9 @@ usage-end
+     (combine-option! 'ld-options)
+     (combine-option! 'pkg-config)
+     (combine-option! 'pkg-config-path)
++    (set! options (generated-c-native-select-producer-options options))
++
++    (set! arguments (generated-c-native-link-arguments options arguments))
+ 
+     (let* ((c-opt?       (##assq 'c options))
+            (link-opt?    (##assq 'link options))
+@@ -532,7 +535,7 @@ usage-end
+                                            opts))))
+                           (handling file)
+                           (or (if output
+-                                  (compile-file-to-target
++                                  (generated-c-native-compile-file-to-target
+                                    file
+                                    options: (add-seq-num opts)
+                                    output: output)
+@@ -999,6 +1002,7 @@ usage-end
+                            (track-scheme)
+                            (o string) (l string)
+                            (module-ref symbol) (linker-name string)
++                           (generated-c-proof)
+                            (prelude string) (postlude string)
+                            (cc string)
+                            (cc-options string)

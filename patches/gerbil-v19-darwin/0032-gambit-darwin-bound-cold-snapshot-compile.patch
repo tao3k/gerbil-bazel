@@ -1,0 +1,34 @@
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -110,6 +110,31 @@
+   case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
+   apple_as=$(/usr/bin/xcrun --find as) || return 2
+   gambit_static_tools > "$temporary/tools.before" || return 2
++  if test "${GAMBIT_DARWIN_BOUND_COLD_CAPTURE-}" = 1 && test -n "$expected_source_sha" && test ! -e "$output"; then
++    # A missing object cannot be reused. Compile the bound snapshot once;
++    # leave no proof so later reuse must perform the complete validation.
++    BUILD_OBJ=$original_build_obj
++    BUILD_OBJ_INPUT_FILENAMES_PARAM=$snapshot_input
++    BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/object.o"
++    FLAGS_OBJ="$FLAGS_OBJ -x c -fmacro-prefix-map=\"$snapshot_input=$original_input\""
++    compile=$(substitute_obj "$BUILD_OBJ") || return 2
++    eval "$compile"
++    status=$?
++    test "$status" = 0 || return "$status"
++    source_after=$(gambit_static_sha "$source") || return 2
++    test "$source_before" = "$source_after" || return 2
++    bound_input_after=$(gambit_static_sha "$snapshot_input") || return 2
++    test "$bound_input_sha" = "$bound_input_after" || return 2
++    gambit_static_tools > "$temporary/tools.compiled" || return 2
++    cmp -s "$temporary/tools.before" "$temporary/tools.compiled" || return 2
++    test -f "$temporary/object.o" && test ! -L "$temporary/object.o" || return 2
++    test ! -e "$output" && test ! -L "$output" || return 2
++    test ! -L "$proof" && { test ! -e "$proof" || test -f "$proof"; } || return 2
++    rm -f "$proof" || return 2
++    mv "$temporary/object.o" "$output" || return 2
++    printf 'GAMBIT-STATIC-BOUND-COLD-CAPTURE\n' >&2
++    return 0
++  fi
+   BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} -fmacro-prefix-map="${snapshot_input}=${original_input}" -x c ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
+   BUILD_OBJ_INPUT_FILENAMES_PARAM=$snapshot_input
+   BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/input.i"

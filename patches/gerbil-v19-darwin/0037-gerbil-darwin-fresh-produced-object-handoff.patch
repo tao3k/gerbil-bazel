@@ -1,0 +1,61 @@
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+index cc783f5..5142ebc 100644
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -291,6 +291,11 @@ namespace: gxc
+                           (cons ctx deps))))))
+ 
+       (def selected-c [])
++      (def fresh-produced-c [])
++      (def reuse-fresh-produced?
++        (cond-expand
++          (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_FRESH_OBJECTS" #f) "1"))
++          (else #f)))
+       (def closed-link?
+         (cond-expand
+           (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_REUSE" #f) "1"))
+@@ -353,7 +358,8 @@ namespace: gxc
+ 
+       (def (compile-obj scm-path c-path)
+         (let ((o-path (replace-extension c-path compiler-obj-suffix))
+-              (selected (assoc c-path selected-c)))
++              (selected (assoc c-path selected-c))
++              (fresh? (and reuse-fresh-produced? (member c-path fresh-produced-c))))
+           (let* ((lock (string-append o-path ".lock"))
+                  (locked #f)
+                  (unlock
+@@ -372,7 +378,11 @@ namespace: gxc
+                     (retry)))))
+ 
+             (unwind-protect
+-              (when (or selected
++              (begin
++              (when (and selected fresh?
++                         (not (equal? (source-sha c-path) (cdr selected))))
++                (raise-compile-error "Fresh producer C differs from link binding" c-path))
++              (when (or (and selected (not fresh?))
+                         (not (file-exists? o-path))
+                         (not scm-path)
+                         (file-newer? scm-path o-path)
+@@ -394,7 +404,7 @@ namespace: gxc
+                            (status (process-status proc)))
+                       (close-port proc)
+                       (unless (zero? status)
+-                        (raise-compile-error "Bound C object compilation failed" c-path status))))))
++                        (raise-compile-error "Bound C object compilation failed" c-path status)))))))
+               (unlock)))))
+ 
+       (with-driver-mutex (create-directory* (path-directory output-bin)))
+@@ -413,6 +423,12 @@ namespace: gxc
+                        [(map (lambda (scm runtime-c ready?) (if ready? runtime-c scm))
+                              src-deps-scm src-deps-runtime-c ready-deps) ...
+                         (if ready-bin src-bin-runtime-c src-bin-scm) output-scm]))
++                 (when (and closed-link? reuse-fresh-produced?)
++                   (set! fresh-produced-c
++                     (append
++                      (filter (lambda (path) path)
++                              (map (lambda (path ready?) (and ready? path)) src-deps-c ready-deps))
++                      (if ready-bin [src-bin-c] []))))
+                  (prepare-bound-link [libgerbil-c ... selected-inputs ...] selected-inputs
+                    (if ready-bin src-bin-runtime-c src-bin-scm)
+                    (lambda (binding-options)

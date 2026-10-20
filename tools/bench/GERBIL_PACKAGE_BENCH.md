@@ -153,6 +153,7 @@ the old plan. Completed deletions are recorded one directory at a time.
 Free-space change is reported as `observedAvailableDeltaBytes`, not an exact
 attribution of APFS physical bytes to this cleanup.
 
+
 Bounded read-only inventory reports observed logical bytes and explicitly marks
 partial scans. It does not authorize deletion of old experiments:
 

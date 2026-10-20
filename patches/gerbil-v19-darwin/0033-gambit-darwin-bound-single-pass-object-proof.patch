@@ -1,0 +1,70 @@
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -110,6 +110,36 @@
+   case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
+   apple_as=$(/usr/bin/xcrun --find as) || return 2
+   gambit_static_tools > "$temporary/tools.before" || return 2
++  captured=0
++  simple_flags=1
++  case "$FLAGS_OBJ" in *\'*|*\"*|*\\*|*\**|*\?*|*\[*|*\]*) simple_flags=0 ;; esac
++  if test "${GAMBIT_DARWIN_BOUND_SINGLE_PASS-}" = 1 && test "$simple_flags" = 1 && test -n "$expected_source_sha" && { test ! -f "$output" || test ! -f "$proof"; }; then
++    # GNU GCC emits the exact preprocessing input consumed by this compile.
++    # Build the full reuse proof from it, rather than preprocessing twice.
++    original_flags_obj=$FLAGS_OBJ
++    FLAGS_OBJ=
++    for flag in $original_flags_obj; do
++      # GCC warns that -pipe is ignored with -save-temps; it is transport only.
++      if test "$flag" != -pipe; then FLAGS_OBJ="$FLAGS_OBJ $flag"; fi
++    done
++    BUILD_OBJ=$original_build_obj
++    BUILD_OBJ_INPUT_FILENAMES_PARAM=$snapshot_input
++    BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/object.o"
++    FLAGS_OBJ="$FLAGS_OBJ -save-temps=obj -x c -fmacro-prefix-map=\"$snapshot_input=$original_input\""
++    compile=$(substitute_obj "$BUILD_OBJ") || return 2
++    if ! eval "$compile" > "$temporary/cpp.stdout" 2> "$temporary/cpp.stderr"; then
++      cat "$temporary/cpp.stdout"
++      cat "$temporary/cpp.stderr" >&2
++      return 2
++    fi
++    FLAGS_OBJ=$original_flags_obj
++    if test -s "$temporary/cpp.stdout" || test -s "$temporary/cpp.stderr"; then
++      gambit_static_original; return $?
++    fi
++    test -f "$temporary/object.i" && test ! -L "$temporary/object.i" || return 2
++    mv "$temporary/object.i" "$temporary/input.i" || return 2
++    captured=1
++  else
+   BUILD_OBJ='${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I"${GAMBITDIR_INCLUDE}" -E -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} -fmacro-prefix-map="${snapshot_input}=${original_input}" -x c ${BUILD_OBJ_INPUT_FILENAMES_PARAM}'
+   BUILD_OBJ_INPUT_FILENAMES_PARAM=$snapshot_input
+   BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/input.i"
+@@ -122,6 +152,7 @@
+   fi
+   if test -s "$temporary/cpp.stdout" || test -s "$temporary/cpp.stderr"; then
+     gambit_static_original; return $?
++  fi
+   fi
+   # Only GCC's main-input marker is synthetic; source/header markers are untouched.
+   awk -v snapshot="$snapshot_input" -v source="$source" '{ if ($0 == "# 0 \"" snapshot "\"") print "# 0 \"" source "\""; else if ($0 == "# 1 \"" snapshot "\"") print "# 1 \"" source "\""; else print }' "$temporary/input.i" > "$temporary/normalized.i" || return 2
+@@ -147,6 +178,7 @@
+     printf 'GAMBIT-STATIC-OBJECT-HIT\n' >&2
+     return 0
+   fi
++  if test "$captured" = 0; then
+   BUILD_OBJ=$original_build_obj
+   BUILD_OBJ_INPUT_FILENAMES_PARAM="$temporary/input.i"
+   BUILD_OBJ_OUTPUT_FILENAME_PARAM="$temporary/object.o"
+@@ -158,6 +190,7 @@
+   fi
+   if test -s "$temporary/cc.stdout" || test -s "$temporary/cc.stderr"; then
+     gambit_static_original; return $?
++  fi
+   fi
+   source_after=$(gambit_static_sha "$source") || return 2
+   test "$source_before" = "$source_after" || return 2
+@@ -169,5 +202,6 @@
+   test ! -L "$output" && { test -f "$output" || { test ! -e "$output" && test -n "$expected_source_sha"; }; } || return 2
+   if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then return 2; fi
+   mv -f "$temporary/object.o" "$output" && mv -f "$temporary/proof" "$proof" || return 2
++  if test "$captured" = 1; then printf 'GAMBIT-STATIC-BOUND-SINGLE-PASS\n' >&2; fi
+   printf 'GAMBIT-STATIC-OBJECT-MISS\n' >&2
+ }

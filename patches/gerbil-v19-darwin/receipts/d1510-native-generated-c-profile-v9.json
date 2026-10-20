@@ -1,0 +1,25 @@
+{
+  "schema": "native-generated-c-experiment-v1",
+  "defaultEnabled": false,
+  "parentProfile": "d1510-native-generated-c-profile-v8.json",
+  "buildChange": "Compiled in-process SHA256 backend; retain all source/options/tool/environment validation",
+  "files": {
+    "gsc": "6493053bdc3c6f544e47642ba2de0888768010acad949351b6887d3b482d5d5c",
+    "gsc-original": "9a1b842156fe15bb0c9415b87aebad0e72707bd793fe00353e7b68956929ab00",
+    "gambuild-C": "d9d537df086e1e40fcd78f0f0713cdd16df71b4101f459bf6b6625c9c2e67779",
+    "gambit-static-object-reuse": "08d8ebe59d24a7098561c909c5b8e04c66aff78794d5f68f1cedddf1f2168646",
+    "gambit-file-sha256": "1f81c3639b332dfa0cd5301b6487b4156c569357fbf4e8371c87d4ce9f0b95f8"
+  },
+  "sources": {
+    "gambit-generated-c-reads.scm": "0be7a6006ee848065a421b370b331edd2d9312c218b5a9326f68525d39bc2d59",
+    "gambit-generated-c-closure.scm": "18dd5a45a3026646f83412f36cc51f039f1046c7d507a3412828c93c9a05e8a4",
+    "gambit-generated-c-native.scm": "31b6cb3b88846d248b703ebaa23dbb613fbb82146f875ca60b9e54918152c870",
+    "gambit-generated-c-native-digest.scm": "4d1c5f71a0118471c61bb6aeb713cbf4aa85032c923f83036bae0cbbf43c1ca8",
+    "gambit-generated-c-native-digest-install.scm": "36a87afc7084ccfba3088f16e1ccbfaf4677c45f3ec172311641b3f1d629345b",
+    "gambit-file-sha256.c": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a"
+  },
+  "entrySources": {
+    "gsi/main.scm": "1377f168f89d3bc92b665fede8109bed40e8264f670edfedc5ebc4837a65db0d",
+    "gsc/_gsc.scm": "de4de52b594b20f68969b44c1d8ba3c2a4f812d6992691accee9628fd0963782"
+  }
+}

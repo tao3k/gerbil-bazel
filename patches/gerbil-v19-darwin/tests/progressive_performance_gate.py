@@ -1,13 +1,17 @@
 """Hard runtime gates; only real workload output can advance a phase."""
 from dataclasses import dataclass
 import math
+import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import time
 
-FIRST_LOG_SECONDS = 5
-COMPLETE_SECONDS = 52
+PERFORMANCE_LOCK = json.loads((Path(__file__).parent.parent / 'receipts/d1510-mcp-v4-performance-lock.json').read_text())
+FIRST_LOG_SECONDS = PERFORMANCE_LOCK['limitsSeconds']['firstLog']
+COMPLETE_SECONDS = PERFORMANCE_LOCK['limitsSeconds']['completeBuild']
+COMPLETE_TEST_SECONDS = PERFORMANCE_LOCK['limitsSeconds']['completeTest']
 
 
 class GateViolation(TimeoutError):
@@ -81,16 +85,16 @@ def force_stop(process):
 
 
 def instrument_cold_controller(source, complete=COMPLETE_SECONDS):
-    if type(complete) is not int or complete not in (50, 52):
-        raise ValueError('only existing 52-second or tighter 50-second ceiling allowed')
+    if type(complete) is not int or not 0 < complete <= COMPLETE_SECONDS:
+        raise ValueError('cannot widen the frozen MCP cold-build ceiling')
     replacements = (
         ('55-second complete-build performance ceiling FAILED',
          f'{complete}-second complete-build performance ceiling FAILED'),
         ('buildBudgetSeconds=180, buildPerformanceCeilingSeconds=55,',
-         f'buildBudgetSeconds={complete}, buildPerformanceCeilingSeconds={complete}, firstCompileCeilingSeconds=5,'),
+         f'buildBudgetSeconds={complete}, buildPerformanceCeilingSeconds={complete}, firstCompileCeilingSeconds={FIRST_LOG_SECONDS},'),
         ("    budget = 30 if name == 'clean' else 180",
          f"    gate = ProgressiveGate(Limits(name, complete=30 if name == 'clean' else {complete}, "
-         "first=None if name == 'clean' else 5, silence=None if name == 'clean' else 10), started)"),
+         f"first=None if name == 'clean' else {FIRST_LOG_SECONDS}, silence=None if name == 'clean' else 10), started)"),
         ("                if now - started > budget or (name == 'build' and now - last > 10):\n"
          "                    raise TimeoutError(f'{name}: unchanged real-output/budget gate')",
          '                gate.check(now)'),

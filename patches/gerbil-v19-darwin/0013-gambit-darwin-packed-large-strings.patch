@@ -1,0 +1,68 @@
+From: tao3k team and Contributors
+Subject: [CANDIDATE] gambit: pack large Darwin GNU string constants in the emitter
+
+Base: Gambit ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f.
+Generate packed Unicode pairs for large ordinary strings on Darwin compilers.
+GNU C selects this representation only for 64-bit little-endian words and
+4-byte characters; other configurations retain the original STR macros.
+NSTR is unchanged, including its late-binding suppression contract.
+The 4096-character cutoff limits the candidate to large constant payloads;
+it is a conservative scope bound, not a measured optimal threshold.
+D857 proved about 3.1x C-to-object improvement and identical objects for one
+real embedded module. This emitter candidate is not yet performance-admitted
+and does not claim to reduce MCP first-compile latency.
+
+diff --git a/gsc/_t-c-1.scm b/gsc/_t-c-1.scm
+--- a/gsc/_t-c-1.scm
++++ b/gsc/_t-c-1.scm
+@@ -1715,11 +1715,46 @@
+                     (targ-heap-ref-obj (keyword-object->string obj))
+                     (targ-heap-ref-obj (keyword-object-hash obj)))))
+ 
++(define c#targ-darwin-packed-strings?
++  (cond-expand
++    (gambit
++     (let loop ((parts ##os-system-type-saved))
++       (and (pair? parts)
++            (let ((part (symbol->string (car parts))))
++              (or (and (>= (string-length part) 6)
++                       (string=? (substring part 0 6) "darwin"))
++                  (loop (cdr parts)))))))
++    (else #f)))
++
+ (define (targ-dump-string obj id)
+-  (targ-vector-like-object "DEF_SUB_STR" id 'str
+-                           (str->list obj)
+-                           targ-c-char
+-                           targ-max-word-size))
++  (let ((elems (str->list obj)))
++    (targ-code* (list "DEF_SUB_STR" id
++                      (targ-c-unsigned-long (length elems))))
++    ;; Keep small constants and non-Darwin compiler output unchanged.
++    (if (and c#targ-darwin-packed-strings? (>= (length elems) 4096))
++        (begin
++          (targ-display "#if defined(__APPLE__) && defined(__GNUC__) && !defined(__clang__) && ___WS == 8 && ___CS == 4 && defined(___LITTLE_ENDIAN)")
++          (targ-line)
++          (let loop ((rest elems))
++            (if (pair? rest)
++                (let* ((tail (cdr rest))
++                       (a (character->unicode (car rest)))
++                       (b (if (pair? tail)
++                              (character->unicode (car tail))
++                              0)))
++                  (targ-display "               ,(___WORD)0x")
++                  (targ-display (number->string (+ a (* b 4294967296)) 16))
++                  (targ-display "ULL")
++                  (targ-line)
++                  (loop (if (pair? tail) (cdr tail) '())))))
++          (targ-display "               ___PADDING};")
++          (targ-line)
++          (targ-display "#else")
++          (targ-line)
++          (targ-vector-like-object-body 'str elems targ-c-char targ-max-word-size)
++          (targ-display "#endif")
++          (targ-line))
++        (targ-vector-like-object-body 'str elems targ-c-char targ-max-word-size))))
+ 
+ (define (targ-dump-nstring obj id)
+   (targ-vector-like-object "DEF_SUB_NSTR" id 'nstr

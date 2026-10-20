@@ -1,0 +1,78 @@
+diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
+index cc783f5..bd6bee6 100644
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -291,6 +291,11 @@ namespace: gxc
+                           (cons ctx deps))))))
+ 
+       (def selected-c [])
++      (def produced-dynamic-c [])
++      (def producer-proof?
++        (cond-expand
++          (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_PRODUCER_PROOF" #f) "1"))
++          (else #f)))
+       (def closed-link?
+         (cond-expand
+           (darwin (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_REUSE" #f) "1"))
+@@ -378,7 +383,10 @@ namespace: gxc
+                         (file-newer? scm-path o-path)
+                         (file-newer? c-path o-path))
+                 (let* ((gsc-cc-opts (gsc-cc-options static: #f))
+-                       (args ["-obj" gsc-cc-opts ... gsc-static-opts ... c-path]))
++                       (args
++                        (if (and selected producer-proof? (member c-path produced-dynamic-c))
++                          ["-obj" gsc-cc-opts ... "-cc-options" "-D___DYNAMIC -fPIC" c-path]
++                          ["-obj" gsc-cc-opts ... gsc-static-opts ... c-path])))
+                   (if (not selected)
+                     (invoke (gerbil-gsc) args)
+                     ;; Each job owns its environment; never setenv in the
+@@ -413,6 +421,12 @@ namespace: gxc
+                        [(map (lambda (scm runtime-c ready?) (if ready? runtime-c scm))
+                              src-deps-scm src-deps-runtime-c ready-deps) ...
+                         (if ready-bin src-bin-runtime-c src-bin-scm) output-scm]))
++                 (when (and closed-link? producer-proof?)
++                   (set! produced-dynamic-c
++                     (append
++                      (filter (lambda (path) path)
++                              (map (lambda (path ready?) (and ready? path)) src-deps-c ready-deps))
++                      (if ready-bin [src-bin-c] []))))
+                  (prepare-bound-link [libgerbil-c ... selected-inputs ...] selected-inputs
+                    (if ready-bin src-bin-runtime-c src-bin-scm)
+                    (lambda (binding-options)
+@@ -1161,11 +1175,31 @@ namespace: gxc
+            (when (file-exists? static-c)
+              (delete-file static-c))
+            (copy-file runtime-c static-c)
+-           (invoke (gerbil-gsc)
+-                   ["-obj" "-o" static-o
+-                    gsc-cc-opts ...
+-                    "-cc-options" "-D___DYNAMIC -fPIC"
+-                    static-c])
++           (let (args ["-obj" "-o" static-o gsc-cc-opts ...
++                       "-cc-options" "-D___DYNAMIC -fPIC" static-c])
++             (if (not (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_PRODUCER_PROOF" #f) "1"))
++               (invoke (gerbil-gsc) args)
++               (let* ((tool (path-expand "gambit-file-sha256" (path-directory (gerbil-gsc))))
++                      (hash-proc (open-process [path: tool arguments: ["--raw" static-c]
++                                                         stdout-redirection: #t]))
++                      (sha (read-line hash-proc))
++                      (extra (read-line hash-proc))
++                      (hash-status (process-status hash-proc)))
++                 (close-port hash-proc)
++                 (unless (and (zero? hash-status) (string? sha) (= (string-length sha) 64)
++                              (eof-object? extra))
++                   (raise-compile-error "Producer C source digest failed" static-c))
++                 (let* ((environment
++                         (cons (string-append "GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA=" sha)
++                               (filter (lambda (entry)
++                                         (not (string-prefix? "GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA=" entry)))
++                                       (##os-environ))))
++                        (_ (verbose "invoke " [(gerbil-gsc) . args]))
++                        (proc (open-process [path: (gerbil-gsc) arguments: args environment: environment]))
++                        (status (process-status proc)))
++                   (close-port proc)
++                   (unless (zero? status)
++                     (raise-compile-error "Producer C object compilation failed" static-c status))))))
+            (invoke "env"
+                    [(string-append
+                      "GAMBITDIR_INCLUDE="

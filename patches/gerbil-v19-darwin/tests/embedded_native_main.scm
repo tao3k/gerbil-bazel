@@ -1,0 +1,52 @@
+(declare (standard-bindings) (extended-bindings))
+(c-declare "extern int gb_provider_hits; extern int gb_provider_fallbacks;")
+(define hits (c-lambda () int "___result = gb_provider_hits;"))
+(define fallbacks (c-lambda () int "___result = gb_provider_fallbacks;"))
+(define lazy-control#payload-count 0)
+(define lazy-control#dependency-count 0)
+(define lazy-control#fallback-count 0)
+(define lazy-control#context #f)
+(define lazy-control#seen-context #f)
+(define directory (getenv "EMBEDDED_CONTROL_DIRECTORY"))
+(define lazy-control#dependency-path (string-append directory "/lazy_native_dependency.o1"))
+(define (check name value)
+  (if value
+      (begin (display "CASE-OK ") (display name) (newline) (force-output))
+      (error "embedded native contract failed" name)))
+(check "embedded payload is not boot initialized" (= lazy-control#payload-count 0))
+(check "embedded dependency is not boot initialized" (= lazy-control#dependency-count 0))
+(check "embedded payload is not boot registered"
+  (not (##lookup-registered-module 'lazy_native_payload)))
+(define context (list 'fresh 'import-context))
+(set! lazy-control#context context)
+(define callback-path #f)
+(define result-path
+  (##load (string-append directory "/lazy_native_payload.o1")
+    (lambda (script path) (set! callback-path path)) #t #t "lazy_native_payload" #t))
+(check "ordinary file API loads embedded payload" (= lazy-control#payload-count 1))
+(check "ordinary file API loads nested dependency" (= lazy-control#dependency-count 1))
+(check "initializer uses actual import context" (eq? lazy-control#seen-context context))
+(check "ordinary loader retains resolved path and callback"
+  (and (string? result-path) (equal? callback-path (string-append directory "/lazy_native_payload.o1"))))
+(check "both eligible loads use embedded backend" (= (hits) 2))
+(define input (list 'shared 'input))
+(define result (lazy-control#transform input))
+(check "native output preserves aliases"
+  (and (eq? (car (vector-ref result 0)) input) (eq? (cdr (vector-ref result 0)) input)))
+(check "native output remains fresh" (not (eq? result (lazy-control#transform input))))
+(check "ordinary loader propagates initializer failure"
+  (with-exception-catcher
+    (lambda (exception) #t)
+    (lambda ()
+      (##load (string-append directory "/lazy_native_failure.o1")
+        (lambda args #f) #t #t "lazy_native_failure" #t)
+      #f)))
+(check "initializer failure still used embedded backend" (= (hits) 3))
+(##load (string-append directory "/embedded_native_fallback.o1")
+  (lambda args #f) #t #t "embedded_native_fallback" #t)
+(check "unlisted native file retains original backend"
+  (and (= lazy-control#fallback-count 1) (> (fallbacks) 0) (= (hits) 3)))
+(##gc)
+(check "embedded native result survives collection"
+  (and (eq? (vector-ref result 1) context) (eq? (car (vector-ref result 0)) input)))
+(display "OK") (newline) (force-output)

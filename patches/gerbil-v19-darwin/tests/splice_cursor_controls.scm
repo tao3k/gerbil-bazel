@@ -1,0 +1,62 @@
+(define (check name value)
+  (if value (begin (display "CASE-OK ") (display name) (newline) (force-output))
+      (error "splice cursor control failed" name)))
+(define selected-native-splice gx#syntax-split-splice->vector)
+(if (getenv "SPLICE_CURSOR_REFERENCE" #f) (load (getenv "SPLICE_CURSOR_REFERENCE")))
+(define original-splice gx#syntax-split-splice->vector)
+(load (getenv "SPLICE_CURSOR_OVERLAY"))
+(define candidate-splice gx#syntax-split-splice->vector)
+(define wrap-type gx#syntax-wrap::t)
+(define (wrap e mark) (##structure wrap-type e 'root-source mark))
+(define inputs
+  (list '(a b c) '(a b . c) '() '#(a b) 'atom
+        (wrap '(a b c) 'a) (wrap '(a b . c) 'a) (wrap '() 'a)
+        (wrap (cons (wrap 'a 'a) '(b c)) 'a)
+        (wrap (cons 'a (wrap '(b c) 'a)) 'a)
+        (wrap (cons 'a (wrap '(b c) 'b)) 'a)
+        (wrap (wrap '(a b c) 'b) 'a)))
+(let loop ((rest inputs) (index 0))
+  (if (pair? rest)
+      (begin
+        (for-each
+          (lambda (n)
+            (check (string-append "shape:" (number->string index) ":suffix:" (number->string n))
+                   (equal? (candidate-splice (car rest) n) (original-splice (car rest) n))))
+          '(0 1 2 10 -1))
+        (loop (cdr rest) (+ index 1)))))
+(define saved-fold foldl__0)
+(define calls 0)
+(dynamic-wind
+  (lambda () (set! foldl__0 (lambda args (set! calls (+ calls 1)) (apply saved-fold args))))
+  (lambda ()
+    (check "rebound fold rejects fast path" (not (splice-cursor-canonical?)))
+    (set! calls 0)
+    (let* ((expected (original-splice (wrap '(a b c) 'a) 0)) (expected-calls calls))
+      (set! calls 0)
+      (check "rebound fold effects and output retained"
+             (and (equal? expected (candidate-splice (wrap '(a b c) 'a) 0))
+                  (= calls expected-calls)))))
+  (lambda () (set! foldl__0 saved-fold)))
+(dynamic-wind
+  (lambda () (set! foldl__0 (lambda args (error "fold exception"))))
+  (lambda ()
+    (check "rebound fold exception retained"
+      (with-exception-catcher (lambda (error) #t)
+        (lambda () (candidate-splice (wrap '(a b c) 'a) 0) #f))))
+  (lambda () (set! foldl__0 saved-fold)))
+(check "canonical bindings restored" (splice-cursor-canonical?))
+(define shared (list 'shared 'node))
+(define shared-marked (wrap shared 'a))
+(check "cancelled head preserves existing identity"
+  (eq? (car (vector-ref (candidate-splice (wrap (list shared-marked) 'a) 0) 0)) shared))
+(define mutable-input (list 'a 'b 'c))
+(candidate-splice (wrap mutable-input 'a) 0)
+(check "input spine never mutated" (equal? mutable-input '(a b c)))
+(define survived (candidate-splice (wrap '(a b c) 'a) 0))
+(##gc)
+(check "result roots survive collection"
+  (equal? survived (original-splice (wrap '(a b c) 'a) 0)))
+(check "materialized terminal source is preserved"
+  (and (eq? (gx#stx-source (vector-ref survived 1)) #f)
+       (eq? (gx#stx-source (car (vector-ref survived 0))) #f)))
+(display "OK") (newline) (force-output)

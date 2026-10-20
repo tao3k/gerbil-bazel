@@ -93,6 +93,7 @@ def main():
 
     def run(name, argv):
         launch = time.monotonic()
+        native_start = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
         logfile = output / f"{name}.log"
         peak_gcc, activity, last_progress, ready = 0, "", launch, None
         events = {}
@@ -107,6 +108,8 @@ def main():
                     events["last_output"] = observed
                     log.write(line)
                     log.flush()
+                    if line.startswith('(PHASE-START cold)'):
+                        events['coldPhaseNativeNs'] = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
                     if "READY" in line and "ready" not in events:
                         events["ready"] = time.monotonic()
                 events["end"] = time.monotonic()
@@ -139,7 +142,8 @@ def main():
                         raise TimeoutError(f"{name}: exceeded product progress/batch gate")
                 status = process.wait()
                 reader.join(timeout=5)
-            except BaseException:
+            except BaseException as error:
+                native_end = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
                 if process.poll() is None:
                     os.killpg(process.pid, signal.SIGTERM)
                     try:
@@ -147,6 +151,12 @@ def main():
                     except subprocess.TimeoutExpired:
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait()
+                reader.join(timeout=1)
+                report.setdefault('failedRuns', []).append(dict(
+                    name=name, pid=process.pid, failure=repr(error),
+                    nativeStartNs=native_start, nativeEndNs=native_end,
+                    coldPhaseNativeNs=events.get('coldPhaseNativeNs'),
+                    terminalExitCode=process.returncode, log=logfile.name))
                 raise
         content = logfile.read_text(errors="replace")
         if args.strict_product_progress and events.get("maximumOutputGapSeconds", 0) > 5:

@@ -1,0 +1,72 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gambit: require caller-bound static C identity
+
+Apply after 0026. A caller can bind the C digest selected during link preparation
+through GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA. This also binds cold object
+creation: it cannot take the ordinary mutable-input fast path. Unsupported
+snapshot invocations reject instead of compiling a different logical source.
+No caller integration, performance admission or default enablement is implied.
+
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -40,5 +40,9 @@ gambit_static_original()
+ {
++  if test -n "${expected_source_sha-}"; then
++    printf 'GAMBIT-STATIC-BOUND-UNSUPPORTED-DENY\n' >&2
++    return 2
++  fi
+   BUILD_OBJ=$original_build_obj
+   BUILD_OBJ_INPUT_FILENAMES_PARAM=$original_input
+   BUILD_OBJ_OUTPUT_FILENAME_PARAM=$original_output
+   rm -f "$proof" || return 2
+@@ -55,9 +59,17 @@ gambit_static_object_locked()
+   original_output=$output
++  expected_source_sha=${GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA-}
++  if test "${GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA+set}" = set; then
++    case "$expected_source_sha" in *[!0-9a-f]*) printf 'GAMBIT-STATIC-BOUND-DIGEST-DENY\n' >&2; return 2 ;; esac
++    if test "${#expected_source_sha}" != 64; then
++      printf 'GAMBIT-STATIC-BOUND-DIGEST-DENY\n' >&2
++      return 2
++    fi
++  fi
+   if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then
+     printf 'GAMBIT-STATIC-OBJECT-PROOF-DENY\n' >&2
+     return 2
+   fi
+-  if test ! -f "$output" || test -L "$output" || test ! -f "$source" || test -L "$source"; then
++  if test -L "$output" || { test -e "$output" && test ! -f "$output"; } || test ! -f "$source" || test -L "$source" || { test ! -f "$output" && test -z "$expected_source_sha"; }; then
+     gambit_static_original
+     return $?
+   fi
+@@ -81,3 +93,7 @@ gambit_static_object_locked()
+   source_before=$(gambit_static_sha "$source") || return 2
++  if test -n "$expected_source_sha" && test "$source_before" != "$expected_source_sha"; then
++    printf 'GAMBIT-STATIC-BOUND-SOURCE-DENY\n' >&2
++    return 2
++  fi
+   cp -p "$source" "$temporary/source.c" || return 2
+   snapshot_sha=$(gambit_static_sha "$temporary/source.c") || return 2
+@@ -122,4 +138,4 @@ gambit_static_object_locked()
+-  object_sha=$(gambit_static_sha "$output") || return 2
++  if test -f "$output"; then object_sha=$(gambit_static_sha "$output") || return 2; else object_sha=absent; fi
+   printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof" || return 2
+-  if test -f "$proof" && cmp -s "$proof" "$temporary/proof"; then
++  if test -f "$output" && test -f "$proof" && cmp -s "$proof" "$temporary/proof"; then
+     source_after=$(gambit_static_sha "$source") || return 2
+@@ -156,3 +172,3 @@ gambit_static_object_locked()
+   # A changed publication target is not eligible for replacement.
+-  test ! -L "$output" && test -f "$output" || return 2
++  test ! -L "$output" && { test -f "$output" || { test ! -e "$output" && test -n "$expected_source_sha"; }; } || return 2
+   if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then return 2; fi
+diff --git a/bin/gambuild-C.unix.in b/bin/gambuild-C.unix.in
+--- a/bin/gambuild-C.unix.in
++++ b/bin/gambuild-C.unix.in
+@@ -451,7 +451,7 @@
+       printf "%s\n" "${BUILD_OBJ_CMD}"
+     fi
+ 
+-    if test "${GAMBIT_DARWIN_STATIC_OBJECT_REUSE-}" = 1; then
++    if test "${GAMBIT_DARWIN_STATIC_OBJECT_REUSE-}" = 1 || test "${GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA+set}" = set; then
+       . "$(dirname "$0")/gambit-static-object-reuse"
+       gambuild_obj_with_static_reuse
+     else

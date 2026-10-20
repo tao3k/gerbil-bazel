@@ -1,0 +1,93 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gambit: validate the whole member link request
+
+Apply after 0041. A reproduced cross-group include mutation published a stale
+binding. Preserve group-mode behavior; member mode requires both opt-ins and
+rechecks all input/dependency/tool/environment identities before binding.
+Whole-consumer performance and release qualification remain pending.
+
+diff --git a/gsc/gambit-generated-c-closed-link.scm b/gsc/gambit-generated-c-closed-link.scm
+index 72bbc60..1e3d09b 100644
+--- a/gsc/gambit-generated-c-closed-link.scm
++++ b/gsc/gambit-generated-c-closed-link.scm
+@@ -43,6 +43,21 @@
+         (delete-directory path))
+       (delete-file path)))
+ 
++(define (generated-c-closed-link-member-dependencies hash-tool input logical sha)
++  (let* ((proof (string-append logical ".gambit-member-proof"))
++         (record (and (generation-regular? proof) (call-with-input-file proof read)))
++         (outputs (and (list? record) (= (length record) 4) (list-ref record 3))))
++    (if (not (and record (eq? (car record) 'generated-c-closure-v2)
++                  (list? outputs) (= (length outputs) 1)
++                  (list? (car outputs)) (= (length (car outputs)) 2)
++                  (string? (caar outputs))
++                  (equal? (path-normalize logical) (path-normalize (caar outputs)))
++                  (equal? sha (cadar outputs))
++                  (list? (list-ref record 2))
++                  (assoc input (list-ref record 2))))
++        (error "closed link member journal changed" input))
++    (list-ref record 2)))
++
+ (define (generated-c-closed-link-arguments options arguments target binding entry-input)
+   (let* ((os (symbol->string (caddr (system-type))))
+          (files (and binding (generated-c-closed-link-inputs arguments))))
+@@ -55,6 +70,12 @@
+         (let* ((executable (path-normalize (executable-path)))
+                (hash-tool (string-append (path-directory executable) "gambit-file-sha256"))
+                (tools (list executable hash-tool))
++               (member? (and (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_MEMBER_PROOF" #f) "1")
++                             (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_MEMBER_TOOLS_BATCH" #f) "1")))
++               (request-tools (and member? (generation-file-digests hash-tool tools)))
++               (request-inputs (and member? (generation-file-digests hash-tool files)))
++               (request-environment (and member? (generation-environment)))
++               (dependencies '())
+                (work (create-temporary-directory (string-append binding ".work-")))
+                (mapping '())
+                (records '())
+@@ -86,6 +107,12 @@
+                   files)
+                 (for-each
+                   (lambda (group)
++                    ;; Do not publish a later member under a different tool or
++                    ;; environment identity than the original link request.
++                    (if (and member?
++                             (not (and (equal? request-tools (generation-file-digests hash-tool tools))
++                                       (equal? request-environment (generation-environment)))))
++                        (error "closed link request context changed"))
+                     (let* ((directory (caar group)) (inputs (cdr group))
+                            (membership (generation-context-sha hash-tool
+                                          (list 'closed-link-members-v2 (cadar group) inputs)
+@@ -93,7 +120,7 @@
+                            (proof (string-append directory ".gambit-closed-link-" membership ".proof"))
+                            (group-work (create-temporary-directory (string-append work "/group-")))
+                            (pins
+-                            (if (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_MEMBER_PROOF" #f) "1")
++                            (if member?
+                                 (reuse-generated-c-members! inputs '((target C))
+                                   directory group-work hash-tool tools)
+                                 (reuse-generated-c-closure! inputs '((target C))
+@@ -104,6 +131,10 @@
+                         (lambda (input pin)
+                           (let ((logical (string-append (path-strip-extension input) ".c"))
+                                 (sha (generation-file-sha hash-tool pin)))
++                            (if member?
++                                (set! dependencies
++                                  (append (generated-c-closed-link-member-dependencies
++                                            hash-tool input logical sha) dependencies)))
+                             (set! mapping (cons (cons input pin) mapping))
+                             (set! records (cons (list input logical sha) records))))
+                         inputs pins)))
+@@ -124,6 +155,13 @@
+                   (let ((pin (cdr (assoc (car entry) mapping))))
+                     (if (not (equal? (caddr entry) (generation-file-sha hash-tool pin)))
+                         (error "closed link pin changed")))) records)
++              ;; Group-local admission is insufficient for a complete binding.
++              (if (and member?
++                       (not (and (generation-digests-current? hash-tool request-inputs)
++                                 (generation-digests-current? hash-tool dependencies)
++                                 (equal? request-tools (generation-file-digests hash-tool tools))
++                                 (equal? request-environment (generation-environment)))))
++                  (error "closed link request context changed"))
+               (let ((pending (string-append work "/binding")))
+                 (call-with-output-file (list path: pending permissions: #o600)
+                   (lambda (port)

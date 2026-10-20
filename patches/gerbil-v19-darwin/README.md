@@ -1,9 +1,288 @@
 # Gerbil v0.19 Darwin build patch stack
 
 This directory carries the local validation stack for the Gerbil v0.19
-Darwin build work. The release path is the measured four-patch performance
-stack. Later observability and architecture experiments remain separate until
-an adjacent dual-consumer A/B admits them.
+Darwin build work. The current MCP-qualified bundle is the content-locked
+six-patch safety series; general release and complete ASCENT admission remain
+pending. Historical stacks and later experiments stay separate from this bundle.
+
+## Current Frozen MCP Checkpoint
+
+Use [the frozen six-patch safety bundle](receipts/d1510-frozen-safety-bundle.md)
+for the current MCP-qualified checkpoint: first logs **4.038 / 3.980 / 3.950
+seconds**, cold builds **36.414 / 35.552 / 37.770 seconds**, and complete tests
+**86.924 seconds, 39/39 files and 965/965 cases**. The fixed ceilings are
+**4.5 / 42 / 97 seconds**. These are retained measurements, not new runs.
+Packaging polish preserves the measured implementation bytes and also pins the
+entire identity receipt, including timings, tool identities and admission scope.
+The snapshot reconstruction entry point also pins that entire receipt before
+parsing or creating a fixture; the check is not confined to regression tests.
+The regression contract rejects replacement driver, runtime, GSC and raw evidence
+identities as well as patch contamination. The six-patch series is the promotion
+boundary: later candidates need fresh complete correctness and performance
+qualification before being added, even when component checks show a HIT.
+The [actual frozen ASCENT ABI contracts](receipts/d1510-frozen-ascent-abi-contracts.md)
+now pass 22 backend controls and two existing-object source ABA controls with
+the selected Multiple-VM GSC/header pair. The missing-object ordinary fallback
+has a separately reproduced source ABA defect and is **not** covered by that
+reuse guarantee. The initial aggregate harness failed its unsupported missing
+dispatch assertion; this is not a passing complete ASCENT qualification.
+The [six-patch ASCENT source-change control](receipts/d1510-frozen-ascent-source-change.md)
+now passes 30 Cases with a fresh entry and 70 object HITs / two MISSes.
+Its whole time is 70.03 seconds versus 71.32 seconds for proof population;
+lower user CPU is not a new end-to-end speedup or complete Suite admission.
+The [native compiler interval record](receipts/d1510-ascent-native-phases.md)
+separates preparation, link generation and object costs on a real 70-HIT run.
+It is diagnostic evidence, not a faster candidate or complete ASCENT admission.
+The [retained entry feasibility control](receipts/d1510-retained-entry-objects.md)
+proves regenerated-C object HITs, source-change MISS and native execution, but
+has not yet qualified a cleanup change or whole-consumer speed improvement.
+
+### Historical Five-Patch Reference
+
+The historical five-patch composition is 0019 + 0020 + 0021 (after 0014/0015).
+Its three complete MCP cold builds are **37.365 / 37.406 / 36.467 seconds**,
+with first compile logs **4.049 / 4.044 / 4.004 seconds**. Complete testing
+of the first cold-built artifact took **87.409 seconds**, with all 39 files
+and 965 cases passing; this is one complete test run, not three.
+
+[The v4 checkpoint](receipts/d1510-static-object-reuse-v4-checkpoint.json)
+binds the exact helper, native digest backend, runtime and raw reports.
+[The v4 qualification](receipts/d1510-static-object-reuse-v4.md) records its
+scope. This is the historical five-patch reference, not the current safety bundle.
+It remains opt-in: independent ASCENT package-cold regression is still DENIED,
+and this checkpoint itself does not qualify full ASCENT suites.
+
+The exact driver extension is frozen in [mcp-v4-driver.series](mcp-v4-driver.series)
+and its [patch identity lock](receipts/d1510-mcp-v4-patch-lock.json). This series
+depends on the separately recorded reader-whitespace runtime baseline; it is
+not a complete latest-staging rebuild recipe. The generated-C dispatcher
+prototype is deliberately excluded. Packaging polish must preserve the measured
+helper/source bytes; behavior changes require new whole-consumer qualification.
+Replay now checks the locked patch order, patch digests and all three measured
+driver executable/helper identities before creating its fixture. It rejects
+drift instead of silently testing a different stack.
+The same preflight also locks the referenced runtime prerequisite, measured
+checkpoint, performance policy and native digest source. Missing, altered or
+symlinked evidence fails before replay; changing a gate is not silent admission.
+Replay additionally requires the selected runtime directory and verifies the
+actual measured Gerbil executable, not only the prerequisite receipt.
+Replay and the identity CLI's `--evidence-root .` both check the original complete
+cold-build and full-test report bytes before creating a replay fixture. This is
+evidence preservation, not a new run.
+The [packaging verification](receipts/d1510-mcp-v4-patch-polish.md#current-packaging-verification)
+lists the reviewable bundle and verification command. Its isolated replay proves
+actual reverse/apply execution; portable identity receipts omit personal paths.
+The active [performance lock](receipts/d1510-mcp-v4-performance-lock.md) now uses
+**4.5 seconds first log / 42 seconds cold build / 97 seconds complete tests**, with
+about ten percent upward-rounded fluctuation allowance. Historical gates below
+remain historical evidence, not admission thresholds for new candidates.
+
+**Release blocker:** the frozen static-object helper has a reproduced transient
+C-source read race. [The C-input safety record](receipts/d1510-static-source-aba.md)
+shows a wrong object despite identical source hashes before/after preprocessing.
+The five-patch series remains a measured reference, not general production
+admission. A hardened replacement must bind GCC's actual input and pass fresh
+correctness and whole-consumer performance gates; do not silently replace the
+measured helper or inherit its timings.
+The separate [0026 safety candidate](receipts/d1510-static-c-snapshot-candidate.md)
+blocks that C mutation with exact ordinary-object parity, passes 22 native reuse
+controls and executes 30/30 real isolated ASCENT Cases twice. Its separate MCP
+follow-up passes three cold builds at 36.414 / 35.552 / 37.770 seconds and complete
+tests at 86.924 seconds, all 39 files / 965 cases. The
+[six-patch candidate series](static-c-snapshot-candidate.series) and
+[candidate identity lock](receipts/d1510-static-c-snapshot-patch-lock.json) preserve
+that evidence without altering the frozen five-patch reference. Complete ASCENT
+closure performance and general release admission remain pending; these MCP
+timings are non-regression evidence, not an attributed new speedup.
+The [best-line guard polish](receipts/d1510-best-line-guard-polish.md) adds
+explicit GSC identity verification and per-sample performance admission without
+changing any measured patch bytes. Use `--performance` to check all three
+ceilings and the complete test inventory; digest verification alone is not a
+performance pass.
+
+The same reconstruction checker accepts `snapshot` as its sixth argument and
+the actual regular GSC binary as its seventh. This selects the six-patch lock,
+requires GSC identity and all retained performance samples, then reverses and
+reapplies the full six-patch series with exact measured-helper parity. Unknown
+bundles are rejected; experimental patches cannot enter through this selector.
+See [the frozen safety bundle](receipts/d1510-frozen-safety-bundle.md) for the
+command and current verification boundary.
+The frozen-contract tests also pin the six-patch order, complete test inventory,
+three whole-task ceilings and MCP-only admission boundary. Polishing validation
+must not replace measured patch bytes or promote incomplete experiments.
+
+Experimental [0027 caller-bound C identity](receipts/d1510-bound-static-c-digest.md)
+adds a per-object expected digest, including cold object creation. Actual
+Scheme/native checks reject a different C definition after link preparation;
+default-path safety and semantic controls pass. It remains outside both
+measured series until caller integration and whole-consumer qualification.
+
+Experimental [0039 producer recipe guard](receipts/d1510-producer-recipe-guard.md)
+records the successful worker's copied compiler options and retains full backend
+proof. Native controls prove same-recipe HIT and actual changed-option rebuild;
+pending / failed / disabled metadata and concurrent publication controls pass.
+This patch follows 0034, not the denied 0037 fresh-object bypass. Its isolated
+ASCENT focused cold run passes 30 Cases at 110.32 seconds but has zero object
+HITs: ordinary library-only std/make never activates the required static-object
+producer and linking occurs in a later phase. This is a safety building block,
+not a qualified cross-phase speedup; do not repeat that configuration or add
+0039 to either frozen series based on the component controls.
+The [frozen AOT recipe integration](receipts/d1510-producer-recipe-frozen-aot.md)
+now preserves unselected compiler AST and optimized providers while passing
+enabled/disabled native executor controls. Whole-consumer admission remains pending.
+The [0043 compiler-prefix correction](receipts/d1510-native-compiler-prefix.md)
+fixes a real native GCC recipe mismatch. Corrected MCP reaches 74 object HITs
+but still fails the 42-second build gate; it is not part of the frozen series.
+The [12-worker capture cost control](receipts/d1510-native-capture-transport-cost.md)
+separates saved intermediate transport from full proof capture with 72 exact
+object-parity checks; it is component evidence, not package admission.
+Experimental [0044 object request coordinator](receipts/d1510-native-object-batch-coordinator.md)
+stages native objects until whole-request validation and passes real failure,
+external tool mutation and reverse-order concurrency controls. Gerbil routing
+and both whole-consumer performance/correctness qualifications remain pending;
+0044 is default-off and stays outside the frozen series.
+Unpaired 0044 has a reproduced compiler-environment mismatch; the
+[0045 explicit environment correction](receipts/d1510-native-object-batch-environment.md)
+is required before any driver integration. Neither patch has package admission.
+The [0046/0047 request-context polish](receipts/d1510-object-request-context.md)
+preserves real configured GSC producer proof identity, per-job working directory
+and source spelling. Its separate candidate series is byte-pinned; actual native
+concurrency/environment controls and 34 focused checks pass. It has no new
+whole-package timing and cannot replace the frozen six-patch checkpoint.
+The [actual GSC request-cost ABBA](receipts/d1510-object-request-cost.md) now
+**denies** the unchanged preparation-plus-coordinator performance route:
+0.83/0.93 seconds ordinary versus 1.52/1.66 seconds candidate, with all 12
+members HIT and exact object/proof parity. Do not integrate or repeat it unchanged.
+
+The separate [member-independence control](receipts/d1510-generated-c-member-independence.md)
+proves exact C and flat-link parity for 55 real modules after reverse generation
+and a one-member change with only that member regenerated. It supports studying
+finer invalidation than directory-wide proof groups, not admitting a member cache
+yet. Complete ordered-link, transitive-read, tool, option, failure and concurrency
+checks remain mandatory; its generation timings are not new consumer results.
+
+The experimental [0040 member tool snapshot](receipts/d1510-member-tool-snapshot.md)
+removes repeated tool hashing within one member request. A real 55-member
+one-change component falls from 3.671 to 0.190 seconds with exact C/link parity;
+cold population is unchanged and stable HIT is 0.101 seconds slower. Compiled
+controls pass 11 checks and two concurrent processes; two mid-batch mutation
+injections currently cover only the interpreted coordinator. Complete CLI,
+failure/retry and whole-consumer qualification remain pending, so this experiment
+does not enter the frozen series or imply a new MCP/ASCENT result.
+
+Experimental [0041 CLI integration](receipts/d1510-member-closed-link-integration.md)
+packages the compiled member coordinator, passes the real 55-module ordered
+CLI/C/link controls, and passes compiled external-mutation/retry and concurrent
+controls. An isolated actual ASCENT cold AOT run passes 30/30 Cases at 114.46
+seconds within its focused component deadline. It is not a complete ASCENT or
+MCP qualification; cross-group mutation safety and whole-consumer performance
+remain pending. Neither 0040 nor 0041 enters the frozen six-patch safety series.
+
+**0041 promotion is now denied:** a real cross-group include mutation published
+a stale binding despite group-local checks. The separate
+[0042 whole-request guard](receipts/d1510-member-link-request-guard.md) rejects
+that interleaving and real private-tool replacement before binding, with exact
+ordinary C/link parity on retry. Normal 55-module CLI and one-switch fallback
+controls pass. Guarded MCP/full-ASCENT qualification is still pending; no previous
+timings are inherited as new guarded-consumer results.
+
+Experimental [0028/0029 closed-link handoff](receipts/d1510-closed-link-consumer.md)
+now connects the bulk GSC consumer to Gerbil's per-object bindings. Real isolated
+ASCENT entry rebuilds pass 30/30 Cases at 50.48 / 44.55 seconds, but reuse a
+compiled library and are not whole-package cold admission. A qualification-only
+driver loader proves active code identity; production AOT relinking and fresh
+MCP/full-ASCENT gates remain pending. These patches do not replace either locked
+measured series.
+
+Experimental 0023/0024 provide explicit library-producer admission and compiled
+Gambit reuse. Their [V11 record](receipts/d1510-planned-producer-v11.md) separates
+passing mechanism/ABI/source-replay checks from failed whole-consumer gates.
+They are **not** part of this frozen checkpoint or the release workflow. 0023
+replaces, rather than follows, experimental 0022; 0024 applies only to Darwin's
+Gambit source and has no Linux build qualification.
+
+Experimental generated-C journals in V9/V11 have a reproduced transient-source
+read race: copying a source before reopening its original path does not bind
+the parsed bytes. [The snapshot-reader record](receipts/d1510-generated-c-snapshot-reader.md)
+documents the counterexample and experimental follow-up 0025 (after 0024).
+Those old binaries remain unqualified; 0025 is not in the frozen five-patch
+series and has not received native-profile or complete-consumer performance admission.
+The [native follow-up](receipts/d1510-snapshot-reader-native-v12.md) now records
+compiled race/CLI/concurrency controls on both isolated ABIs and 55-module C/link
+parity. Whole-consumer performance admission remains missing; the malformed
+original component timing is not promoted to an acceleration claim.
+The subsequent [real isolated ASCENT AOT attempt](receipts/d1510-ascent-snapshot-positive-denied.md)
+hits the unchanged 135-second whole-task cap during library compilation. Its 80
+producer records are not completed Cases or link adoption; this configuration
+is DENY and remains outside the fastest series.
+
+A separate [multi-entry Mach-O fixture](receipts/d1510-multi-entry-bundle-contract.md)
+preserves default filename-derived entries, initialization order, mutable state
+and repeated-load rejection with one rather than two physical images. Both
+compiler ABIs pass; this is mechanism evidence only, not an admitted consumer
+optimization or a change to the frozen series.
+The [real ASCENT core follow-up](receipts/d1510-real-ascent-core-bundle.md)
+preserves existing linker aliases and passes native module calls through the
+ordinary Gerbil import path. Image reduction is repeatable, wall-time gain is
+not; duplicate symbols are rejected before linking. Full AOT consumer admission
+remains missing.
+
+The [real V4 tool-upgrade scenario](receipts/d1510-ascent-v4-actual-tool-upgrade.md)
+now checks actual private GNU GCC content changes through three direct ASCENT
+AOT runs, each 30/30 Cases. Entry/object invalidation passes without deleting
+receipts; the subsequent entry HIT still executes all Cases. This is a warmed
+library safety qualification, not a new package-cold or full-suite speed claim.
+The [source/concurrent-entry follow-up](receipts/d1510-ascent-v4-source-concurrency.md)
+passes 30/30 Cases in each of two simultaneous calls after a comment-only source
+change, with one rebuild and one admitted entry HIT. All 72 rebuilt objects miss
+the cache, so object-reuse benefit in this configuration remains unproven.
+The separate [proof-component diagnosis](receipts/d1510-ascent-v4-key-components.md)
+now observes 70 HIT / 2 MISS after a comment-only change with unchanged tool,
+environment and command components. Both direct AOT runs pass all 30 Cases.
+This establishes real unchanged-closure reuse, not a new cold/full-suite win;
+the diagnostic helper remains outside the frozen optimization series.
+The [HIT cost and Multiple VM controls](receipts/d1510-static-hit-cost-multiple-vm-contracts.md)
+measure four real object HITs and qualify 22 native component contracts using
+the actual ASCENT GSC/header pair. This closes a harness ABI-selection gap;
+it does not qualify complete ASCENT performance or add another optimization.
+The [real malformed-source recovery](receipts/d1510-ascent-v4-failed-source-preservation.md)
+also rejects Suite compilation before any Case runs, preserves the successful
+AOT binary/receipt, and executes 30/30 Cases after exact source recovery.
+Expected compile rejection is recorded separately from passing test correctness.
+The [compiled closed-set generation probe](receipts/d1510-compiled-closed-generation-boundary.md)
+verifies 55 real C outputs and complete Scheme/pinned-C link parity, with
+closed HITs of 0.075–0.083 seconds versus ordinary generation of 3.35–3.82 seconds.
+This is a component opportunity, not a full-consumer gain or admission of the
+previously denied singleton-producer deployment.
+
+Follow-up [MCP three-artifact testing](receipts/d1510-mcp-v4-three-artifact-tests.md)
+records two complete passes (87.409 / 99.546 seconds) and a third DENY at
+112.039 seconds. Stable three-run test admission is therefore **not met**.
+[ASCENT full-suite qualification](receipts/d1510-ascent-full-suite-v4-checkpoint.md)
+passes correctness in all three runs (94/94 modules), but its 982.01 / 516.22 /
+355.33-second tasks are not performance admission. The existing upper workflow
+has a separate serialized preparation cost; its changes are outside this stack.
+
+### Historical 40-second checkpoint
+
+`0019-gambit-darwin-static-object-reuse-candidate.patch` preserves the exact
+tested v2 driver/helper and build/install wiring, after 0014 and 0015.
+It is an opt-in Darwin/GNU candidate, not part of the default release stack.
+
+| Metric | Historical D1510 | Frozen candidate |
+| --- | --- | --- |
+| First compile log | 4.851 / 4.574 / 4.593 s | 4.270 s |
+| Complete cold build | 47.772 / 47.824 / 47.927 s | 40.042 s |
+| Complete tests | 105.751 s | 91.040 s; 39/39 files, 965/965 cases |
+
+The observed build reduction is approximately 16.2%. Preserve this measured
+configuration, but do not attribute that reduction to object reuse: the cold
+run had zero reuse events and was not a matched contemporary A/B.
+The exact hashes, whole-task gates (5/50/112 seconds), and raw report hashes
+are recorded in [the checkpoint](receipts/d1510-static-object-reuse-40-checkpoint.json).
+[The qualification record](receipts/d1510-static-object-reuse-prototype.md)
+separates passing MCP evidence from pending general production admission.
+Later 0020/0021 experiments do not replace or rewrite this checkpoint.
 
 ## Four-patch release order
 
@@ -292,3 +571,38 @@ fold remains selected elsewhere. The [side-patch receipt](receipts/d1510-balance
 records exact native link-C parity and fewer resource comparisons, but no stable
 wall-time, startup, test or complete-build admission. It is not in the default
 construction/publication stack and does not replace D1510 plus 0015.
+
+## Retained source-loader candidate
+
+`0018-gerbil-darwin-generated-source-loader.patch` freezes the measured
+generated-driver change on retained D1510 plus 0015. It applies to
+`build/lib/static/gerbil__compiler__driver.scm`, not to upstream Gerbil source.
+It avoids native compilation only for bounded, pure generated static loaders
+on Darwin/GNU; runtime and macro bodies retain their native compilation path.
+The native re-link recipe is `tests/replay_d1510_source_loader_native.py` and
+its helper is `tests/d1510-source-loader-helper.scm`. The recipe requires the
+retained local D1510 input artifacts; Git alone is not a full toolchain rebuild.
+
+The [exact-profile repeat](receipts/d1510-source-loader-repeat-52-second-gate.md)
+records complete candidate builds of 49.743 and 49.938 seconds. The historical
+43.847/45.127-second results remain separate and were not reproduced here.
+For this candidate line, target at most 50 seconds and DENY every individual
+run above 52 seconds using `tests/admit_source_loader_repeat.py`. The historical
+55-second policy is not rewritten. Full tests remain unqualified, and 0018 is
+not in the default production/publication stack.
+
+The paragraph above describes the historical source-loader candidate and its
+then-52-second policy, not the current research selection. Continue from the
+[frozen reader-whitespace checkpoint](receipts/d1510-reader-whitespace-47-baseline.md),
+binary SHA256 `1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21`.
+Its historical cold builds are 47.771713 / 47.824226 / 47.927094 seconds.
+Current whole-task gates are first output 5 seconds, cold build 50 seconds,
+and full test 112 seconds, without a per-file silence gate. The historical
+105.750982-second 39-file/965-case test pass and two subsequent strict-test
+DENYs remain separate; [stable 112-second acceptance is not established](receipts/d1510-112-test-guard.md).
+Historical checkpoint manifests retain their original policies and verdicts.
+These local receipts do not admit the candidate to production or make Git
+alone a complete toolchain reconstruction. Consult the
+[four-question preimplementation review](receipts/d1510-mainline-research-accountability.md)
+before selecting another mechanism; do not use activity, counts or component
+ratios as end-to-end progress.

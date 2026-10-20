@@ -1,0 +1,6 @@
+(set! bundle-init-log (cons 'alpha bundle-init-log))
+(define bundle-alpha-state (vector 17))
+(define (bundle-alpha-answer) (vector-ref bundle-alpha-state 0))
+(define (bundle-alpha-set! value) (vector-set! bundle-alpha-state 0 value))
+(define (bundle-alpha-reader)
+  (lambda () (vector-ref bundle-alpha-state 0)))

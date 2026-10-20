@@ -1,0 +1,7 @@
+(c-declare "#include <pthread.h>\n#include <sys/qos.h>\nstatic int gb_qos_current(void) { qos_class_t qos; int priority; int status = pthread_get_qos_class_np(pthread_self(), &qos, &priority); return status ? -status : (int)qos; }\n")
+(define current-native-qos (c-lambda () int "gb_qos_current"))
+(display "QOS-INHERITED ")
+(display (current-native-qos))
+(newline)
+(display "QOS-PROBE-OK")
+(newline)

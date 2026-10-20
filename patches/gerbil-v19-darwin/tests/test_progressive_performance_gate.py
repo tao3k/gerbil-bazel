@@ -9,17 +9,17 @@ from progressive_performance_gate import (GateViolation, Limits, ProgressiveGate
                                          force_stop, instrument_cold_controller)
 
 
-def test_no_first_compile_forces_deny_at_5():
+def test_no_first_compile_forces_deny_at_frozen_first_ceiling():
     gate = ProgressiveGate(Limits('build', silence=10), 100)
-    gate.check(105)
+    gate.check(104.5)
     with pytest.raises(GateViolation) as error:
-        gate.check(105.0001)
+        gate.check(104.5001)
     assert error.value.record['reason'] == 'first-real-log-deadline'
 
 
 def test_unrelated_output_does_not_reset_first_compile_deadline():
     gate = ProgressiveGate(Limits('build', silence=10), 0)
-    for now in (1, 2, 3, 4, 5):
+    for now in (1, 2, 3, 4, 4.5):
         gate.output(now)
     with pytest.raises(GateViolation):
         gate.output(5.5001)
@@ -32,13 +32,13 @@ def test_late_first_compile_cannot_rescue_failed_phase():
     assert gate.first_event is None
 
 
-def test_continuous_output_cannot_extend_52_seconds():
+def test_continuous_output_cannot_extend_frozen_build_ceiling():
     gate = ProgressiveGate(Limits('build', silence=10), 0)
-    gate.first(5)
-    for now in (10, 20, 30, 40, 50, 52):
+    gate.first(4.5)
+    for now in (10, 20, 30, 40, 42):
         gate.output(now)
     with pytest.raises(GateViolation) as error:
-        gate.output(52.0001)
+        gate.output(42.0001)
     assert error.value.record['reason'] == 'complete-time-deadline'
 
 
@@ -65,20 +65,20 @@ def test_actual_retained_controller_is_instrumented_fail_closed():
     original = (root / '.data/d1395-mcp-runtime-object-ab.py').read_text()
     rewritten = instrument_cold_controller(original)
     compile(rewritten, 'bounded-cold', 'exec')
-    assert 'firstCompileCeilingSeconds=5,' in rewritten
-    assert 'buildBudgetSeconds=52' in rewritten
+    assert 'firstCompileCeilingSeconds=4.5,' in rewritten
+    assert 'buildBudgetSeconds=42' in rewritten
     assert 'signal.SIGTERM' not in rewritten
     with pytest.raises(ValueError):
         instrument_cold_controller(original.replace('budget = 30', 'budget = 31'))
 
 
-def test_tighter_50_second_ceiling_changes_watchdog_and_receipt():
+def test_tighter_ceiling_changes_watchdog_and_receipt():
     root = Path(__file__).resolve().parents[3]
     original = (root / '.data/d1395-mcp-runtime-object-ab.py').read_text()
-    rewritten = instrument_cold_controller(original, 50)
+    rewritten = instrument_cold_controller(original, 40)
     compile(rewritten, 'bounded-cold-50', 'exec')
-    assert 'buildBudgetSeconds=50, buildPerformanceCeilingSeconds=50' in rewritten
-    assert "complete=30 if name == 'clean' else 50" in rewritten
+    assert 'buildBudgetSeconds=40, buildPerformanceCeilingSeconds=40' in rewritten
+    assert "complete=30 if name == 'clean' else 40" in rewritten
     for bad in (49, 53, 55, True):
         with pytest.raises(ValueError):
             instrument_cold_controller(original, bad)

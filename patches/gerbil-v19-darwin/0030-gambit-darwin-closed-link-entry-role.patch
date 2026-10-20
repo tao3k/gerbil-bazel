@@ -1,0 +1,143 @@
+diff --git a/gsc/gambit-generated-c-closed-link.scm b/gsc/gambit-generated-c-closed-link.scm
+index b3bdde2..beb25c4 100644
+--- a/gsc/gambit-generated-c-closed-link.scm
++++ b/gsc/gambit-generated-c-closed-link.scm
+@@ -15,19 +15,23 @@
+                  (else #f)))))))
+ 
+ (define (generated-c-closed-link-inputs arguments)
+-  (let loop ((rest arguments) (files '()))
++  (let loop ((rest arguments) (files '()) (targets '()))
+     (if (null? rest)
+         (reverse files)
+         (let ((input (car rest)))
+           (cond
+             ((member input '("-preload" "-nopreload"))
+-             (loop (cdr rest) files))
++             (loop (cdr rest) files targets))
+             ((and (string? input) (> (string-length input) 0)
+                   (not (char=? (string-ref input 0) #\-))
+                   (member (path-extension input) '(".scm" ".c"))
+                   (generation-regular? input))
+-             (let ((path (path-normalize input)))
+-               (and (not (member path files)) (loop (cdr rest) (cons path files)))))
++             (let* ((path (path-normalize input))
++                    (target (if (string=? (path-extension path) ".scm")
++                                (string-append (path-strip-extension path) ".c") path)))
++               ;; A Scheme producer must not rewrite another selected C input.
++               (and (not (member path files)) (not (member target targets))
++                    (loop (cdr rest) (cons path files) (cons target targets)))))
+             (else #f))))))
+ 
+ (define (generated-c-closed-link-remove-owned path)
+@@ -39,7 +43,7 @@
+         (delete-directory path))
+       (delete-file path)))
+ 
+-(define (generated-c-closed-link-arguments options arguments target binding)
++(define (generated-c-closed-link-arguments options arguments target binding entry-input)
+   (let* ((os (symbol->string (caddr (system-type))))
+          (files (and binding (generated-c-closed-link-inputs arguments))))
+     (if (not (and binding (string? binding) (not (file-exists? binding))
+@@ -53,31 +57,45 @@
+                (tools (list executable hash-tool))
+                (work (create-temporary-directory (string-append binding ".work-")))
+                (mapping '())
+-               (records '()))
+-          (dynamic-wind
++               (records '())
++               (failed? #f)
++               (failure #f))
++          (let ((result (dynamic-wind
+             (lambda () #f)
+             (lambda ()
+-              ;; Group by directory, retaining order inside each group and in
+-              ;; the final CLI. Membership belongs to the proof identity.
++             (with-exception-catcher
++              (lambda (error) (set! failed? #t) (set! failure error) #f)
++              (lambda ()
++              (if (and entry-input
++                       (not (and (string? entry-input)
++                                 (member (path-normalize entry-input) files))))
++                  (error "closed link entry role is not a selected input"))
++              ;; Keep generation order, even across directories/entry roles.
++              ;; Complete ordered membership still belongs to every proof.
+               (let ((groups '()))
+                 (for-each
+                   (lambda (file)
+                     (if (string=? (path-extension file) ".scm")
+                         (let* ((directory (path-directory file))
+-                               (entry (assoc directory groups)))
+-                          (if entry (set-cdr! entry (append (cdr entry) (list file)))
+-                              (set! groups (append groups (list (cons directory (list file)))))))))
++                               (entry? (and entry-input (equal? file (path-normalize entry-input))))
++                               (key (list directory entry?))
++                               (group (and (pair? groups) (car groups))))
++                          (if (and group (equal? key (car group)))
++                              (set-cdr! group (append (cdr group) (list file)))
++                              (set! groups (cons (cons key (list file)) groups))))))
+                   files)
+                 (for-each
+                   (lambda (group)
+-                    (let* ((directory (car group)) (inputs (cdr group))
++                    (let* ((directory (caar group)) (inputs (cdr group))
+                            (membership (generation-context-sha hash-tool
+-                                         (list 'closed-link-members-v1 inputs)
++                                         (list 'closed-link-members-v2 (cadar group) inputs)
+                                          (string-append work "/membership")))
+                            (proof (string-append directory ".gambit-closed-link-" membership ".proof"))
+                            (group-work (create-temporary-directory (string-append work "/group-")))
+                            (pins (reuse-generated-c-closure! inputs '((target C))
+                                    directory group-work proof hash-tool tools)))
++                      (if generated-c-observed-macro-context?
++                          (error "closed link source context is not reusable"))
+                       (for-each
+                         (lambda (input pin)
+                           (let ((logical (string-append (path-strip-extension input) ".c"))
+@@ -85,7 +103,7 @@
+                             (set! mapping (cons (cons input pin) mapping))
+                             (set! records (cons (list input logical sha) records))))
+                         inputs pins)))
+-                  groups))
++                  (reverse groups)))
+               ;; Existing C must be pinned too: a concurrent logical producer
+               ;; cannot change the metadata read by the linker.
+               (for-each
+@@ -112,5 +130,6 @@
+               (display "GAMBIT-CLOSED-LINK-SELECTED ") (write (length files)) (newline)
+               (map (lambda (input)
+                      (if (member input '("-preload" "-nopreload")) input
+-                         (cdr (assoc (path-normalize input) mapping)))) arguments))
+-            (lambda () (generated-c-closed-link-remove-owned work)))))))
++                         (cdr (assoc (path-normalize input) mapping)))) arguments))))
++            (lambda () (generated-c-closed-link-remove-owned work)))))
++            (if failed? (raise failure) result))))))
+diff --git a/gsi/main.scm b/gsi/main.scm
+index cb51448..9e75ebf 100644
+--- a/gsi/main.scm
++++ b/gsi/main.scm
+@@ -591,12 +591,13 @@ usage-end
+                                     (build-file))))))
+ 
+                       (let ((binding (assq 'closed-c-binding options))
++                            (entry (assq 'closed-c-entry options))
+                             (original-arguments arguments))
+                         (set! options (filter (lambda (option)
+-                                                (not (eq? (car option) 'closed-c-binding))) options))
++                                                (not (memq (car option) '(closed-c-binding closed-c-entry)))) options))
+                         (set! arguments
+                           (generated-c-closed-link-arguments options arguments
+-                            (c#target-name target) (and binding (cadr binding))))
++                            (c#target-name target) (and binding (cadr binding)) (and entry (cadr entry))))
+                         ;; link-flat/incremental default to the last module's
+                         ;; directory. Immutable pins must not relocate output.
+                         (if (and (not output) (not (equal? arguments original-arguments)))
+@@ -1014,7 +1015,7 @@ usage-end
+                            (track-scheme)
+                            (o string) (l string)
+                            (module-ref symbol) (linker-name string)
+-                           (closed-c-binding string)
++                           (closed-c-binding string) (closed-c-entry string)
+                            (prelude string) (postlude string)
+                            (cc string)
+                            (cc-options string)

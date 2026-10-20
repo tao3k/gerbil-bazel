@@ -1,0 +1,105 @@
+{
+  "schema": "darwin-closed-link-mcp-integration-denial-v1",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "limitsSeconds": {
+    "firstLog": 4.5,
+    "completeBuild": 42,
+    "completeTest": 97
+  },
+  "mcpRuns": [
+    {
+      "receipt": ".data/d1510-closed-link-mcp-qualification-v1",
+      "decision": "DENY",
+      "firstCompileSeconds": 4.172981167001126,
+      "performanceStops": [
+        {
+          "decision": "DENY",
+          "phase": "build",
+          "reason": "complete-time-deadline",
+          "observedElapsedSeconds": 42.0052887080019,
+          "ceilingSeconds": 42
+        }
+      ],
+      "cleanup": {
+        "errors": [],
+        "reaped": true,
+        "terminalExitCode": -9
+      },
+      "completeBuildSeconds": null,
+      "completeTestSeconds": null,
+      "events": {
+        "GAMBIT-GENERATED-C-HIT": 0,
+        "GAMBIT-GENERATED-C-MISS": 2,
+        "GAMBIT-STATIC-OBJECT-HIT": 0,
+        "GAMBIT-STATIC-OBJECT-MISS": 36,
+        "GAMBIT-STATIC-BOUND-COLD-CAPTURE": 0
+      }
+    },
+    {
+      "receipt": ".data/d1510-bound-cold-capture-mcp-qualification-v1",
+      "decision": "DENY",
+      "firstCompileSeconds": 4.06139866599915,
+      "performanceStops": [
+        {
+          "decision": "DENY",
+          "phase": "build",
+          "reason": "complete-time-deadline",
+          "observedElapsedSeconds": 42.03736504100016,
+          "ceilingSeconds": 42
+        }
+      ],
+      "cleanup": {
+        "errors": [],
+        "reaped": true,
+        "terminalExitCode": -9
+      },
+      "completeBuildSeconds": null,
+      "completeTestSeconds": null,
+      "events": {
+        "GAMBIT-GENERATED-C-HIT": 0,
+        "GAMBIT-GENERATED-C-MISS": 2,
+        "GAMBIT-STATIC-OBJECT-HIT": 0,
+        "GAMBIT-STATIC-OBJECT-MISS": 42,
+        "GAMBIT-STATIC-BOUND-COLD-CAPTURE": 0
+      }
+    }
+  ],
+  "ascentCaseRuns": {
+    "schema": 1,
+    "runs": [
+      {
+        "receipt": ".data/d1510-closed-entry-role-ascent-receipt-v1",
+        "exitStatus": 0,
+        "completeSeconds": 119.35,
+        "userSeconds": 310.89,
+        "systemSeconds": 94.38,
+        "cases": 30,
+        "finalOk": true,
+        "correctnessPassed": true,
+        "staticObjectHits": 0,
+        "staticObjectMisses": 74,
+        "objectCalls": 74,
+        "generatedCHits": 0,
+        "generatedCMisses": 8,
+        "generatedCUncacheable": 0,
+        "closedLinkSelections": [
+          224
+        ],
+        "entryCacheHit": false,
+        "entryCacheMiss": true,
+        "outputSha256": "5d97c5df463bf9906d1bfc9cd6086c42adc6b35ecc25108fb5e1840c67e46082"
+      }
+    ],
+    "correctnessPassed": true
+  },
+  "rawEvidenceFiles": {
+    ".data/d1510-closed-link-mcp-qualification-v1/report.json": "52d711ed2d63e1e9c01b7b1b0a24c3f87db8455b5e2c6dbe584ade3bc48bc197",
+    ".data/d1510-closed-link-mcp-qualification-v1/progressive-admission.json": "288334ecd1c0ba1ead3ba2cc66c55a548583717bb0fc659f0aba7655d2ace559",
+    ".data/d1510-closed-link-mcp-qualification-v1/0-candidate/build.log": "ced9641458e7380d0bd60d6031b0924d64fb7e87834e96541d6c0464d11096e8",
+    ".data/d1510-bound-cold-capture-mcp-qualification-v1/report.json": "aea8d07611c3de3bc274c9e6c8eafa017aca0cfbe5c41a979d0baf11f0df6e09",
+    ".data/d1510-bound-cold-capture-mcp-qualification-v1/progressive-admission.json": "288334ecd1c0ba1ead3ba2cc66c55a548583717bb0fc659f0aba7655d2ace559",
+    ".data/d1510-bound-cold-capture-mcp-qualification-v1/0-candidate/build.log": "e44a0d7a4539598b324025d0fe28bfa906e1d729f7aaab835f6f4dbeb611082a"
+  },
+  "scope": "Cold integration denied; no complete MCP tests. ASCENT 30 Cases only, not full Suites."
+}

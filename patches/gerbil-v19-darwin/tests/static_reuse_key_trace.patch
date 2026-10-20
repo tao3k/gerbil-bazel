@@ -1,0 +1,21 @@
+--- a/gambit-static-object-reuse
++++ b/gambit-static-object-reuse
+@@ -98,6 +98,18 @@
+   cat "$temporary/environment" "$temporary/tools.before" >> "$temporary/context" || return 2
+   printf '%s\n' "$preprocessed_sha" >> "$temporary/context" || return 2
+   key=$(gambit_static_sha "$temporary/context") || return 2
++  # Diagnostic-only fixture: retain component hashes, never raw environment values.
++  trace="${output}.gambit-static-key-trace"
++  test ! -e "$trace" && test ! -L "$trace" || return 2
++  printf '%s\n%s\n' "$BUILD_OBJ_CMD" "$PWD" > "$temporary/command" || return 2
++  {
++    printf 'source %s\n' "$source_before"
++    printf 'cpp %s\n' "$preprocessed_sha"
++    printf 'environment %s\n' "$(gambit_static_sha "$temporary/environment")"
++    printf 'tools %s\n' "$(gambit_static_sha "$temporary/tools.before")"
++    printf 'command-cwd %s\n' "$(gambit_static_sha "$temporary/command")"
++    printf 'key %s\n' "$key"
++  } > "$trace" || return 2
+   object_sha=$(gambit_static_sha "$output") || return 2
+   printf '%s\n%s\n' "$key" "$object_sha" > "$temporary/proof" || return 2
+   if test -f "$proof" && cmp -s "$proof" "$temporary/proof"; then

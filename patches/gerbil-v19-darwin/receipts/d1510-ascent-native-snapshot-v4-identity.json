@@ -1,0 +1,35 @@
+{
+  "schema": "native-generated-c-experiment-v1",
+  "defaultEnabled": false,
+  "scope": "identity-only-not-performance-admission",
+  "files": {
+    "gsc": "c9caaea9e777122e011fdd925f87fee578b94ff7eeac9031dce804fa8209f2e9",
+    "gambit-file-sha256": "1f81c3639b332dfa0cd5301b6487b4156c569357fbf4e8371c87d4ce9f0b95f8"
+  },
+  "entrySources": {
+    "gsi/main.scm": "f17a66b53a1652d112775ab3aa56f091f45825635600989b19fcccd15a1f8d62",
+    "gsc/_gsc.scm": "915ab10c1b874e91bea909ca64aae16a6f108df042380b81447046fbc0274253",
+    "gsc/gambit-generated-c-reads.scm": "af8e298fa6a07f90a269ef7d9f305293d6ae849849c11276e5a10e80589f6b1c",
+    "include/gambit.h": "8257ff05aadb634e2ef2532f7e1a21608a828c4adae35cf88276b78e7efff1e5",
+    "include/config.h": "8711492af33a2b7e51c6b014e49ed3375cb218121a31270f9f2067b9904ec6b3"
+  },
+  "sources": {
+    "gambit-generated-c-closure.scm": "18dd5a45a3026646f83412f36cc51f039f1046c7d507a3412828c93c9a05e8a4",
+    "gambit-generated-c-native.scm": "31b6cb3b88846d248b703ebaa23dbb613fbb82146f875ca60b9e54918152c870",
+    "gambit-generated-c-native-digest.scm": "4d1c5f71a0118471c61bb6aeb713cbf4aa85032c923f83036bae0cbbf43c1ca8",
+    "gambit-generated-c-native-digest-install.scm": "36a87afc7084ccfba3088f16e1ccbfaf4677c45f3ec172311641b3f1d629345b",
+    "gambit-generated-c-planned-producer.scm": "c730227e8ada77def7c42594c12eef32a036b3e5eba28ad20a1cf53d2f619e7b",
+    "gambit-file-sha256.c": "eaef399ff95eaf180ca2f1956ca2e7b66373bf8d63111c2635fedc396ce74a4a"
+  },
+  "inputs": {
+    "gambit-generated-c-reads.scm": "0be7a6006ee848065a421b370b331edd2d9312c218b5a9326f68525d39bc2d59"
+  },
+  "patches": {
+    "0025-gambit-darwin-generated-c-snapshot-reader.patch": "b9c3d77450c214db149a6fb1f5a75fba4b3ade80b399e62df284f57ca91d718e"
+  },
+  "runtimeFiles": {
+    "include/gambit.h": "8257ff05aadb634e2ef2532f7e1a21608a828c4adae35cf88276b78e7efff1e5",
+    "lib/libgambit.a": "ac280ecde9fb375cb8bfc22e78f494466f4bdd4d8463004223d957d02480c192",
+    "lib/libgambitgsc.a": "91a3a8e7f399485829bccd8179dc64473e8f16f54db4b2d35db29c3d41e1d588"
+  }
+}

@@ -1,0 +1,29 @@
+From: tao3k team and Contributors
+Subject: [CANDIDATE] gambit: propagate Darwin macro tracking policy to bootstrap
+
+Apply after 0004. Bootstrap configures an unpatched release archive with
+C_COMPILER, not FLAGS_OBJ_DYN. Put the existing capability-probed option on
+the inherited compiler command so both the current tree and archive receive
+it. The existing Darwin/GNU/non-LLVM guard and optimization policy remain.
+This candidate has no new performance admission and is not in the release stack.
+
+diff --git a/configure b/configure
+--- a/configure
++++ b/configure
+@@ -12705,3 +12705,5 @@
+              if test "$C_COMP_LLVM" != yes; then
+-               FLAGS_OBJ_DYN="$FLAGS_OBJ_DYN$DASH_ftrack_macro_expansion_0"
++               # Bootstrap forwards C_COMPILER to the unpatched archive.
++               # Keep this probed option on that inherited command too.
++               C_COMPILER="$C_COMPILER$DASH_ftrack_macro_expansion_0"
+              fi
+diff --git a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -2585,3 +2585,5 @@
+              if test "$C_COMP_LLVM" != yes; then
+-               FLAGS_OBJ_DYN="$FLAGS_OBJ_DYN$DASH_ftrack_macro_expansion_0"
++               # Bootstrap forwards C_COMPILER to the unpatched archive.
++               # Keep this probed option on that inherited command too.
++               C_COMPILER="$C_COMPILER$DASH_ftrack_macro_expansion_0"
+              fi

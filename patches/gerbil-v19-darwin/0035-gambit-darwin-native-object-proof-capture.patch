@@ -1,0 +1,288 @@
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+index 0680fc5..65277bb 100644
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -90,6 +90,23 @@ gambit_static_object_locked()
+   trap 'rm -rf "$temporary"; rmdir "$lock"' 0
+   env > "$temporary/environment.raw" || return 2
+   LC_ALL=C sort "$temporary/environment.raw" > "$temporary/environment" || return 2
++  if test "${GAMBIT_DARWIN_NATIVE_OBJECT_CAPTURE-}" = 1 && test "${GAMBIT_DARWIN_BOUND_SINGLE_PASS-}" = 1 && test -n "$expected_source_sha" && { test ! -f "$output" || test ! -f "$proof"; }; then
++    cc1=$("$compiler" -print-prog-name=cc1) || return 2
++    assembler=$("$compiler" -print-prog-name=as) || return 2
++    case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
++    apple_as=$(/usr/bin/xcrun --find as) || return 2
++    snapshot_input=$(mktemp "${source}.gambit-static.XXXXXX") || return 2
++    trap 'rm -f "$snapshot_input"; rm -rf "$temporary"; rmdir "$lock"' 0
++    native_status=0
++    "$(dirname "$0")/gambit-file-sha256" --capture \
++      "$source" "$output" "$temporary" "$snapshot_input" "$expected_source_sha" \
++      "$BUILD_OBJ_CMD" "$PWD" "$temporary/environment" "$compiler" \
++      "$FLAGS_OPT" "$FLAGS_OBJ" "$DEFS_OBJ" "$BUILD_OBJ_CC_OPTIONS_PARAM" "$GAMBITDIR_INCLUDE" \
++      "$cc1" "$assembler" "$apple_as" "$0" "$(dirname "$0")/gsc" \
++      "$(dirname "$0")/gambit-static-object-reuse" "$(dirname "$0")/gambit-file-sha256" "$BUILD_OBJ" >&2 || native_status=$?
++    if test "$native_status" != 77; then return "$native_status"; fi
++    rm -f "$snapshot_input" || return 2
++  fi
+   source_before=$(gambit_static_sha "$source") || return 2
+   if test -n "$expected_source_sha" && test "$source_before" != "$expected_source_sha"; then
+     printf 'GAMBIT-STATIC-BOUND-SOURCE-DENY\n' >&2
+diff --git a/bin/gambit-static-object-native.c b/bin/gambit-static-object-native.c
+new file mode 100644
+--- /dev/null
++++ b/bin/gambit-static-object-native.c
+@@ -0,0 +1,236 @@
++/* Preserve the existing digest CLI; add opt-in first-object proof acquisition. */
++#define main digest_cli_main
++#include "gambit-file-sha256.c"
++#undef main
++
++#include <stdlib.h>
++#include <spawn.h>
++#include <sys/wait.h>
++
++extern char **environ;
++
++static int hex_digest(const char *path, char result[65]) {
++  unsigned char bytes[CC_SHA256_DIGEST_LENGTH];
++  if (file_digest(path, bytes) != 0) return -1;
++  for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i)
++    sprintf(result + 2 * i, "%02x", (unsigned int)bytes[i]);
++  result[64] = 0;
++  return 0;
++}
++
++static char *child_path(const char *directory, const char *name) {
++  char *path = NULL;
++  if (asprintf(&path, "%s/%s", directory, name) < 0) return NULL;
++  return path;
++}
++
++static int append_file(FILE *out, const char *path) {
++  char buffer[65536];
++  FILE *in = fopen(path, "rb");
++  if (!in) return -1;
++  size_t count;
++  while ((count = fread(buffer, 1, sizeof(buffer), in)) != 0)
++    if (fwrite(buffer, 1, count, out) != count) { fclose(in); return -1; }
++  int failed = ferror(in);
++  if (fclose(in) != 0) failed = 1;
++  return failed ? -1 : 0;
++}
++
++static int tools_digest(const char *path, char **tools) {
++  FILE *out = fopen(path, "wb");
++  if (!out) return -1;
++  int failed = 0;
++  for (int i = 0; i < 8 && !failed; ++i) {
++    char digest[65];
++    if (hex_digest(tools[i], digest) != 0) { failed = 1; break; }
++    int escaped = strchr(tools[i], '\\') || strchr(tools[i], '\n');
++    if (escaped) fputc('\\', out);
++    fprintf(out, "%s  ", digest);
++    for (const char *c = tools[i]; *c; ++c) {
++      if (*c == '\\') fputs("\\\\", out);
++      else if (*c == '\n') fputs("\\n", out);
++      else fputc(*c, out);
++    }
++    fputc('\n', out);
++  }
++  if (ferror(out) || fclose(out) != 0) failed = 1;
++  return failed ? -1 : 0;
++}
++
++static int same_digest(const char *path, const char *expected) {
++  char actual[65];
++  return hex_digest(path, actual) == 0 && strcmp(actual, expected) == 0;
++}
++
++static int plain_flags(const char *flags) {
++  return strpbrk(flags, "'\"\\*?[];$`&|<>\n\r") == NULL;
++}
++
++static int add_flags(char **arguments, int *count, const char *flags, int no_pipe) {
++  char *copy = strdup(flags), *state = NULL;
++  if (!copy) return -1;
++  for (char *token = strtok_r(copy, " \t", &state); token;
++       token = strtok_r(NULL, " \t", &state)) {
++    if (no_pipe && strcmp(token, "-pipe") == 0) continue;
++    if (*count >= 500) return -1;
++    arguments[(*count)++] = token;
++  }
++  return 0;
++}
++
++static int compile_object(char **arguments, const char *stdout_path, const char *stderr_path) {
++  int out = open(stdout_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
++  int err = open(stderr_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
++  if (out < 0 || err < 0) { if (out >= 0) close(out); if (err >= 0) close(err); return -1; }
++  pid_t process;
++  posix_spawn_file_actions_t actions;
++  int setup = posix_spawn_file_actions_init(&actions);
++  if (setup != 0) { close(out); close(err); return -1; }
++  setup = posix_spawn_file_actions_adddup2(&actions, out, STDOUT_FILENO);
++  if (setup == 0) setup = posix_spawn_file_actions_adddup2(&actions, err, STDERR_FILENO);
++  if (setup == 0) setup = posix_spawn_file_actions_addclose(&actions, out);
++  if (setup == 0) setup = posix_spawn_file_actions_addclose(&actions, err);
++  if (setup == 0) setup = posix_spawn(&process, arguments[0], &actions, NULL, arguments, environ);
++  posix_spawn_file_actions_destroy(&actions);
++  close(out); close(err);
++  if (setup != 0) return -1;
++  int status;
++  while (waitpid(process, &status, 0) < 0) if (errno != EINTR) return -1;
++  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
++}
++
++static int empty_file(const char *path) {
++  struct stat status;
++  return lstat(path, &status) == 0 && S_ISREG(status.st_mode) && status.st_size == 0;
++}
++
++static int regular_or_absent(const char *path) {
++  struct stat status;
++  if (lstat(path, &status) == 0) return S_ISREG(status.st_mode);
++  return errno == ENOENT;
++}
++
++static int bind_source(const char *source, const char *pin, const char *expected) {
++  int in = open(source, O_RDONLY | O_NOFOLLOW);
++  int out = open(pin, O_WRONLY | O_TRUNC | O_NOFOLLOW);
++  struct stat status, target;
++  if (in < 0 || out < 0 || fstat(in, &status) != 0 || !S_ISREG(status.st_mode) ||
++      fstat(out, &target) != 0 || !S_ISREG(target.st_mode)) {
++    if (in >= 0) close(in);
++    if (out >= 0) close(out);
++    return -1;
++  }
++  FILE *input = fdopen(in, "rb"), *output = fdopen(out, "wb");
++  if (!input || !output) return -1;
++  CC_SHA256_CTX context;
++  unsigned char digest[CC_SHA256_DIGEST_LENGTH], buffer[65536];
++  CC_SHA256_Init(&context);
++  fprintf(output, "#line 1 \"%s\"\n", source);
++  size_t count;
++  int failed = 0;
++  while ((count = fread(buffer, 1, sizeof(buffer), input)) != 0) {
++    if (fwrite(buffer, 1, count, output) != count || !CC_SHA256_Update(&context, buffer, (CC_LONG)count)) {
++      failed = 1; break;
++    }
++  }
++  if (ferror(input) || ferror(output)) failed = 1;
++  if (fclose(input) != 0 || fflush(output) != 0) failed = 1;
++  struct timespec times[2] = {status.st_atimespec, status.st_mtimespec};
++  if (futimens(fileno(output), times) != 0) failed = 1;
++  if (fclose(output) != 0 || !CC_SHA256_Final(digest, &context)) failed = 1;
++  char actual[65];
++  for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; ++i) sprintf(actual + 2 * i, "%02x", digest[i]);
++  actual[64] = 0;
++  return !failed && strcmp(actual, expected) == 0 ? 0 : -1;
++}
++
++static int normalize_input(const char *input_path, const char *output_path,
++                           const char *pin, const char *source) {
++  FILE *in = fopen(input_path, "rb"), *out = fopen(output_path, "wb");
++  if (!in || !out) return -1;
++  char *zero = NULL, *one = NULL, *line = NULL;
++  size_t capacity = 0;
++  if (asprintf(&zero, "# 0 \"%s\"\n", pin) < 0 || asprintf(&one, "# 1 \"%s\"\n", pin) < 0) return -1;
++  while (getline(&line, &capacity, in) >= 0) {
++    if (strcmp(line, zero) == 0) fprintf(out, "# 0 \"%s\"\n", source);
++    else if (strcmp(line, one) == 0) fprintf(out, "# 1 \"%s\"\n", source);
++    else fputs(line, out);
++  }
++  int failed = ferror(in) || ferror(out);
++  if (fclose(in) != 0 || fclose(out) != 0) failed = 1;
++  free(zero); free(one); free(line);
++  return failed ? -1 : 0;
++}
++
++static int capture(int argc, char **a) {
++  if (argc != 24) return 2;
++  if (strcmp(a[23], "${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I\"${GAMBITDIR_INCLUDE}\" -c -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} ${BUILD_OBJ_INPUT_FILENAMES_PARAM}") != 0) return 77;
++  /* Complex shell recipes stay on the existing validated implementation. */
++  for (int i = 11; i <= 14; ++i) if (!plain_flags(a[i])) return 77;
++  if (strpbrk(a[2], "\"\\\n\r") || strlen(a[6]) != 64 ||
++      strspn(a[6], "0123456789abcdef") != 64) return 2;
++  const char *source = a[2], *output = a[3], *directory = a[4], *pin = a[5];
++  char *object = child_path(directory, "object.o"), *input = child_path(directory, "object.i");
++  char *normalized = child_path(directory, "input.i"), *before = child_path(directory, "tools.before");
++  char *after = child_path(directory, "tools.compiled"), *context = child_path(directory, "context");
++  char *proof = child_path(directory, "proof"), *stdout_path = child_path(directory, "native.stdout");
++  char *stderr_path = child_path(directory, "native.stderr"), *published_proof = NULL;
++  char *include = NULL, *mapping = NULL;
++  if (!object || !input || !normalized || !before || !after || !context || !proof ||
++      !stdout_path || !stderr_path || asprintf(&published_proof, "%s.gambit-static-proof", output) < 0 ||
++      asprintf(&include, "-I%s", a[15]) < 0 || asprintf(&mapping, "-fmacro-prefix-map=%s=%s", pin, source) < 0) return 2;
++  char *tools[] = {a[10], a[16], a[17], a[18], a[19], a[20], a[21], a[22]};
++  char pin_sha[65], tool_sha[65], source_sha[65], cpp_sha[65], object_sha[65], key[65];
++  if (!same_digest(source, a[6])) {
++    fputs("GAMBIT-STATIC-BOUND-SOURCE-DENY\n", stderr);
++    return 2;
++  }
++  if (bind_source(source, pin, a[6]) != 0 ||
++      hex_digest(pin, pin_sha) != 0 || tools_digest(before, tools) != 0 || hex_digest(before, tool_sha) != 0) return 2;
++  char *arguments[512];
++  int count = 0;
++  arguments[count++] = a[10];
++  if (add_flags(arguments, &count, a[11], 0) != 0 || add_flags(arguments, &count, a[12], 1) != 0) return 77;
++  arguments[count++] = "-save-temps=obj";
++  arguments[count++] = "-x";
++  arguments[count++] = "c";
++  arguments[count++] = mapping;
++  if (add_flags(arguments, &count, a[13], 0) != 0) return 77;
++  arguments[count++] = include;
++  arguments[count++] = "-c";
++  arguments[count++] = "-o";
++  arguments[count++] = object;
++  if (add_flags(arguments, &count, a[14], 0) != 0) return 77;
++  arguments[count++] = (char *)pin;
++  arguments[count] = NULL;
++  int status = compile_object(arguments, stdout_path, stderr_path);
++  if (status != 0) {
++    append_file(stdout, stdout_path); append_file(stderr, stderr_path);
++    return 2;
++  }
++  if (!empty_file(stdout_path) || !empty_file(stderr_path)) return 77;
++  if (normalize_input(input, normalized, pin, source) != 0 ||
++      hex_digest(normalized, cpp_sha) != 0 || hex_digest(object, object_sha) != 0 ||
++      hex_digest(source, source_sha) != 0 || strcmp(source_sha, a[6]) != 0 ||
++      !same_digest(pin, pin_sha) || tools_digest(after, tools) != 0 || !same_digest(after, tool_sha)) return 2;
++  FILE *record = fopen(context, "wb");
++  if (!record) return 2;
++  fprintf(record, "gambit-static-proof-v2\n%s\n%s\n", a[7], a[8]);
++  int failed = append_file(record, a[9]) != 0 || append_file(record, before) != 0;
++  fprintf(record, "%s\n", cpp_sha);
++  if (ferror(record) || fclose(record) != 0 || failed || hex_digest(context, key) != 0) return 2;
++  record = fopen(proof, "wb");
++  if (!record) return 2;
++  fprintf(record, "%s\n%s\n", key, object_sha);
++  if (ferror(record) || fclose(record) != 0 || !regular_or_absent(output) || !regular_or_absent(published_proof)) return 2;
++  if (rename(object, output) != 0 || rename(proof, published_proof) != 0) return 2;
++  puts("GAMBIT-STATIC-BOUND-NATIVE-CAPTURE");
++  puts("GAMBIT-STATIC-BOUND-SINGLE-PASS");
++  puts("GAMBIT-STATIC-OBJECT-MISS");
++  return 0;
++}
++
++int main(int argc, char **argv) {
++  if (argc > 1 && strcmp(argv[1], "--capture") == 0) return capture(argc, argv);
++  return digest_cli_main(argc, argv);
++}
+diff --git a/bin/makefile.in b/bin/makefile.in
+--- a/bin/makefile.in
++++ b/bin/makefile.in
+@@ -93,5 +93,5 @@
+ GENDISTFILES =
+ 
+-RCFILES += gambit-static-object-reuse.unix gambit-file-sha256.c
++RCFILES += gambit-static-object-reuse.unix gambit-file-sha256.c gambit-static-object-native.c
+ 
+ DISTFILES = $(RCFILES) $(GENDISTFILES)
+@@ -127,6 +127,6 @@
+ core-post: gambit-static-object-reuse gambit-file-sha256
+ 
+-gambit-file-sha256: makefile $(srcdirpfx)gambit-file-sha256.c
+-	$(C_COMPILER) $(FLAGS_EXE) -O2 -Wno-deprecated-declarations $(srcdirpfx)gambit-file-sha256.c -o gambit-file-sha256
++gambit-file-sha256: makefile $(srcdirpfx)gambit-file-sha256.c $(srcdirpfx)gambit-static-object-native.c
++	$(C_COMPILER) $(FLAGS_EXE) -O2 -Wno-deprecated-declarations $(srcdirpfx)gambit-static-object-native.c -o gambit-file-sha256
+ 
+ gambit-static-object-reuse: makefile $(srcdirpfx)gambit-static-object-reuse.unix

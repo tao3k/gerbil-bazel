@@ -1,0 +1,148 @@
+diff --git a/bin/gambit-static-object-batch.c b/bin/gambit-static-object-batch.c
+index b0dbb07..66fdcc1 100644
+--- a/bin/gambit-static-object-batch.c
++++ b/bin/gambit-static-object-batch.c
+@@ -4,7 +4,7 @@
+ #include <limits.h>
+ 
+ struct batch_job {
+-  char *a[26];
++  char *a[27];
+   char *target, *target_proof, *lock, *directory, *pin, *environment;
+   char *environment_data;
+   char **child_environment;
+@@ -164,8 +164,12 @@ static int batch_recipe_supported(char **a) {
+   for (size_t i = 0; i < sizeof(denied) / sizeof(*denied); ++i)
+     if (strstr(flags, denied[i])) supported = 0;
+   free(flags);
+-  char cwd[PATH_MAX];
+-  return supported && getcwd(cwd, sizeof(cwd)) && !strcmp(cwd, a[8]);
++  char cwd[PATH_MAX], source[PATH_MAX], *spelled = NULL;
++  if (!realpath(a[8], cwd) || strcmp(cwd, a[8]) ||
++      asprintf(&spelled, "%s/%s", a[8], a[26]) < 0) return 0;
++  int same_source = realpath(a[26][0] == '/' ? a[26] : spelled, source) && !strcmp(source, a[2]);
++  free(spelled);
++  return supported && same_source;
+ }
+ 
+ static int requested_tool_path(struct batch_job *job, const char *name, const char *expected, const char *phase) {
+@@ -205,6 +209,8 @@ static int requested_tool_path(struct batch_job *job, const char *name, const ch
+           char *copy = strdup(search), *state = NULL;
+           for (char *part = copy ? strtok_r(copy, ":", &state) : NULL; part;
+                part = strtok_r(NULL, ":", &state)) {
++            /* Relative PATH lookup is not qualified by this protocol. */
++            if (part[0] != '/') break;
+             char *candidate = child_path(part, path);
+             if (candidate && access(candidate, X_OK) == 0) {
+               result = strcmp(candidate, expected) ? -1 : 0;
+@@ -226,14 +232,17 @@ static int verify_request_tool_paths(struct batch_job *jobs, size_t count, const
+   for (size_t i = 0; i < count; ++i) {
+     size_t prior = 0;
+     while (prior < i && !(same_tool_paths(jobs[prior].a, jobs[i].a) &&
++           !strcmp(jobs[prior].a[8], jobs[i].a[8]) &&
+            !strcmp(jobs[prior].a[24], jobs[i].a[24]) &&
+            !strcmp(jobs[prior].child_environment_sha, jobs[i].child_environment_sha))) ++prior;
+     if (prior < i) continue;
+     gambit_static_compile_environment = jobs[i].child_environment;
++    gambit_static_compile_directory = jobs[i].a[8];
+     int valid = requested_tool_path(&jobs[i], "cc1", jobs[i].a[16], phase) == 0 &&
+                 requested_tool_path(&jobs[i], "as", jobs[i].a[17], phase) == 0 &&
+                 requested_tool_path(&jobs[i], "apple-as", jobs[i].a[18], phase) == 0;
+     gambit_static_compile_environment = NULL;
++    gambit_static_compile_directory = NULL;
+     if (!valid) return -1;
+   }
+   return 0;
+@@ -247,8 +256,12 @@ static void *batch_worker(void *data) {
+     pthread_mutex_unlock(&queue->mutex);
+     if (index >= queue->count) return NULL;
+     gambit_static_compile_environment = queue->jobs[index].child_environment;
++    gambit_static_compile_directory = queue->jobs[index].a[8];
++    gambit_static_source_display = queue->jobs[index].a[26];
+     queue->jobs[index].status = capture(25, queue->jobs[index].a);
+     gambit_static_compile_environment = NULL;
++    gambit_static_compile_directory = NULL;
++    gambit_static_source_display = NULL;
+   }
+ }
+ 
+@@ -277,7 +290,11 @@ static int capture_batch(const char *manifest, const char *directory, int worker
+   if (size >= sizeof(old_magic) && !memcmp(buffer, old_magic, sizeof(old_magic))) {
+     result = 77; goto done;
+   }
+-  const char magic[] = "gambit-native-object-batch-v2";
++  const char v2_magic[] = "gambit-native-object-batch-v2";
++  if (size >= sizeof(v2_magic) && !memcmp(buffer, v2_magic, sizeof(v2_magic))) {
++    result = 77; goto done;
++  }
++  const char magic[] = "gambit-native-object-batch-v3";
+   if (size <= sizeof(magic) || memcmp(buffer, magic, sizeof(magic))) goto done;
+   offset = sizeof(magic);
+   while (offset < size) {
+@@ -287,7 +304,7 @@ static int capture_batch(const char *manifest, const char *directory, int worker
+     jobs = grown;
+     struct batch_job *job = &jobs[count++];
+     memset(job, 0, sizeof(*job));
+-    for (int i = 0; i < 26; ++i) {
++    for (int i = 0; i < 27; ++i) {
+       char *end = memchr(buffer + offset, 0, size - offset);
+       if (!end) goto done;
+       job->a[i] = buffer + offset;
+diff --git a/bin/gambit-static-object-native.c b/bin/gambit-static-object-native.c
+index c9f5dd3..7fca024 100644
+--- a/bin/gambit-static-object-native.c
++++ b/bin/gambit-static-object-native.c
+@@ -9,6 +9,8 @@
+ 
+ extern char **environ;
+ static _Thread_local char **gambit_static_compile_environment;
++static _Thread_local const char *gambit_static_compile_directory;
++static _Thread_local const char *gambit_static_source_display;
+ 
+ static int hex_digest(const char *path, char result[65]) {
+   unsigned char bytes[CC_SHA256_DIGEST_LENGTH];
+@@ -91,6 +93,8 @@ static int compile_object(char **arguments, const char *stdout_path, const char
+   if (setup == 0) setup = posix_spawn_file_actions_adddup2(&actions, err, STDERR_FILENO);
+   if (setup == 0) setup = posix_spawn_file_actions_addclose(&actions, out);
+   if (setup == 0) setup = posix_spawn_file_actions_addclose(&actions, err);
++  if (setup == 0 && gambit_static_compile_directory)
++    setup = posix_spawn_file_actions_addchdir_np(&actions, gambit_static_compile_directory);
+   if (setup == 0) setup = posix_spawn(&process, arguments[0], &actions, NULL, arguments,
+                                     gambit_static_compile_environment ? gambit_static_compile_environment : environ);
+   posix_spawn_file_actions_destroy(&actions);
+@@ -162,7 +166,7 @@ static int bind_source(const char *source, const char *pin, const char *expected
+   CC_SHA256_CTX context;
+   unsigned char digest[CC_SHA256_DIGEST_LENGTH], buffer[65536];
+   CC_SHA256_Init(&context);
+-  fprintf(output, "#line 1 \"%s\"\n", source);
++  fprintf(output, "#line 1 \"%s\"\n", gambit_static_source_display ? gambit_static_source_display : source);
+   size_t count;
+   int failed = 0;
+   while ((count = fread(buffer, 1, sizeof(buffer), input)) != 0) {
+@@ -209,6 +213,8 @@ static int capture(int argc, char **a) {
+   if (strpbrk(a[2], "\"\\\n\r") || strlen(a[6]) != 64 ||
+       strspn(a[6], "0123456789abcdef") != 64) return 2;
+   const char *source = a[2], *output = a[3], *directory = a[4], *pin = a[5];
++  const char *display = gambit_static_source_display ? gambit_static_source_display : source;
++  if (strpbrk(display, "\"\\\n\r")) return 2;
+   char *object = child_path(directory, "object.o"), *input = child_path(directory, "object.i");
+   char *normalized = child_path(directory, "input.i"), *before = child_path(directory, "tools.before");
+   char *after = child_path(directory, "tools.compiled"), *context = child_path(directory, "context");
+@@ -217,7 +223,7 @@ static int capture(int argc, char **a) {
+   char *mapping = NULL;
+   if (!object || !input || !normalized || !before || !after || !context || !proof ||
+       !stdout_path || !stderr_path || asprintf(&published_proof, "%s.gambit-static-proof", output) < 0 ||
+-      asprintf(&mapping, "-fmacro-prefix-map=%s=%s", pin, source) < 0) return 2;
++      asprintf(&mapping, "-fmacro-prefix-map=%s=%s", pin, display) < 0) return 2;
+   int captured = !regular_file(output) || !regular_file(published_proof);
+   char *tools[] = {a[10], a[16], a[17], a[18], a[19], a[20], a[21], a[22]};
+   char pin_sha[65], tool_sha[65], source_sha[65], cpp_sha[65], object_sha[65], key[65];
+@@ -235,7 +241,7 @@ static int capture(int argc, char **a) {
+     return 2;
+   }
+   if (!empty_file(stdout_path) || !empty_file(stderr_path)) return 77;
+-  if (normalize_input(input, normalized, pin, source) != 0 ||
++  if (normalize_input(input, normalized, pin, display) != 0 ||
+       hex_digest(normalized, cpp_sha) != 0 ||
+       hex_digest(captured ? object : output, object_sha) != 0 ||
+       hex_digest(source, source_sha) != 0 || strcmp(source_sha, a[6]) != 0 ||

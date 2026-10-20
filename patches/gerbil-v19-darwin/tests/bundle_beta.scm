@@ -1,0 +1,6 @@
+(set! bundle-init-log (cons 'beta bundle-init-log))
+(define bundle-beta-state (vector 29))
+(define (bundle-beta-answer) (vector-ref bundle-beta-state 0))
+(define (bundle-beta-set! value) (vector-set! bundle-beta-state 0 value))
+(define (bundle-beta-reader)
+  (lambda () (vector-ref bundle-beta-state 0)))

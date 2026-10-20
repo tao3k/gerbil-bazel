@@ -1,0 +1,55 @@
+;; Inclusive diagnostic timings. Nested rows must not be summed.
+(define generation-cost-rows '())
+(define (generation-cost-wrap name procedure)
+  (let ((row (vector name 0 0.)))
+    (set! generation-cost-rows (cons row generation-cost-rows))
+    (lambda args
+      (let ((start (time->seconds (current-time))))
+        (dynamic-wind
+          (lambda () #f)
+          (lambda () (apply procedure args))
+          (lambda ()
+            (vector-set! row 1 (+ (vector-ref row 1) 1))
+            (vector-set! row 2 (+ (vector-ref row 2)
+                                  (- (time->seconds (current-time)) start)))))))))
+
+(set! c#generation-file-sha (generation-cost-wrap 'single-digest c#generation-file-sha))
+(set! c#generation-file-digests (generation-cost-wrap 'batch-digest c#generation-file-digests))
+(let* ((original c#generation-file-digests)
+       (tools (generation-cost-wrap 'tool-batch-digest original))
+       (data (generation-cost-wrap 'data-batch-digest original))
+       (executable (path-normalize (executable-path))))
+  (set! c#generation-file-digests
+    (lambda (tool paths)
+      (if (member executable paths) (tools tool paths) (data tool paths)))))
+(set! c#generation-environment (generation-cost-wrap 'environment c#generation-environment))
+(set! c#generation-pin-outputs (generation-cost-wrap 'pin-publication c#generation-pin-outputs))
+(set! copy-file (generation-cost-wrap 'copy-file copy-file))
+(set! compile-file-to-target (generation-cost-wrap 'compiler compile-file-to-target))
+(set! c#record-generated-c-reads! (generation-cost-wrap 'read-journal c#record-generated-c-reads!))
+(set! c#generated-c-native-compile-file-to-target
+  (generation-cost-wrap 'producer c#generated-c-native-compile-file-to-target))
+
+(define (run-generation-cost-probe!)
+  (let* ((directory (getenv "GSC_COST_DIRECTORY"))
+         (inputs (call-with-input-file (getenv "GSC_COST_INPUTS")
+                   (lambda (port)
+                     (let loop ((result '()))
+                       (let ((line (read-line port)))
+                         (if (eof-object? line) (reverse result)
+                             (loop (cons line result)))))))))
+    (for-each
+      (lambda (name)
+        (let ((alias (path-strip-extension name)))
+          (c#generated-c-native-compile-file-to-target
+            (path-expand name directory)
+            options: (list '(c) '(target C) (list 'module-ref (string->symbol alias))
+                           (list 'linker-name alias)
+                           (list 'o (path-expand (string-append alias ".c") directory)))
+            output: (path-expand (string-append alias ".c") directory))))
+      inputs)
+    (for-each
+      (lambda (row)
+        (display "GENERATION-COST ") (write (vector->list row)) (newline))
+      (reverse generation-cost-rows))
+    (display "GENERATION-COST-PROBE-OK files=") (write (length inputs)) (newline)))

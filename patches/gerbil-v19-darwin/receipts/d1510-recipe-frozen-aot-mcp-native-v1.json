@@ -1,0 +1,52 @@
+{
+  "schema": "darwin-recipe-frozen-aot-mcp-native-v1",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "scope": "Experimental successful-worker recipe handoff in frozen AOT; member mode disabled",
+  "files": {
+    "gsc": "aeef96bd0ff3fe0630eddf347b18ea97f5c16e27d5faf0b5a6696c183fbe83f7",
+    "gsc-original": "9a1b842156fe15bb0c9415b87aebad0e72707bd793fe00353e7b68956929ab00",
+    "gambuild-C": "ac7f05b19ba0d234b2cf4a1cde5f76606f1e76fa8f36c067034e891de745982d",
+    "gambit-static-object-reuse": "6b071f05f5e92bacba23c67b9825dbef2e89634a8d63580da9871ccb2ed82dd9",
+    "gambit-file-sha256": "464fc4f9567f1c8a207d03d23ce34b2988a6a00048d1c7fd6d9a81a4242324e2",
+    "gerbil": "acf1b2cc591b33da88fff73d97e0b95fd5126d569eacae1dbdd7f2bfd6510538"
+  },
+  "entrySources": {
+    "gsi/main.scm": "820a089f7bff8914658f94a092e5ca38822120f6617c1dc38b5f185d52952b3f",
+    "gsc/_gsc.scm": "8dc3a2e1cc130e4f97b0af8d2640ea634741ee5e7dd8b226799e767a9698d0ac",
+    "gsc/gambit-generated-c-closed-link.scm": "429521cb20c4dbdf2e9fa7f26d4fe0318c598459efb99e5e82e6f082ada80e3e",
+    "gsc/gambit-generated-c-closure.scm": "df6c71e319915c3f26de8372f26fffda49ef82e2a6cfde2f7969490d6fed7f0e",
+    "gsc/gambit-generated-c-members.scm": "a4a0f2f9a97278aa762aa3ed87c9c71832cd039804e1c11eaf79f4de3ffefeda",
+    "gsc/gambit-generated-c-native-digest-install.scm": "36a87afc7084ccfba3088f16e1ccbfaf4677c45f3ec172311641b3f1d629345b",
+    "gsc/gambit-generated-c-native-digest.scm": "4d1c5f71a0118471c61bb6aeb713cbf4aa85032c923f83036bae0cbbf43c1ca8",
+    "gsc/gambit-generated-c-reads.scm": "af8e298fa6a07f90a269ef7d9f305293d6ae849849c11276e5a10e80589f6b1c"
+  },
+  "sources": {
+    "gambit-generated-c-members.scm": "a4a0f2f9a97278aa762aa3ed87c9c71832cd039804e1c11eaf79f4de3ffefeda"
+  },
+  "inputs": {
+    "gambit-generated-c-closed-link.scm": "dfe8e10707cba3350c10d2a541d7503dde76f5a6c45fb84b49797d13a46420b7",
+    "prepare_native_generated_c_gsc.py": "23ba59adeddc69caf13f17b981a5cc1f86156178d4de4f27521409277d4a9a06",
+    "prepare_closed_link_aot_driver.scm": "70b1496deb9daf2a31f176b7e096c214ac6d1f0a6b227c79b9f34aa259480051",
+    "build_fd_final_driver_native.py": "95a772007cfc35d01dbefbd2c7e316c853b74c4c7d62878182b6d21f1535afd6"
+  },
+  "patches": {
+    "0029-gambit-darwin-closed-link-consumer.patch": "715ab573ccbe58c693351e13b96924ee4562718524c5c8976b9a310b47d7c0cf",
+    "0030-gambit-darwin-closed-link-entry-role.patch": "7af0fcd529525ab64397f7cb32aeb2632e67a4dcf35bd95fa00e96a72b91202e",
+    "0027-gambit-darwin-bound-static-c-digest.patch": "fc5cf3192a13e387912c0ec99147a1640a4005ba6951f6494bd64a1bb4608ee8",
+    "0033-gambit-darwin-bound-single-pass-object-proof.patch": "ba5c1d67d75849ff91360879cf02461d991e5742f827af9c0a344d004505dab8",
+    "0034-gerbil-darwin-producer-object-proof.patch": "70004cb47cc8cc8766fb7e2cd19975cfb5700344eb8e8c831c288ba56ce5e515",
+    "0035-gambit-darwin-native-object-proof-capture.patch": "be8811a222dfb1dc7e824aa2cea4ae36919e25fce2ef248a2685579fdb9f848c",
+    "0036-gambit-darwin-native-object-proof-check.patch": "43b7908233929d17b46a923aa4e0248d03f3ffe5bb0dda774e21576977ba26f5",
+    "0038-gambit-darwin-static-binding-environment.patch": "bcacf4529604f006e5b3f6af3267e9ae9834ba1878ceb42aba56525c5e89b282",
+    "0039-gerbil-darwin-producer-recipe-guard.patch": "1086c89b116aea1fade942946cac8ebaacd804749d566e2e32d44ea20a6fb3af",
+    "0040-gambit-darwin-member-tool-snapshot.patch": "0fb295ac80667c247c0bed86222b7c4e2745b6a4232af3e2d18baced1ee57b5b",
+    "0041-gambit-darwin-closed-link-member-proofs.patch": "d56d3f9790301ca94756ab17430bc85adcb3e31415ee911055e3b8681a3b7a8e",
+    "0042-gambit-darwin-member-link-request-guard.patch": "81379aa10796f1a31bf06984b07e215062bd86a4b4fcf6c704d589b7a18b85f6"
+  },
+  "runtimeFiles": {
+    "include/gambit.h": "ce2b5c387f5334e2bb0a7302a265e2487cd707fc45f6ace4cb19bc763a9c6b89",
+    "lib/libgambit.a": "fd3725c9cc68525efbd8c0385f242f72334de37d5c56a96fd7db8666bb873501",
+    "lib/libgambitgsc.a": "3cf5298d9f1083986e6102c5620cfe97b8a102244245c56e9193b2a4bcedab86"
+  }
+}

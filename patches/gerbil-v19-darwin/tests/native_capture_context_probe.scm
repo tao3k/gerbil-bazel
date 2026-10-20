@@ -1,0 +1,25 @@
+(let* ((root (getenv "CAPTURE_FIXTURE"))
+       (index (call-with-input-file (string-append root "/index/probe.producer") read))
+       (input (path-normalize (cadr index)))
+       (options (caddr index))
+       (directory (path-normalize (list-ref index 3)))
+       (proof (call-with-input-file (list-ref index 4) read))
+       (executable (path-normalize (executable-path)))
+       (helper (string-append (path-directory executable) "gambit-file-sha256"))
+       (tools (list executable helper))
+       (tool-digests (c#generation-file-digests helper tools))
+       (input-digests (c#generation-file-digests helper (list input)))
+       (context (list 'closed-generated-c-adapter-v1 (list input) options directory
+                      (current-directory) (system-type)
+                      (c#generation-environment) tool-digests input-digests))
+       (scratch (string-append root "/diagnostic")))
+  (create-directory scratch)
+  (write (list 'NATIVE-CONTEXT-MATCH
+               (equal? (cadr proof)
+                       (c#generation-context-sha helper context (string-append scratch "/context")))))
+  (newline)
+  (write (list 'NATIVE-LOOKUP
+               (and (c#lookup-produced-generated-c
+                       (string-append root "/candidate/lib/static/probe.scm")
+                       input options directory (list-ref index 4) scratch helper tools) #t)))
+  (newline))

@@ -1,0 +1,74 @@
+{
+  "scope": "Darwin GNU GCC D1510 whitespace reader cold-build checkpoint",
+  "parentLock": "patches/gerbil-v19-darwin/receipts/d1510-reader-batch-50-baseline.json",
+  "limitsSeconds": {
+    "firstLog": 5,
+    "completeBuild": 50,
+    "completeTest": 52
+  },
+  "coldQualified": true,
+  "testDurationQualified": true,
+  "testQualified": false,
+  "productionAdmitted": false,
+  "candidateBinarySha256": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+  "coldReport": ".data/d1510-reader-whitespace-progressive-v1/report.json",
+  "testReport": ".data/d1510-reader-whitespace-progressive-v1/tests/report.json",
+  "semanticReport": ".data/d1510-whitespace-47-freeze-controls-v1/report.json",
+  "cores": 12,
+  "projectHead": "9a5c35e275e5d6847ff421151bb224f2eae177c1",
+  "coldRuns": [
+    {
+      "firstCompileSeconds": 4.850865874999727,
+      "buildWallSeconds": 47.771712542002206,
+      "cleanExitCode": 0,
+      "nativeImagesAfterClean": 0,
+      "buildExitCode": 0,
+      "sourceUnchanged": true,
+      "configurationSha256": "4fc2cb8f527f6953f1e68f9d3d5ddcc3baf5b64245a6c02cbab935456f4dc43e"
+    },
+    {
+      "firstCompileSeconds": 4.573628042002383,
+      "buildWallSeconds": 47.824226292003004,
+      "cleanExitCode": 0,
+      "nativeImagesAfterClean": 0,
+      "buildExitCode": 0,
+      "sourceUnchanged": true,
+      "configurationSha256": "d648c12141132aa863d0b2a72d193f7835ad80f7204ddd558d1a68b85dc36c2a"
+    },
+    {
+      "firstCompileSeconds": 4.592897458001971,
+      "buildWallSeconds": 47.92709362500318,
+      "cleanExitCode": 0,
+      "nativeImagesAfterClean": 0,
+      "buildExitCode": 0,
+      "sourceUnchanged": true,
+      "configurationSha256": "81cff63e61efd2c7912442ddb5847688feaf9ecccf3357b2119138fb37fcfd3f"
+    }
+  ],
+  "testWave": {
+    "wallSeconds": 49.98326016699866,
+    "passedFiles": 22,
+    "deniedFiles": 17,
+    "decision": "DENY",
+    "firstOutputCeilingSeconds": 5.5
+  },
+  "artifactHashes": {
+    ".data/d1510-reader-whitespace-progressive-v1/report.json": "9d417ffa72dd63259d083a2396ba1a1194226d11a2f0ca07c49ed07c44172ea3",
+    ".data/d1510-reader-whitespace-progressive-v1/tests/report.json": "253cbbbd5ce81ef0a2ca465e03a42cc036e1689987e9c3bbaa696200d9110468",
+    ".data/d1510-reader-whitespace-native-v2/gerbil": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+    ".data/d1510-reader-whitespace-native-v2/report.json": "6b5a75e7959a1da49348866f72295f326916f9b618bcdef2d46537ae4cdfe42b",
+    ".data/d1510-reader-whitespace-runtime-v2/_io.o": "fabcbeb1caa7f0caa9bfbf82d2c9999e62740ede1f37b7e654e8fb207b7e23c5",
+    ".data/d1510-reader-whitespace-runtime-v2/_gambit.o": "e3c681bf006bce6dea5a5681d9bff1532cfbe3b2ba6bd977f98858368fb1144f",
+    ".data/d1510-whitespace-47-freeze-controls-v1/report.json": "7a6071116473ccd93d29060a7d1ff4aba9431050dab36d7c8bc71b5f7231d220",
+    "patches/gerbil-v19-darwin/tests/darwin_reader_whitespace_helper.scm": "532eede3c4762d52c73db27c0c3511190db61768ba0d8692d5945578f5736e2b",
+    "patches/gerbil-v19-darwin/tests/prepare_darwin_reader_whitespace.py": "8fffe83e698629439b11889ca309e870edad95e467876e1ed7ea18071d9a2fce",
+    "patches/gerbil-v19-darwin/tests/darwin_reader_whitespace_controls.scm": "1f8475fde8f965ef0a0723ec1a5fde40f15839ca6cc884bbeed5dba732f8ba42",
+    "patches/gerbil-v19-darwin/tests/build_reader_whitespace_runtime.py": "0cc8d406bb73edfe08368b9738b6c38c1580cf3dc4614038be71d071c810d4fb",
+    "patches/gerbil-v19-darwin/tests/run_reader_whitespace_controls.py": "01e5692c435baf093e9b000cdf6904768174420f95e1e2cdeade3b64cb1931ed",
+    "patches/gerbil-v19-darwin/tests/summarize_three_time_gates.py": "a1de78fafc9420375d01d143076e65706e5883c3457d18a2554b1d7c02d10a67",
+    "patches/gerbil-v19-darwin/tests/run_selected_mcp_wave.py": "9b60399d68792cf69eced8d5c5ac8cc0edc24aac8f0525a1f6a0e3cd55f398bc",
+    ".data/d1510-reader-whitespace-progressive-v1/0-candidate/configuration.json": "4fc2cb8f527f6953f1e68f9d3d5ddcc3baf5b64245a6c02cbab935456f4dc43e",
+    ".data/d1510-reader-whitespace-progressive-v1/1-candidate/configuration.json": "d648c12141132aa863d0b2a72d193f7835ad80f7204ddd558d1a68b85dc36c2a",
+    ".data/d1510-reader-whitespace-progressive-v1/2-candidate/configuration.json": "81cff63e61efd2c7912442ddb5847688feaf9ecccf3357b2119138fb37fcfd3f"
+  }
+}

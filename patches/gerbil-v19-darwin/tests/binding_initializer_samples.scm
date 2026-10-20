@@ -1,0 +1,36 @@
+(define init-sample-slot (##make-global-var 'gx#import-binding:::init!))
+(define init-sample-original (##global-var-ref init-sample-slot))
+(define init-sample-count 0)
+(define init-sample-rows '())
+(define init-sample-wrapper
+  (lambda (self id key phi e ctx weak?)
+    (set! init-sample-count (+ init-sample-count 1))
+    (if (= (modulo init-sample-count 128) 53)
+      (let* ((before (##process-statistics))
+             (value (init-sample-original self id key phi e ctx weak?))
+             (after (##process-statistics)))
+        (set! init-sample-rows
+          (cons (list stdlib-current-phase
+                      (- (f64vector-ref after 0) (f64vector-ref before 0))
+                      (- (f64vector-ref after 1) (f64vector-ref before 1)))
+                init-sample-rows))
+        value)
+      (init-sample-original self id key phi e ctx weak?))))
+(define (run-binding-initializer-samples name)
+  (dynamic-wind
+    (lambda () (##global-var-set! init-sample-slot init-sample-wrapper))
+    (lambda ()
+      (stdlib-import-cost name
+        (lambda ()
+          (##global-var-set! init-sample-slot init-sample-original)
+          (unless (eq? init-sample-original (##global-var-ref init-sample-slot))
+            (error "initializer restoration failed"))
+          (display "INIT-SAMPLE-COUNT\t") (write init-sample-count) (newline)
+          (for-each
+            (lambda (row)
+              (display "INIT-SAMPLE")
+              (for-each (lambda (value) (display "\t") (write value)) row)
+              (newline))
+            (reverse init-sample-rows))
+          (displayln "INIT-SAMPLE-RESTORED"))))
+    (lambda () (##global-var-set! init-sample-slot init-sample-original))))

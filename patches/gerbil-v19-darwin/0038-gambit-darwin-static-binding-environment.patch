@@ -1,0 +1,12 @@
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -63,6 +63,8 @@ gambit_static_object_locked()
+       return 2
+     fi
+   fi
++  # Binding belongs to the input validator, not the actual compiler recipe.
++  unset GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA
+   if test -L "$proof" || { test -e "$proof" && test ! -f "$proof"; }; then
+     printf 'GAMBIT-STATIC-OBJECT-PROOF-DENY\n' >&2
+     return 2

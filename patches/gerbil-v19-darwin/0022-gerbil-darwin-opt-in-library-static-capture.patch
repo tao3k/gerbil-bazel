@@ -1,0 +1,20 @@
+diff --git a/src/std/make.ss b/src/std/make.ss
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -208,9 +208,13 @@
+   (parameterize ((current-compilation-target (settings-target settings)))
+     (def buildspec (normalize-buildspec buildspec-in))
+     (def compile-static-runtime-objects?
+-      (ormap (lambda (spec)
+-               (memq (spec-type spec) '(exe: static-exe:)))
+-             buildspec))
++      (or (cond-expand
++            (darwin
++             (equal? (getenv "GAMBIT_DARWIN_NATIVE_GENERATED_C" "") "1"))
++            (else #f))
++          (ormap (lambda (spec)
++                   (memq (spec-type spec) '(exe: static-exe:)))
++                 buildspec)))
+     ;; detect and report duplicate files in the buildspec up front
+     (let (file-counts (make-hash-table))
+       (for (spec buildspec)

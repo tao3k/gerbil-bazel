@@ -1,0 +1,80 @@
+{
+  "schema": "darwin-native-proof-backend-denial-v1",
+  "productionAdmitted": false,
+  "performanceQualified": false,
+  "decision": "DENY",
+  "limitsSeconds": {
+    "firstLog": 4.5,
+    "completeBuild": 42,
+    "completeTest": 97
+  },
+  "componentObservation": {
+    "scope": "real generated C, three fresh object captures per phase, shell/native/native/shell",
+    "phaseWallSeconds": [
+      1.73,
+      1.34,
+      1.35,
+      1.77
+    ],
+    "objectParity": true,
+    "wholeConsumerSpeedupProved": false
+  },
+  "runs": [
+    {
+      "candidate": "native capture only",
+      "firstCompileSeconds": 3.8249042909992568,
+      "observedStopSeconds": 42.04392579100022,
+      "buildCompleted": false,
+      "completeBuildSeconds": null,
+      "completeTestSeconds": null,
+      "additionalIdentityFailure": "0035 patch replay context changed during measurement",
+      "counts": {
+        "nativeCaptures": 186,
+        "objectHits": 88,
+        "closedLinkSelected": 320
+      }
+    },
+    {
+      "candidate": "native capture and full validation",
+      "firstCompileSeconds": 4.015630374997272,
+      "observedStopSeconds": 42.00038974999916,
+      "buildCompleted": false,
+      "completeBuildSeconds": null,
+      "completeTestSeconds": null,
+      "identityPassedBeforeAndAfter": true,
+      "counts": {
+        "nativeCaptures": 186,
+        "nativeChecks": 67,
+        "objectHits": 67,
+        "closedLinkSelected": 320
+      }
+    }
+  ],
+  "safetyControls": {
+    "modeInvalidation": true,
+    "sourceMismatch": true,
+    "sourceABA": true,
+    "concurrentPublication": true,
+    "compilerFailure": true,
+    "toolMutationDuringCompilation": true,
+    "toolchainChangeBetweenCalls": true,
+    "linuxFallback": true,
+    "filenameAndTimestampSemantics": true
+  },
+  "rawEvidenceFiles": {
+    ".data/d1510-native-object-capture-mcp-qualification-v1/report.json": "f31bc2c89379b71b3e0e43fe36fb5ffce5ece363473f972759a64399e447cc88",
+    ".data/d1510-native-object-capture-mcp-qualification-v1/progressive-admission.json": "ca7dd8768877ff7e079b1f07baebfd570802a9bf321e48979275b7d2b6e8c21a",
+    ".data/d1510-native-object-capture-mcp-qualification-v1/0-candidate/build.log": "9e58a0bc3623514bc729a16c681b8dd336952b5d7cc716e71ab5add298abab88",
+    ".data/d1510-native-object-check-mcp-qualification-v1/report.json": "0cd9cbcb4eddc8436409211cc3919ec0ce00249e4d2795504f64e8d2697d88dc",
+    ".data/d1510-native-object-check-mcp-qualification-v1/progressive-admission.json": "288334ecd1c0ba1ead3ba2cc66c55a548583717bb0fc659f0aba7655d2ace559",
+    ".data/d1510-native-object-check-mcp-qualification-v1/0-candidate/build.log": "28c948c0865e82aa723e036f0df4689efb97415867a1dc34e462879c8fe62860",
+    ".data/d1510-native-object-cost-v1/shell-a.time": "00da7f15c3878b724c03da04a9f033856c45663a85f2d81e90e24f9d2f2e6d0e",
+    ".data/d1510-native-object-cost-v1/native-a.time": "1ef3df6c5770ad78b8df0c23a59696e3dcb845d3b79d1147630b62424d14400b",
+    ".data/d1510-native-object-cost-v1/native-b.time": "0ea2a6f815df4f2caf21f6154b30451e00db7bc5e369c07d0280c06f337242ae",
+    ".data/d1510-native-object-cost-v1/shell-b.time": "3cad79af2dd027b39db0e88deab6a7e54d29f3f1d5853f4ce60b8adc29c4addc",
+    ".data/d1510-native-check-bound-v1/exit-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    ".data/d1510-native-check-failure-v1/exit-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    ".data/d1510-native-check-aba-v1/exit-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    ".data/d1510-native-check-semantics-v1/exit-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  }
+}

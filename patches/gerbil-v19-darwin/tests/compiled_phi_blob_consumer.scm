@@ -1,0 +1,26 @@
+(define (check name value)
+  (if value (begin (display "CASE-OK ") (display name) (newline) (force-output))
+      (error "compiled phi deserialization control failed" name)))
+(define path (getenv "PHI_BLOB_PATH"))
+(define bytes (make-u8vector (file-info-size (file-info path))))
+(call-with-input-file path
+  (lambda (port)
+    (check "whole binary artifact read"
+      (= (read-subu8vector bytes 0 (u8vector-length bytes) port (u8vector-length bytes))
+         (u8vector-length bytes)))))
+(define restored (##u8vector->object bytes))
+(check "compiled module restored in fresh process" (pair? restored))
+(##setup-requirements-and-run restored #f)
+(check "module initial state" (= (vector-ref phi-blob#state 0) 0))
+(check "fresh process global bindings and mutation" (and (= (phi-blob#bump) 1) (= (phi-blob#bump) 2)))
+(define shared (list 'shared))
+(define result (phi-blob#alias shared))
+(check "alias preserved" (and (eq? (vector-ref result 0) shared)
+                             (eq? (vector-ref result 1) shared)))
+(check "multiple values preserved"
+  (equal? (call-with-values phi-blob#values list) '(first second)))
+(check "module exception preserved"
+  (with-exception-catcher (lambda (exn) #t) (lambda () (phi-blob#failure) #f)))
+(##gc)
+(check "deserialized code survives GC" (= (phi-blob#bump) 3))
+(display "OK") (newline) (force-output)

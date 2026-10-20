@@ -1,0 +1,22 @@
+{
+  "schema": "native-generated-c-experiment-v1",
+  "defaultEnabled": false,
+  "parentProfile": "d1510-native-generated-c-profile.json",
+  "buildChange": "Use configured Makefile FLAGS_OBJ including trust-C-TCO sibling calls; no Scheme hook change",
+  "files": {
+    "gsc": "48d50acad500dda9457d45e8ae4a818d276384d68be68a397b95f5709a274091",
+    "gsc-original": "9a1b842156fe15bb0c9415b87aebad0e72707bd793fe00353e7b68956929ab00",
+    "gambuild-C": "d9d537df086e1e40fcd78f0f0713cdd16df71b4101f459bf6b6625c9c2e67779",
+    "gambit-static-object-reuse": "08d8ebe59d24a7098561c909c5b8e04c66aff78794d5f68f1cedddf1f2168646",
+    "gambit-file-sha256": "1f81c3639b332dfa0cd5301b6487b4156c569357fbf4e8371c87d4ce9f0b95f8"
+  },
+  "sources": {
+    "gambit-generated-c-reads.scm": "0be7a6006ee848065a421b370b331edd2d9312c218b5a9326f68525d39bc2d59",
+    "gambit-generated-c-closure.scm": "18dd5a45a3026646f83412f36cc51f039f1046c7d507a3412828c93c9a05e8a4",
+    "gambit-generated-c-native.scm": "31b6cb3b88846d248b703ebaa23dbb613fbb82146f875ca60b9e54918152c870"
+  },
+  "entrySources": {
+    "gsi/main.scm": "1377f168f89d3bc92b665fede8109bed40e8264f670edfedc5ebc4837a65db0d",
+    "gsc/_gsc.scm": "d79ff7f56bf7dffeb0a719e680392cd2fe88d4aa0740afa240ca064ea87fad39"
+  }
+}

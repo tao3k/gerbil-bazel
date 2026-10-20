@@ -1,0 +1,35 @@
+--- a/src/gerbil/compiler/driver.ss
++++ b/src/gerbil/compiler/driver.ss
+@@ -309,14 +309,14 @@
+             (raise-compile-error "Closed link source digest failed" path))
+           sha))
+ 
+-      (def (prepare-bound-link inputs object-inputs thunk)
++      (def (prepare-bound-link inputs object-inputs entry-input thunk)
+         (if (not closed-link?)
+           (thunk [])
+           (let* ((work (##create-temporary-directory (string-append output-scm ".binding-")))
+                  (binding (path-expand "selected-c" work)))
+             (unwind-protect
+               (begin
+-                (thunk ["-closed-c-binding" binding])
++                (thunk ["-closed-c-binding" binding "-closed-c-entry" entry-input])
+                 ;; Unsupported GSC options deliberately retain ordinary work.
+                 (when (file-exists? binding)
+                   (let* ((record (call-with-input-file binding
+@@ -388,6 +388,7 @@
+                                   (filter (lambda (entry)
+                                             (not (string-prefix? "GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA=" entry)))
+                                           (##os-environ))))
++                           (_ (verbose "invoke " [(gerbil-gsc) . args]))
+                            (proc (open-process [path: (gerbil-gsc) arguments: args
+                                                       environment: environment]))
+                            (status (process-status proc)))
+@@ -413,6 +414,7 @@
+                              src-deps-scm src-deps-runtime-c ready-deps) ...
+                         (if ready-bin src-bin-runtime-c src-bin-scm) output-scm]))
+                  (prepare-bound-link [libgerbil-c ... selected-inputs ...] selected-inputs
++                   (if ready-bin src-bin-runtime-c src-bin-scm)
+                    (lambda (binding-options)
+                      (invoke (gerbil-gsc)
+                              ["-link" binding-options ... gsc-link-opts ...

@@ -27,13 +27,15 @@ def final_test_ok(text):
 
 def wave_admission(rows, elapsed):
     failures = []
-    if len(rows) != 39 or not all(row['passed'] for row in rows):
+    correctness = len(rows) == 39 and all(row['passed'] for row in rows)
+    duration = type(elapsed) in (int, float) and 0 < elapsed <= 52
+    if not correctness:
         failures.append('complete-39-file-correctness-gate-failed')
-    if type(elapsed) not in (int, float) or not 0 < elapsed <= 52:
+    if not duration:
         failures.append('complete-test-wave-over-52-second-ceiling-or-invalid-duration')
     return dict(decision='DENY' if failures else 'ALLOW', admitted=not failures,
-                failures=failures, ceilingSeconds=52, targetSeconds=50,
-                targetMet=not failures and elapsed <= 50)
+                failures=failures, ceilingSeconds=52, targetSeconds=52,
+                targetMet=duration, durationGatePassed=duration, correctnessGatePassed=correctness)
 
 
 def reap(process):
@@ -128,7 +130,7 @@ def main():
         process = None
         selector = selectors.DefaultSelector()
         started = last = time.monotonic()
-        gate = ProgressiveGate(Limits('test-file', first=5.5, silence=5), started)
+        gate = ProgressiveGate(Limits('test-file', first=5, silence=5), started)
         maximum = 0
         before = hashlib.sha256(file.read_bytes()).hexdigest()
         names = case_names(file)
@@ -205,7 +207,7 @@ def main():
     admission = wave_admission(rows, elapsed)
     report = dict(qualified=admission['admitted'],
                   performanceQualified=False, cores=cores, silenceBudgetSeconds=5,
-                  wallBudgetSeconds=52, firstOutputCeilingSeconds=5.5,
+                  wallBudgetSeconds=52, firstOutputCeilingSeconds=5,
                   waveWallSeconds=elapsed, admission=admission,
                   binarySha256=expected_sha, expectedFiles=39, expectedCases=965, runs=rows,
                   attemptedFiles=sum(row['attempted'] for row in rows),

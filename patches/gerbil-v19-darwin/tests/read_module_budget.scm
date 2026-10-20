@@ -1,0 +1,18 @@
+(define (main . paths)
+  (for-each
+   (lambda (path)
+     (let ((before (##process-statistics))
+           (start (time->seconds (current-time))))
+       (let ((body (read-syntax-from-file path)))
+         (let ((after (##process-statistics)))
+           (display "READ-BUDGET\t")
+           (write path)
+           (for-each
+            (lambda (value) (display "\t") (write value))
+            (list (- (time->seconds (current-time)) start)
+                  (- (f64vector-ref after 0) (f64vector-ref before 0))
+                  (- (f64vector-ref after 1) (f64vector-ref before 1))
+                  (length body)))
+           (newline)
+           (force-output)))))
+   paths))

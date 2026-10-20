@@ -1,0 +1,197 @@
+Subject: [EXPERIMENTAL DARWIN PATCH] gambit: closed-set reuse at the link consumer
+
+Apply after experimental 0024 and 0025. Removes all singleton producer hooks
+from the CLI; the old producer files are no longer included. Only Darwin with
+GAMBIT_DARWIN_CLOSED_LINK_REUSE=1 and explicit -closed-c-binding is eligible.
+Preserves mixed input order, preload flags and default link output location.
+Whole-consumer performance admission and production AOT integration pending.
+
+diff --git a/gsc/_gsc.scm b/gsc/_gsc.scm
+--- a/gsc/_gsc.scm
++++ b/gsc/_gsc.scm
+@@ -9,10 +9,9 @@
+ 
+ (##include "gambit-generated-c-reads.scm")
+ (##include "gambit-generated-c-closure.scm")
+-(##include "gambit-generated-c-native.scm")
++(##include "gambit-generated-c-closed-link.scm")
+ (##include "gambit-generated-c-native-digest.scm")
+ (##include "gambit-generated-c-native-digest-install.scm")
+-(##include "gambit-generated-c-planned-producer.scm")
+ (##include "../gsi/main.scm")
+ 
+ ;;;============================================================================
+diff --git a/gsi/main.scm b/gsi/main.scm
+--- a/gsi/main.scm
++++ b/gsi/main.scm
+@@ -287,10 +287,7 @@
+     (combine-option! 'ld-options)
+     (combine-option! 'pkg-config)
+     (combine-option! 'pkg-config-path)
+-    (set! options (generated-c-native-select-producer-options options))
+ 
+-    (set! arguments (generated-c-native-link-arguments options arguments))
+-
+     (let* ((c-opt?       (##assq 'c options))
+            (link-opt?    (##assq 'link options))
+            (exe-opt?     (##assq 'exe options))
+@@ -535,7 +532,7 @@
+                                            opts))))
+                           (handling file)
+                           (or (if output
+-                                  (generated-c-native-compile-file-to-target
++                                  (compile-file-to-target
+                                    file
+                                    options: (add-seq-num opts)
+                                    output: output)
+@@ -592,6 +589,21 @@
+                                         opts)))
+ 
+                                     (build-file))))))
++
++                      (let ((binding (assq 'closed-c-binding options))
++                            (original-arguments arguments))
++                        (set! options (filter (lambda (option)
++                                                (not (eq? (car option) 'closed-c-binding))) options))
++                        (set! arguments
++                          (generated-c-closed-link-arguments options arguments
++                            (c#target-name target) (and binding (cadr binding))))
++                        ;; link-flat/incremental default to the last module's
++                        ;; directory. Immutable pins must not relocate output.
++                        (if (and (not output) (not (equal? arguments original-arguments)))
++                            (set! output
++                              (path-directory
++                                (car (reverse
++                                  (generated-c-closed-link-inputs original-arguments)))))))
+ 
+                       (let loop2 ((lst arguments))
+                         (if (##pair? lst)
+@@ -1002,7 +1014,7 @@
+                            (track-scheme)
+                            (o string) (l string)
+                            (module-ref symbol) (linker-name string)
+-                           (generated-c-proof)
++                           (closed-c-binding string)
+                            (prelude string) (postlude string)
+                            (cc string)
+                            (cc-options string)
+diff --git a/gsc/gambit-generated-c-closed-link.scm b/gsc/gambit-generated-c-closed-link.scm
+--- /dev/null
++++ b/gsc/gambit-generated-c-closed-link.scm
+@@ -0,0 +1,116 @@
++;; Experimental link consumer; no singleton producer hook is installed.
++(define (generated-c-closed-link-options? options)
++  (let loop ((rest options) (seen '()))
++    (if (null? rest)
++        (memq 'link seen)
++        (let ((option (car rest)))
++          (and (list? option) (pair? option) (not (memq (car option) seen))
++               (case (car option)
++                 ((link flat) (and (= (length option) 1)
++                                   (loop (cdr rest) (cons (car option) seen))))
++                 ((target) (and (equal? option '(target C))
++                                (loop (cdr rest) (cons 'target seen))))
++                 ((o l) (and (= (length option) 2) (string? (cadr option))
++                             (loop (cdr rest) (cons (car option) seen))))
++                 (else #f)))))))
++
++(define (generated-c-closed-link-inputs arguments)
++  (let loop ((rest arguments) (files '()))
++    (if (null? rest)
++        (reverse files)
++        (let ((input (car rest)))
++          (cond
++            ((member input '("-preload" "-nopreload"))
++             (loop (cdr rest) files))
++            ((and (string? input) (> (string-length input) 0)
++                  (not (char=? (string-ref input 0) #\-))
++                  (member (path-extension input) '(".scm" ".c"))
++                  (generation-regular? input))
++             (let ((path (path-normalize input)))
++               (and (not (member path files)) (loop (cdr rest) (cons path files)))))
++            (else #f))))))
++
++(define (generated-c-closed-link-remove-owned path)
++  (if (eq? (file-info-type (file-info path #f)) 'directory)
++      (begin
++        (for-each (lambda (name)
++                    (generated-c-closed-link-remove-owned (path-expand name path)))
++                  (directory-files path))
++        (delete-directory path))
++      (delete-file path)))
++
++(define (generated-c-closed-link-arguments options arguments target binding)
++  (let* ((os (symbol->string (caddr (system-type))))
++         (files (and binding (generated-c-closed-link-inputs arguments))))
++    (if (not (and binding (string? binding) (not (file-exists? binding))
++                  (>= (string-length os) 6) (string=? (substring os 0 6) "darwin")
++                  (eq? target 'C)
++                  (equal? (getenv "GAMBIT_DARWIN_CLOSED_LINK_REUSE" #f) "1")
++                  (generated-c-closed-link-options? options) (pair? files)))
++        arguments
++        (let* ((executable (path-normalize (executable-path)))
++               (hash-tool (string-append (path-directory executable) "gambit-file-sha256"))
++               (tools (list executable hash-tool))
++               (work (create-temporary-directory (string-append binding ".work-")))
++               (mapping '())
++               (records '()))
++          (dynamic-wind
++            (lambda () #f)
++            (lambda ()
++              ;; Group by directory, retaining order inside each group and in
++              ;; the final CLI. Membership belongs to the proof identity.
++              (let ((groups '()))
++                (for-each
++                  (lambda (file)
++                    (if (string=? (path-extension file) ".scm")
++                        (let* ((directory (path-directory file))
++                               (entry (assoc directory groups)))
++                          (if entry (set-cdr! entry (append (cdr entry) (list file)))
++                              (set! groups (append groups (list (cons directory (list file)))))))))
++                  files)
++                (for-each
++                  (lambda (group)
++                    (let* ((directory (car group)) (inputs (cdr group))
++                           (membership (generation-context-sha hash-tool
++                                         (list 'closed-link-members-v1 inputs)
++                                         (string-append work "/membership")))
++                           (proof (string-append directory ".gambit-closed-link-" membership ".proof"))
++                           (group-work (create-temporary-directory (string-append work "/group-")))
++                           (pins (reuse-generated-c-closure! inputs '((target C))
++                                   directory group-work proof hash-tool tools)))
++                      (for-each
++                        (lambda (input pin)
++                          (let ((logical (string-append (path-strip-extension input) ".c"))
++                                (sha (generation-file-sha hash-tool pin)))
++                            (set! mapping (cons (cons input pin) mapping))
++                            (set! records (cons (list input logical sha) records))))
++                        inputs pins)))
++                  groups))
++              ;; Existing C must be pinned too: a concurrent logical producer
++              ;; cannot change the metadata read by the linker.
++              (for-each
++                (lambda (file)
++                  (if (string=? (path-extension file) ".c")
++                      (let* ((sha (generation-file-sha hash-tool file))
++                             (pin (car (generation-pin-outputs hash-tool
++                                         (list (list file file sha)) work))))
++                        (set! mapping (cons (cons file pin) mapping))
++                        (set! records (cons (list file file sha) records)))))
++                files)
++              (for-each
++                (lambda (entry)
++                  (let ((pin (cdr (assoc (car entry) mapping))))
++                    (if (not (equal? (caddr entry) (generation-file-sha hash-tool pin)))
++                        (error "closed link pin changed")))) records)
++              (let ((pending (string-append work "/binding")))
++                (call-with-output-file (list path: pending permissions: #o600)
++                  (lambda (port)
++                    (write (list 'gambit-closed-link-binding-v1
++                                 (map (lambda (file) (assoc file records)) files)) port)
++                    (newline port)))
++                (rename-file pending binding #f))
++              (display "GAMBIT-CLOSED-LINK-SELECTED ") (write (length files)) (newline)
++              (map (lambda (input)
++                     (if (member input '("-preload" "-nopreload")) input
++                         (cdr (assoc (path-normalize input) mapping)))) arguments))
++            (lambda () (generated-c-closed-link-remove-owned work)))))))

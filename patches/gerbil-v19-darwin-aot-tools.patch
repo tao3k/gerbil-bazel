@@ -2,13 +2,13 @@ diff --git a/src/build.sh b/src/build.sh
 index 20e4801..4bfd910 100755
 --- a/src/build.sh
 +++ b/src/build.sh
-@@ -295,9 +295,25 @@ build_srfi() {
+@@ -295,9 +295,26 @@ build_srfi() {
  
  build_tools () {
    feedback_low "Building gerbil tools"
    (cd tools && gxi ./build.ss) || die
 +  if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
-+    # The General AOT entry owns the complete tool set and closes heavyweight
++    # The General AOT entry owns selected tools and closes heavyweight
 +    # executables sequentially under the shared std/make implementation.
 +    (cd tools && gxi ./build-aot.ss) || die
 +  fi
@@ -16,9 +16,10 @@ index 20e4801..4bfd910 100755
        toolname=$(basename $tool .ss)
 -      (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil $toolname)
 +      case "$toolname" in
-+        gxpkg|gxtags)
++        gxpkg|gxtags|gxtest)
 +          if [ "${GERBIL_BUILD_AOT_TOOLS:-no}" = yes ]; then
 +            test -x "${GERBIL_BUILD_PREFIX}/bin/${toolname}" || die
++            test ! -L "${GERBIL_BUILD_PREFIX}/bin/${toolname}" || die
 +          else
 +            (cd "${GERBIL_BUILD_PREFIX}/bin" && ln -sf gerbil "$toolname")
 +          fi
@@ -37,13 +38,13 @@ index 0000000..dcd2a96
 @@ -0,0 +1,45 @@
 +#!/usr/bin/env gxi
 +;; -*- Gerbil -*-
-+;; Whole-program tool targets are a separate phase because their foreign
++;; Native tool targets are a separate phase because their foreign
 +;; library closure must be declared on the executable build specification.
 +(import :std/build-config
 +        :std/make)
 +
 +(def aot-tools
-+  '("gxpkg" "gxtags"))
++  '("gxpkg" "gxtags" "gxtest"))
 +
 +(def aot-cc-options
 +  (append-options
@@ -61,7 +62,7 @@ index 0000000..dcd2a96
 +    (if config-enable-zlib (ldflags "zlib" "-lz") "")))
 +
 +(def (aot-tool tool)
-+  (list optimized-exe: tool
++  (list (if (string=? tool "gxtest") exe: optimized-exe:) tool
 +        "-cc-options" aot-cc-options
 +        "-ld-options" aot-ld-options))
 +
@@ -80,3 +81,720 @@ index 0000000..dcd2a96
 +          force: #t
 +          debug: #f))
 +      aot-tools)))
+diff --git a/src/std/build-spec.ss b/src/std/build-spec.ss
+index 6acb478..45de85a 100644
+--- a/src/std/build-spec.ss
++++ b/src/std/build-spec.ss
+@@ -63,7 +63,9 @@
+     "os/sockopt"
+     "os/hostname"
+     "os/pid"
+-    "os/signal"
++    ,(cond-expand
++       (darwin '(gxc: "os/signal" "-ld-options" "-Wl,-undefined,dynamic_lookup"))
++       (else "os/signal"))
+     (gxc: "os/signal-test-support" (extra-inputs: ("os/signal.ss")))
+     ,@(cond-expand
+         (linux '("os/signalfd"))
+diff --git a/src/std/os/signal.ss b/src/std/os/signal.ss
+index ee37da3..d3b9cc5 100644
+--- a/src/std/os/signal.ss
++++ b/src/std/os/signal.ss
+@@ -29,6 +29,7 @@
+ 
+ (export
+   kill
++  setpgid
+   sigprocmask
+   make_sigset
+   sigemptyset
+@@ -41,6 +42,10 @@
+   => :void
+   (do-syscall (ffi-kill pid signo)))
+ 
++(def (setpgid (pid : :fixnum) (pgid : :fixnum))
++  => :void
++  (do-syscall (ffi-setpgid pid pgid)))
++
+ (def (sigprocmask (how        :  :fixnum)
+                   (sigset     :? :foreign)
+                   (old-sigset :? :foreign))
+@@ -73,6 +78,7 @@
+ 
+ (C-ffi-macrology)
+ (C-include "<sys/types.h>"
++           "<unistd.h>"
+            "<signal.h>"
+            "<errno.h>")
+ 
+@@ -143,6 +149,11 @@
+   => int
+   "___return (___TRAP_ERRNO(kill(___arg1, ___arg2)));")
+ 
++(def-C-lambda (ffi-setpgid (pid  : int)
++                           (pgid : int))
++  => int
++  "___return (___TRAP_ERRNO(setpgid(___arg1, ___arg2)));")
++
+ (def-C-lambda (ffi-sigprocmask (how        : int)
+                                (sigset     : sigset_t*)
+                                (old-sigset : sigset_t*))
+diff --git a/src/std/test/base.ss b/src/std/test/base.ss
+index f12625e..8e19269 100644
+--- a/src/std/test/base.ss
++++ b/src/std/test/base.ss
+@@ -139,6 +139,13 @@
+ (def current-test-case
+   (make-parameter #f))
+ 
++(def current-test-progress
++  (make-parameter #f))
++
++(def (test-progress! kind)
++  (when (current-test-progress)
++    ((current-test-progress) kind)))
++
+ (def (current-test-object) ;; => TestObject or #f
+   (or (current-test-case)
+       (current-test-suite)
+@@ -151,27 +158,72 @@
+       (test-result-ok ctx)
+       (test-result-errors ctx (reverse! errors)))))
+ 
++(def (test-notice-error! ctx e)
++  (when (fx>= (current-test-verbosity) VERBOSITY-ERROR)
++    (notice-error ctx e)))
++
++(def (run-test-scope! (test : TestObject) ctx body)
++  (let ((entered? #f)
++        (sealed? #f)
++        (cleanup-error #f))
++    (try
++     (dynamic-wind
++       (lambda ()
++         (when (or entered? sealed?)
++           (raise-test-error run-test-scope! "test scope re-entered" ctx))
++         (set! entered? #t))
++       (lambda ()
++         (test-progress! 'scope)
++         ((TestObject-init! test))
++         (body))
++       (lambda ()
++         (set! sealed? #t)
++         (try
++          (parameterize ((current-test-exit
++                          (lambda (result)
++                            (raise-test-error run-test-scope!
++                                              "test exit from cleanup" result))))
++            ((TestObject-finish! test)))
++          (catch (e)
++            (let (cleanup-ctx `(CLEANUP ,test))
++              (test-notice-error! cleanup-ctx e)
++              (set! cleanup-error (test-result-error cleanup-ctx e))
++              (set! test.results
++                (cons cleanup-error test.results)))))))
++     (catch (e)
++       (test-notice-error! ctx e)
++       (let (primary-error (test-result-error ctx e))
++         (set! test.results
++           (if (and cleanup-error (pair? test.results)
++                    (eq? cleanup-error (car test.results)))
++             (cons cleanup-error (cons primary-error (cdr test.results)))
++             (cons primary-error test.results))))))
++    (test-summarize-results ctx test.results)))
++
++;; An escaped check skips the scope's final summary but still runs its cleanup.
++(def (test-preserve-unwind-errors result (test : TestObject))
++  (if (TestResultError? result)
++    (let (errors (filter test-result-error? test.results))
++      (if (ormap (lambda (e) (not (eq? e result))) errors)
++        (test-result-errors
++         (TestResult-context result)
++         (if (memq result errors)
++           (reverse errors)
++           (cons result (reverse errors))))
++        result))
++    result))
++
+ (defsyntax-case do-test! ()
+   ((_ test CONTEXT param body rest ...)
+-   (with-identifiers ((test.init!    #'test #'test ".init!")
+-                      (test.finish!  #'test #'test ".finish!")
+-                      (test.results  #'test #'test ".results"))
+-     (with-syntax ((OK    (make-symbol (stx-e #'CONTEXT) "-OK"))
+-                   (ERROR 'ERROR))
+-       #'(let (ctx `(CONTEXT ,test))
+-           (parameterize ((param test))
+-             (notice CONTEXT ctx)
+-             (try
+-              (test.init!)
+-              (begin body rest ...)
+-              (test.finish!)
+-              (let (result (test-summarize-results ctx test.results))
+-                (when (test-result-ok? result)
+-                  (notice OK ctx))
+-                result)
+-              (catch (e)
+-                (notice ERROR ctx e)
+-                (test-result-error ctx e)))))))))
++   (with-syntax ((OK (make-symbol (stx-e #'CONTEXT) "-OK")))
++     #'(let (ctx `(CONTEXT ,test))
++         (parameterize ((param test))
++           (notice CONTEXT ctx)
++           (let (result (run-test-scope! test ctx
++                          (lambda () body rest ...)))
++             (when (test-result-ok? result)
++               (notice OK ctx))
++             result))))))
+ 
+ (defsyntax-case do-subtest! ()
+   ((_ test CONTEXT param run-it! SubtestType)
+@@ -184,7 +236,9 @@
+                          (let/cc E
+                            (parameterize ((current-test-exit E))
+                              (run-it! subtest))))
+-                     (set! test.results (cons result test.results))))))))
++                     (set! test.results
++                       (cons (test-preserve-unwind-errors result subtest)
++                             test.results))))))))
+ 
+ (def (test-run! (harness : TestHarness)) => TestResult
+   (if harness.config.capture-output?
+@@ -228,6 +282,7 @@
+         (cons result to.results)))
+     (cond
+      ((current-test-object) => add-result!))
++    (test-progress! 'check)
+     (when (test-result-error? result)
+       (test-exit! result))))
+ 
+diff --git a/src/tools/gxtest.ss b/src/tools/gxtest.ss
+index 6d4164e..540bf86 100644
+--- a/src/tools/gxtest.ss
++++ b/src/tools/gxtest.ss
+@@ -2,17 +2,32 @@
+ ;;; © vyzo
+ ;;; tool to run tests without the need of glue code
+ (import :gerbil/expander
++        (only-in :gerbil/runtime gerbil-load-expander!)
+         :std/cli/getopt
+         :std/iter
+         :std/hash/misc
+         (only-in :std/list/list delete-duplicates/hash)
+-        :std/misc/process
++        :std/encoding/json
++        (only-in :std/error ignore-errors)
++        :std/os/signal
+         :std/sync/channel
+         :std/text/pregexp
+-        :std/test/base
+-        ./env)
++        :std/test/base)
+ (export main)
+ 
++(def global-env-flag
++  (flag 'global-env "-g" "--global-env"
++        help: "use the user global env even in local package context"))
++
++(def (setup-local-env! opt)
++  (unless (or (hash-get opt 'global-env) (getenv "GERBIL_PATH" #f))
++    (let* ((here (path-normalize (current-directory)))
++           (gerbil.pkg (path-expand "gerbil.pkg" here))
++           (gerbil-path (path-expand ".gerbil" here)))
++      (when (file-exists? gerbil.pkg)
++        (setenv "GERBIL_PATH" gerbil-path)
++        (add-load-path! (path-expand "lib" gerbil-path))))))
++
+ (def (features->list features)
+   (map string->symbol (string-split features #\,)))
+ 
+@@ -32,10 +47,26 @@
+                 help: "list selected test modules without importing them")
+           (flag 'isolate "--isolate"
+                 help: "run each selected module in a separate process")
++          (flag 'preserve-input-groups "--preserve-input-groups"
++                help: "keep each directory operand in one isolated process")
+           (option 'jobs "-j" "--jobs"
+                   value: string->number
+                   default: 1
+                   help: "run up to N isolated test modules concurrently")
++          (option 'timeout "--timeout"
++                  value: string->number
++                  default: 240
++                  help: "wall-clock limit in seconds per isolated module")
++          (option 'no-progress-timeout "--no-progress-timeout"
++                  value: string->number
++                  default: 5
++                  help: "maximum seconds without a harness scope or check")
++          (option 'progress-prefix "--progress-prefix"
++                  help: "also count trusted application log lines with this prefix")
++          (option 'report "--report"
++                  help: "write isolated module results as JSON Lines")
++          (flag 'worker-events "--worker-events"
++                help: "emit harness progress for an isolated parent")
+           ;; TODO this should be a multi-option for multiple feature when getopt supports it
+           (option 'features "-D"
+                   value: features->list
+@@ -48,56 +79,296 @@
+       status)))
+ 
+ (def (gxtest-main opt)
++  (when (hash-get opt 'worker-events)
++    (setpgid 0 0))
+   (setup-local-env! opt)
+   (let-hash opt
+-    (if (and (integer? .jobs) (positive? .jobs))
++    (if (and (integer? .jobs) (exact? .jobs) (positive? .jobs)
++             (real? .timeout) (positive? .timeout) (<= .timeout 86400)
++             (real? .no-progress-timeout) (positive? .no-progress-timeout)
++             (<= .no-progress-timeout 86400)
++             (let (prefix (hash-get opt 'progress-prefix))
++               (or (not prefix)
++                   (and (string? prefix) (positive? (string-length prefix))))))
+       (let (files (collect-files (if (null? .args) ["."] .args)))
+         (cond
++         ((and .report (hash-get opt 'list))
++          (parameterize ((current-output-port (current-error-port)))
++            (displayln "gxtest: --report requires execution, not --list"))
++          64)
+          ((hash-get opt 'list)
+           (for-each displayln (plan-files files))
+           0)
+-         ((or (hash-get opt 'isolate) (> .jobs 1))
+-          (run-isolated-tests (plan-files files) .run .features .verbosity
+-                              (hash-get opt 'global-env) .jobs))
++         ((and .report (member (path-normalize .report) (plan-files files)))
++          (parameterize ((current-output-port (current-error-port)))
++            (displayln "gxtest: --report must not overwrite a selected test module"))
++          64)
++         ((or (hash-get opt 'isolate) (> .jobs 1) .report)
++          (run-isolated-tests
++                              (if (hash-get opt 'preserve-input-groups)
++                                (plan-inputs (if (null? .args) ["."] .args))
++                                (plan-files files))
++                              .run .features .verbosity
++                              (hash-get opt 'global-env) .jobs
++                              .timeout .no-progress-timeout .report
++                              (hash-get opt 'progress-prefix)
++                              (length (plan-files files))))
+          (else
+-          (run-tests files .run .features .verbosity))))
++          (parameterize
++            ((current-test-progress
++              (if (hash-get opt 'worker-events)
++                (lambda (kind . details)
++                  (parameterize ((current-output-port (current-error-port)))
++                    (newline)
++                    (display "GXTEST/1 PROGRESS ")
++                    (display kind)
++                    (for (detail details)
++                      (display " ")
++                      (display (object->string detail)))
++                    (newline)
++                    (force-output)))
++                #f)))
++            (run-tests files .run .features .verbosity
++                       (hash-get opt 'worker-events))))))
+       (begin
+         (parameterize ((current-output-port (current-error-port)))
+-          (displayln "gxtest: --jobs must be a positive integer"))
++          (displayln "gxtest: --jobs must be a positive integer; timeouts must be positive seconds at most 86400; --progress-prefix must be nonempty"))
+         64))))
+ 
+-(def (run-isolated-file file filter features verbosity global-env?)
++(def (run-isolated-file file filter features verbosity global-env? output-mx
++                        wall-timeout progress-timeout progress-prefix)
+   (let* ((command
+-          (append [(path-expand "bin/gxtest" (getenv "GERBIL_HOME" (gerbil-home)))
+-                   "-v" (number->string verbosity)]
++          (append [(path-expand "bin/gxtest"
++                                (getenv "GERBIL_BUILD_PREFIX"
++                                        (getenv "GERBIL_HOME" (gerbil-home))))
++                   "-v" (number->string verbosity) "--worker-events"]
+                   (if global-env? ["-g"] [])
+                   (if filter ["-r" filter] [])
+                   (if (null? features)
+                     []
+                     ["-D" (string-join (map symbol->string features) ",")])
+                   [file]))
+-         (status #f))
+-    (run-process command
+-                 stdin-redirection: #f
+-                 stdout-redirection: #f
+-                 stderr-redirection: #f
+-                 check-status: (lambda (code _) (set! status code)))
+-    status))
+-
+-(def (run-isolated-tests files filter features verbosity global-env? jobs)
+-  (def (run-file file)
++         (process (open-process
++                   [path: (car command) arguments: (cdr command)
++                    stdin-redirection: #f stdout-redirection: #t
++                    stderr-redirection: #t]))
++         (pid (process-pid process))
++         (deadline (+ (##current-time-point) wall-timeout))
++         (progress-deadline (+ (##current-time-point) progress-timeout))
++         (status #f)
++         (failure #f)
++         (declared-outcome #f)
++         (terminal-count 0))
++    (def (stop! reason)
++      (set! failure reason)
++      (ignore-errors (kill (- pid) SIGKILL))
++      (ignore-errors (kill pid SIGKILL)))
++    (def (emit chunk)
++      (if output-mx
++        (do-with-lock output-mx
++          (display "[")
++          (display file)
++          (display "] ")
++          (display chunk)
++          (unless (string-suffix? "\n" chunk) (newline))
++          (force-output))
++        (begin
++          (display chunk)
++          (force-output))))
++    (def (declare! outcome)
++      (set! terminal-count (+ terminal-count 1))
++      (set! declared-outcome outcome))
+     (try
+-     (let (status (run-isolated-file file filter features verbosity global-env?))
+-       (if (integer? status) status 42))
+-     (catch (e)
+-       (display-exception e (current-error-port))
+-       42)))
++     (close-output-port process)
++     (let loop ()
++       (let (remaining (min (- deadline (##current-time-point))
++                           (- progress-deadline (##current-time-point))))
++         (if (<= remaining 0)
++           (stop! (if (<= deadline (##current-time-point))
++                    'timeout 'no-progress))
++           (begin
++             (input-port-timeout-set!
++              process remaining
++              (lambda ()
++                (stop! (if (<= deadline (##current-time-point))
++                         'timeout 'no-progress))
++                #f))
++             (let (chunk (read-line process #\newline #t 4096))
++               (unless (eof-object? chunk)
++                 (cond
++                  ((string-prefix? "GXTEST/1 PROGRESS import " chunk)
++                   (when declared-outcome
++                     (set! terminal-count 2))
++                   (set! progress-deadline
++                     (+ (##current-time-point) progress-timeout))
++                   (emit (string-append "IMPORT "
++                                        (substring chunk
++                                                   (string-length "GXTEST/1 PROGRESS import ")
++                                                   (string-length chunk)))))
++                  ((or (string=? chunk "GXTEST/1 PROGRESS scope\n")
++                       (string=? chunk "GXTEST/1 PROGRESS check\n"))
++                   (when declared-outcome
++                     (set! terminal-count 2))
++                   (set! progress-deadline
++                     (+ (##current-time-point) progress-timeout)))
++                  ((string=? chunk "GXTEST/1 RESULT pass\n")
++                   (declare! 'pass))
++                  ((string=? chunk "GXTEST/1 RESULT test-failure\n")
++                   (declare! 'test-failure))
++                  ((string=? chunk "GXTEST/1 RESULT import-error\n")
++                   (declare! 'import-error))
++                  ((string=? chunk "GXTEST/1 RESULT cleanup-error\n")
++                   (declare! 'cleanup-error))
++                  ((string=? chunk "\n") (void))
++                  ((and progress-prefix
++                        (string-prefix? progress-prefix chunk))
++                   (when declared-outcome
++                     (set! terminal-count 2))
++                   (set! progress-deadline
++                     (+ (##current-time-point) progress-timeout))
++                   (emit chunk))
++                  (else (emit chunk)))
++                 (unless failure (loop))))))))
++     (unless failure
++       (let (remaining (min (- progress-deadline (##current-time-point))
++                             (- deadline (##current-time-point))))
++         (if (<= remaining 0)
++           (stop! (if (<= deadline (##current-time-point))
++                    'timeout 'no-progress))
++           (let (completed (process-status process remaining #f))
++             (if completed
++               (set! status completed)
++               (stop! (if (<= deadline (##current-time-point))
++                        'timeout 'no-progress)))))))
++     (finally
++      (ignore-errors (kill (- pid) SIGKILL))
++      (unless status
++        (ignore-errors (kill pid SIGKILL))
++        (set! status (process-status process 5 #f)))
++      (ignore-errors (close-port process))))
++    (cond
++     ((not status)
++      (cons (case failure
++              ((timeout) 'timeout-unreaped)
++              ((no-progress) 'no-progress-unreaped)
++              (else 'unreaped))
++            #f))
++     (failure (cons failure status))
++     ((> terminal-count 1) (cons 'protocol-error status))
++     ((not declared-outcome)
++      (cons (if (and (fixnum? status)
++                     (not (fxzero? (fxand status #x7f))))
++              'crash 'missing-result)
++            status))
++     ((or (and (eq? declared-outcome 'pass) (zero? status))
++          (and (not (eq? declared-outcome 'pass)) (not (zero? status))))
++      (cons declared-outcome status))
++     (else (cons 'protocol-error status)))))
++
++(def (run-isolated-tests files filter features verbosity global-env? jobs
++                         wall-timeout progress-timeout report-file progress-prefix
++                         selected-modules)
++  (def output-mx (and (> jobs 1) (make-mutex 'gxtest-output)))
++  (def statuses (make-hash-table))
++  (def durations (make-hash-table))
++  (def (record-duration! file started)
++    (let (elapsed (- (##current-time-point) started))
++      (if output-mx
++        (do-with-lock output-mx
++          (hash-put! durations file elapsed))
++        (hash-put! durations file elapsed))))
++  (def (passed? attempt)
++    (and (pair? attempt) (eq? (car attempt) 'pass)
++         (integer? (cdr attempt)) (zero? (cdr attempt))))
++  (def (outcome-label attempt)
++    (if (and (pair? attempt) (symbol? (car attempt)))
++      (symbol->string (car attempt))
++      "missing-result"))
++  (def (status-label attempt)
++    (let (status (and (pair? attempt) (cdr attempt)))
++      (cond
++       ((and (fixnum? status) (fxzero? (fxand status #x7f)))
++        (string-append "exit=" (number->string (fxarithmetic-shift-right status 8))))
++       ((fixnum? status)
++        (string-append "signal=" (number->string (fxand status #x7f))))
++       (else (string-append "process-status=" (object->string status))))))
++  (def (report . parts)
++    (if output-mx
++      (do-with-lock output-mx
++        (apply displayln parts)
++        (force-output))
++      (begin
++        (apply displayln parts)
++        (force-output))))
++  (def (finish)
++    (let (failed 0)
++      (for (file files)
++        (let (attempt (hash-get statuses file))
++          (unless (passed? attempt)
++            (set! failed (+ failed 1)))
++          (report (if (passed? attempt)
++                    "SUMMARY-OK " "SUMMARY-ERROR ")
++                  file " " (outcome-label attempt)
++                  " " (status-label attempt)
++                  " elapsed=" (or (hash-get durations file) 0) "s")))
++      (report "MODULE-SUMMARY selected=" (length files)
++              " modules=" selected-modules
++              " passed=" (- (length files) failed) " failed=" failed)
++      (when report-file
++        (call-with-output-file report-file
++          (lambda (port)
++            (for (file files)
++              (let (attempt (hash-get statuses file))
++                (display
++                 (json->string
++                  (hash (schema 1)
++                        (type "module-result")
++                        (path file)
++                        (outcome (outcome-label attempt))
++                        (status (status-label attempt))
++                        (elapsed_seconds (or (hash-get durations file) 0))))
++                 port)
++                (newline port)))
++            (display
++             (json->string
++              (hash (schema 1)
++                    (type "summary")
++                    (selected (length files))
++                    (selected_modules selected-modules)
++                    (passed (- (length files) failed))
++                    (failed failed)
++                    (jobs jobs)
++                    (verbosity verbosity)
++                    (filter (if filter filter (void)))
++                    (features (map symbol->string features))
++                    (global_env global-env?)
++                    (timeout_seconds wall-timeout)
++                    (no_progress_timeout_seconds progress-timeout)
++                    (progress_prefix progress-prefix)))
++             port)
++            (newline port))))
++      (if (zero? failed) 0 42)))
++  (def (run-file file)
++    (let (started (##current-time-point))
++      (try
++       (let (status (run-isolated-file file filter features verbosity global-env? output-mx
++                                        wall-timeout progress-timeout progress-prefix))
++         (if (pair? status) status (cons 'worker-error #f)))
++       (catch (e)
++         (if output-mx
++           (do-with-lock output-mx
++             (ignore-errors
++               (display-exception e (current-error-port))
++               (force-output (current-error-port))))
++           (ignore-errors (display-exception e (current-error-port))))
++         (cons 'worker-error #f))
++       (finally
++        (record-duration! file started)))))
+   (if (= jobs 1)
+-    (let (failed? #f)
++    (begin
+       (for (file files)
+-        (unless (zero? (run-file file))
+-          (set! failed? #t)))
+-      (if failed? 42 0))
++        (hash-put! statuses file (run-file file)))
++      (finish))
+     (let* ((work (make-channel))
+            (results (make-channel))
+            (workers
+@@ -108,30 +379,49 @@
+                             (let loop ()
+                               (let (file (channel-get work))
+                                 (unless (eof-object? file)
+-                                  (displayln "MODULE-START " file)
+-                                  (force-output)
+-                                  (channel-put results (cons file (run-file file)))
++                                  (channel-put
++                                   results
++                                   (cons file
++                                         (try
++                                          (report "MODULE-START " file)
++                                          (run-file file)
++                                          (catch (e)
++                                            (ignore-errors
++                                              (display-exception e (current-error-port)))
++                                            (cons 'worker-error #f)))))
+                                   (loop)))))))
+                      (thread-start! worker)
+                      worker))
+                  (iota (min jobs (length files))))))
+       (for-each (cut channel-put work <>) files)
+       (channel-close work)
+-      (let (failed? #f)
++      (begin
+         (for (_ (in-range (length files)))
+           (let* ((result (channel-get results))
+                  (file (car result))
+                  (status (cdr result)))
+-            (displayln (if (zero? status) "MODULE-OK " "MODULE-ERROR ") file
+-                       " process-status=" status)
+-            (force-output)
+-            (unless (zero? status) (set! failed? #t))))
++            (report (if (passed? status)
++                      "MODULE-OK " "MODULE-ERROR ") file
++                    " " (outcome-label status) " " (status-label status))
++            (hash-put! statuses file status)))
+         (for-each thread-join! workers)
+         (channel-close results)
+-        (if failed? 42 0)))))
++        (finish)))))
+ 
+-(def (run-tests files filter features verbosity)
++(def (test-result-has-cleanup-error? result)
++  (cond
++   ((TestResultError? result)
++    (let (ctx (TestResult-context result))
++      (and (pair? ctx) (eq? (car ctx) 'CLEANUP))))
++   ((TestResultErrors? result)
++    (ormap test-result-has-cleanup-error? (TestResultErrors-errors result)))
++   (else #f)))
++
++(def (run-tests files filter features verbosity worker-events?)
+   (def import-errors [])
++  (def seen-imports (make-hash-table))
++
++  (gerbil-load-expander!)
+ 
+   (def (display-test-result result)
+     (if (test-result-ok? result)
+@@ -149,9 +439,32 @@
+                     (let (rx (pregexp filter))
+                       (lambda (sym) (pregexp-match rx (if (symbol? sym) (symbol->string sym) sym))))
+                     (lambda (sym) #t)))
+-         (harness (prepare-harness files allow verbosity))
++         (import-fn (current-expander-module-import))
++         (harness
++          (parameterize
++            ((current-expander-module-import
++              (lambda (path reload?)
++                (when (and worker-events? (not (hash-get seen-imports path)))
++                  (hash-put! seen-imports path #t)
++                  ((current-test-progress) 'import path))
++                (import-fn path reload?))))
++            (prepare-harness
++             files allow verbosity
++             (lambda (file e)
++               (set! import-errors (cons file import-errors))))))
+          (result  (test-run! harness)))
+     (display-test-result result)
++    (when worker-events?
++      (parameterize ((current-output-port (current-error-port)))
++        (newline)
++        (displayln
++         "GXTEST/1 RESULT "
++         (cond
++          ((not (null? import-errors)) 'import-error)
++          ((test-result-has-cleanup-error? result) 'cleanup-error)
++          ((test-result-ok? result) 'pass)
++          (else 'test-failure)))
++        (force-output)))
+     (if (test-result-ok? result) 0 42)))
+ 
+ (def (collect-files args)
+@@ -169,7 +482,10 @@
+        (cons arg result))))))
+ 
+ (def (plan-files files)
+-  (list-sort string<? (delete-duplicates/hash files)))
++  (list-sort string<? (delete-duplicates/hash (map path-normalize files))))
++
++(def (plan-inputs args)
++  (list-sort string<? (delete-duplicates/hash (map path-normalize args))))
+ 
+ (def (collect-files-r dir result)
+   (for/fold (result result) (arg (get-directory-files dir))
+@@ -185,18 +501,19 @@
+ (def (get-directory-files dir)
+   (list-sort string<? (directory-files dir)))
+ 
+-(def (prepare-harness (files : :list) (allow? : :procedure) (verbosity : :fixnum))
++(def (prepare-harness (files : :list) (allow? : :procedure)
++                      (verbosity : :fixnum) on-import-error)
+   => TestHarness
+   (let* ((modules
+           (for/fold (r []) (file files : :string)
+-            (cons (prepare-module file allow?) r)))
++            (cons (prepare-module file allow? on-import-error) r)))
+          (desc
+           (object->string files))
+          (config
+-          (TestConfig verbosity: verbosity capture-output?: #f)))
++          (apply make-TestConfig [verbosity: verbosity capture-output?: #f])))
+     (TestHarness desc config modules)))
+ 
+-(def (prepare-module (file : :string) (accept? : :procedure))
++(def (prepare-module (file : :string) (accept? : :procedure) on-import-error)
+   => TestModule
+   (try
+    (let* ((ctx     (import-module file #f #t))
+@@ -233,6 +550,7 @@
+                       (or finish void))))))
+    (catch (e)
+       ;; import failed
++      (on-import-error file e)
+       (TestModule file
+                   []
+                   []

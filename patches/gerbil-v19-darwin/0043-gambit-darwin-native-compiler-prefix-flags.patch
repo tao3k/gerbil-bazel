@@ -1,0 +1,63 @@
+diff --git a/bin/gambit-static-object-native.c b/bin/gambit-static-object-native.c
+index eec5a59..cd6e57e 100644
+--- a/bin/gambit-static-object-native.c
++++ b/bin/gambit-static-object-native.c
+@@ -119,6 +119,7 @@ static int object_arguments(char **arguments, char **a, const char *output,
+                             const char *input, const char *mapping, int mode) {
+   int count = 0;
+   arguments[count++] = a[10];
++  if (add_flags(arguments, &count, a[24], mode == 0) != 0) return -1;
+   if (add_flags(arguments, &count, a[11], 0) != 0 || add_flags(arguments, &count, a[12], mode == 0) != 0) return -1;
+   if (mode == 0) {
+     arguments[count++] = "-save-temps=obj";
+@@ -197,10 +198,12 @@ static int normalize_input(const char *input_path, const char *output_path,
+ }
+ 
+ static int capture(int argc, char **a) {
+-  if (argc != 24) return 2;
++  if (argc == 24) return 77;
++  if (argc != 25) return 2;
+   if (strcmp(a[23], "${C_COMPILER} ${FLAGS_OPT} ${FLAGS_OBJ} ${DEFS_OBJ} -I\"${GAMBITDIR_INCLUDE}\" -c -o ${BUILD_OBJ_OUTPUT_FILENAME_PARAM} ${BUILD_OBJ_CC_OPTIONS_PARAM} ${BUILD_OBJ_INPUT_FILENAMES_PARAM}") != 0) return 77;
+   /* Complex shell recipes stay on the existing validated implementation. */
+   for (int i = 11; i <= 14; ++i) if (!plain_flags(a[i])) return 77;
++  if (!plain_flags(a[24])) return 77;
+   if (strpbrk(a[2], "\"\\\n\r") || strlen(a[6]) != 64 ||
+       strspn(a[6], "0123456789abcdef") != 64) return 2;
+   const char *source = a[2], *output = a[3], *directory = a[4], *pin = a[5];
+@@ -237,7 +240,7 @@ static int capture(int argc, char **a) {
+       !same_digest(pin, pin_sha) || tools_digest(after, tools) != 0 || !same_digest(after, tool_sha)) return 2;
+   FILE *record = fopen(context, "wb");
+   if (!record) return 2;
+-  fprintf(record, "gambit-static-proof-v2\n%s\n%s\n", a[7], a[8]);
++  fprintf(record, "gambit-static-proof-v3\n%s\n%s\ncompiler-prefix:%s\n", a[7], a[8], a[24]);
+   int failed = append_file(record, a[9]) != 0 || append_file(record, before) != 0;
+   fprintf(record, "%s\n", cpp_sha);
+   if (ferror(record) || fclose(record) != 0 || failed || hex_digest(context, key) != 0) return 2;
+diff --git a/bin/gambit-static-object-reuse.unix b/bin/gambit-static-object-reuse.unix
+index cf83fce..2e32b7f 100644
+--- a/bin/gambit-static-object-reuse.unix
++++ b/bin/gambit-static-object-reuse.unix
+@@ -79,11 +79,11 @@ gambit_static_object_locked()
+   marker=$(printf '%s\n' '#if defined(__APPLE__) && defined(__MACH__) && defined(__GNUC__) && !defined(__clang__)' 'GAMBIT_STATIC_DARWIN_GNU' '#endif' |
+            "$compiler" -E -P -x c - 2>/dev/null)
+   if test "$marker" != GAMBIT_STATIC_DARWIN_GNU; then gambit_static_original; return $?; fi
+-  case " $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
++  case " $C_COMPILER $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
+     *' -M'*|*' -B'*|*' -save-temps'*|*' -fprofile'*|*' --coverage'*|*' -gsplit-dwarf'*|*' -fplugin'*|*' -wrapper'*|*' -specs'*|*' --specs'*|*' -fdump'*|*' -fopt-info'*|*' -S '*|*' -E '*|*' -o '*|*' @'*)
+       gambit_static_original; return $? ;;
+   esac
+-  case " $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
++  case " $C_COMPILER $BUILD_OBJ_CC_OPTIONS_PARAM $FLAGS_OBJ $FLAGS_OPT $DEFS_OBJ " in
+     *' -g'*|*' -ffile-prefix-map='*|*' -fmacro-prefix-map='*|*' -fdebug-prefix-map='*)
+       gambit_static_original; return $? ;;
+   esac
+@@ -105,7 +105,8 @@ gambit_static_object_locked()
+       "$BUILD_OBJ_CMD" "$PWD" "$temporary/environment" "$compiler" \
+       "$FLAGS_OPT" "$FLAGS_OBJ" "$DEFS_OBJ" "$BUILD_OBJ_CC_OPTIONS_PARAM" "$GAMBITDIR_INCLUDE" \
+       "$cc1" "$assembler" "$apple_as" "$0" "$(dirname "$0")/gsc" \
+-      "$(dirname "$0")/gambit-static-object-reuse" "$(dirname "$0")/gambit-file-sha256" "$BUILD_OBJ" >&2 || native_status=$?
++      "$(dirname "$0")/gambit-static-object-reuse" "$(dirname "$0")/gambit-file-sha256" "$BUILD_OBJ" \
++      "${C_COMPILER#"$compiler"}" >&2 || native_status=$?
+     if test "$native_status" != 77; then return "$native_status"; fi
+     rm -f "$snapshot_input" || return 2
+   fi

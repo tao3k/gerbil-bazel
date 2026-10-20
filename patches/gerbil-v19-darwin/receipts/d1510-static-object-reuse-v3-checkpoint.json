@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "status": "experimental-candidate-checkpoint",
+  "defaultEnabled": false,
+  "productionAdmitted": false,
+  "repeatedColdQualified": true,
+  "ascentQualified": false,
+  "performanceGainAttributed": false,
+  "observedColdReuseHits": 0,
+  "patch": "0020-gambit-darwin-static-object-reuse-hardening.patch",
+  "patchSha256": "aaaa3e820a8095e9421c5048397117e84adce2c019ec691aa0f4497e9ca46c16",
+  "helperSha256": "956dcd5f73949df711d261124865cb62906b8ed40f15b550d29797418840bfe8",
+  "driverSha256": "d9d537df086e1e40fcd78f0f0713cdd16df71b4101f459bf6b6625c9c2e67779",
+  "binarySha256": "1f83878a01744817ceb6e74e5d07138948930a41386e568d156210ce9108bb21",
+  "gates": {
+    "firstCompileSeconds": 5,
+    "completeBuildSeconds": 50,
+    "completeTestSeconds": 112
+  },
+  "observed": {
+    "firstCompileSeconds": 4.122611165999842,
+    "completeBuildSeconds": 37.29564462500002,
+    "testFirstOutputSeconds": 1.6321361670002261,
+    "completeTestSeconds": 86.68597212500026,
+    "files": 39,
+    "passedFiles": 39,
+    "cases": 965,
+    "passedCases": 965
+  },
+  "rawReceipts": {
+    ".data/d1510-static-reuse-mcp-cold-v3/report.json": "19994496f777812c2056791ee8c5f73c9e7d56992d217a57d487272639013c07",
+    ".data/d1510-static-reuse-mcp-tests-v3/report.json": "4221d8f14ea5c0ebac308e8bc72b229daed8f9a696b18df694b977deba98756e",
+    ".data/d1510-static-reuse-mcp-cold-v3-confirm/report.json": "badbb45b69032cebea2a70e2ec0eee7f4fb5b5ef54b820f93e876dae675a53c3"
+  },
+  "coldSamples": [
+    {
+      "firstCompileSeconds": 4.122611165999842,
+      "completeBuildSeconds": 37.29564462500002
+    },
+    {
+      "firstCompileSeconds": 4.033185125000273,
+      "completeBuildSeconds": 36.9867625830002
+    },
+    {
+      "firstCompileSeconds": 4.02539191599999,
+      "completeBuildSeconds": 36.36981424999976
+    }
+  ]
+}

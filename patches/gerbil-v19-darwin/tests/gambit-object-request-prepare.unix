@@ -1,0 +1,48 @@
+# Sourced only by the configured obj driver under an explicit prepare request.
+gambit_object_request_prepare()
+(
+  directory=$GAMBIT_DARWIN_OBJECT_PREPARE_DIRECTORY
+  expected=${GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA-}
+  test "$(uname -s)" = Darwin && test "${GAMBIT_DARWIN_NATIVE_OBJECT_BATCH-}" = 1 || return 77
+  test -n "$directory" && test ! -e "$directory" || return 2
+  test "${#expected}" = 64 || return 2
+  case "$expected" in *[!0-9a-f]*) return 2 ;; esac
+  case " $C_COMPILER $FLAGS_OPT $FLAGS_OBJ $DEFS_OBJ $BUILD_OBJ_CC_OPTIONS_PARAM " in
+    *\'*|*\"*|*\\*|*\**|*\?*|*\[*|*\]*|*\;*|*\$*|*\`*|*\&*|*\|*|*\<*|*\>*|\
+    *' -M'*|*' -B'*|*' -save-temps'*|*' -fprofile'*|*' --coverage'*|*' -g'*|\
+    *' -fplugin'*|*' -wrapper'*|*' -specs'*|*' --specs'*|*' -fdump'*|*' -fopt-info'*|\
+    *' -S '*|*' -E '*|*' -o '*|*' @'*|*' -ffile-prefix-map='*|*' -fmacro-prefix-map='*|*' -fdebug-prefix-map='*) return 77 ;;
+  esac
+  tool="$(dirname "$0")/gambit-file-sha256"
+  source=$BUILD_OBJ_INPUT_FILENAMES_PARAM
+  output=$BUILD_OBJ_OUTPUT_FILENAME_PARAM
+  display=$source
+  test -f "$source" && test ! -L "$source" || return 2
+  test "$("$tool" --raw "$source")" = "$expected" || return 2
+  source="$(cd "$(dirname "$source")" && pwd -P)/$(basename "$source")" || return 2
+  output="$(cd "$(dirname "$output")" && pwd -P)/$(basename "$output")" || return 2
+  compiler=${C_COMPILER%% *}
+  # The supported recipe is whitespace-tokenized, as in the native compiler.
+  set -f
+  set -- $C_COMPILER
+  marker=$(printf '%s\n' '#if defined(__APPLE__) && defined(__MACH__) && defined(__GNUC__) && !defined(__clang__)' \
+    'GAMBIT_STATIC_DARWIN_GNU' '#endif' | "$@" -E -P -x c - 2>/dev/null) || return 2
+  test "$marker" = GAMBIT_STATIC_DARWIN_GNU || return 77
+  cc1=$("$@" -print-prog-name=cc1) || return 2
+  assembler=$("$@" -print-prog-name=as) || return 2
+  case "$assembler" in */*) ;; *) assembler=$(command -v "$assembler") || return 2 ;; esac
+  apple_as=$(/usr/bin/xcrun --find as) || return 2
+  mkdir -m 700 "$directory" || return 2
+  # Transport controls must not enter either the proof or the actual GCC env.
+  unset GAMBIT_DARWIN_OBJECT_PREPARE_DIRECTORY GAMBIT_DARWIN_STATIC_EXPECTED_SOURCE_SHA
+  env_program=$(command -v env) || return 2
+  "$env_program" "_=$env_program" "$tool" --dump-environment \
+    "$directory/environment.nul" "$directory/environment" || return 2
+  printf '%s\000' "$tool" --capture "$source" "$output" unused unused "$expected" \
+    "$BUILD_OBJ_CMD" "$PWD" "$directory/environment" "$compiler" \
+    "$FLAGS_OPT" "$FLAGS_OBJ" "$DEFS_OBJ" "$BUILD_OBJ_CC_OPTIONS_PARAM" "$GAMBITDIR_INCLUDE" \
+    "$cc1" "$assembler" "$apple_as" "$0" "$(dirname "$0")/gsc" \
+    "$(dirname "$0")/gambit-static-object-reuse" "$tool" "$BUILD_OBJ" "${C_COMPILER#"$compiler"}" \
+    "$directory/environment.nul" "$display" > "$directory/record" || return 2
+  printf 'GAMBIT-STATIC-OBJECT-REQUEST-PREPARED\n'
+)
