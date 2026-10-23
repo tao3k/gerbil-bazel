@@ -16,6 +16,15 @@ if [[ ! -f "$receipt" ]]; then
   exit 1
 fi
 
+# The static SDK driver locates this tool beside its materialized gsc. Checking
+# the declared runfile catches a missing compiler closure before a large build.
+compiler_helper="$(dirname "$receipt")/gambuild-C"
+if [[ ! -x "$compiler_helper" ]]; then
+  printf 'SDK compiler helper is unavailable: %s\n' "$compiler_helper" >&2
+  exit 1
+fi
+"$compiler_helper" FLAGS_DYN >/dev/null
+
 case "$(uname -s)" in
   Darwin)
     expected_developer_dir="$(/usr/bin/env -u DEVELOPER_DIR -u SDKROOT /usr/bin/xcode-select -p)"

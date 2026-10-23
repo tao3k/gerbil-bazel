@@ -14,6 +14,27 @@ source_package_validation_contract()
 
 exports_files(["project-root.marker"])
 
+gerbil_project_compile(
+    name = "static_compiler_compile",
+    srcs = ["static-compiler/library.ss", "static-compiler/main.ss"],
+    build_script = "static-compiler/build.ss",
+    execution_policy = gerbil_project_execution_policy(timeout_seconds = 60),
+    require_library_output = True,
+)
+
+filegroup(
+    name = "static_compiler_project",
+    srcs = [":static_compiler_compile"],
+    output_group = "project_root",
+)
+
+sh_test(
+    name = "static_compiler_test",
+    srcs = ["static_compiler_test.sh"],
+    args = ["$(rlocationpath :static_compiler_project)"],
+    data = [":static_compiler_project"],
+)
+
 scenario_state_flag(
     name = "dependency_state",
     build_setting_default = "baseline",
@@ -213,7 +234,10 @@ sh_test(
     name = "toolchain_environment_test",
     srcs = ["toolchain_environment_test.sh"],
     args = ["$(rlocationpath @local_gerbil//:toolchain.receipt.json)"],
-    data = ["@local_gerbil//:toolchain.receipt.json"],
+    data = [
+        "@local_gerbil//:toolchain.receipt.json",
+        "@local_gerbil//:gambuild-C",
+    ],
 )
 
 sh_test(

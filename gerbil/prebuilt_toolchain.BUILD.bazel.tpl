@@ -36,6 +36,7 @@ gerbil_toolchain(
     gerbil_gcc = {{GERBIL_GCC}},
     gerbil_ld = {{GERBIL_LD}},
     gerbil_gsc = "gerbil-gsc",
+    compiler_support_files = ["gambuild-C"],
     gxc = ":gxc",
     gxi = ":gxi",
     gxpkg = ":gxpkg",

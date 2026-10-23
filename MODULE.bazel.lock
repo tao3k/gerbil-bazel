@@ -262,7 +262,7 @@
         }
       },
       "os:osx,arch:aarch64": {
-        "bzlTransitiveDigest": "ftvcVApdsKajkZscTLJdqAalEp8gjyxQjrBxQOOSik4=",
+        "bzlTransitiveDigest": "3+bQajav2JMUXRNJpvz6VjkPEjWAyWT/8GmhTGc6D4E=",
         "usagesDigest": "gQSWHM7VybkDsGpNdJyMu2uzkuzoXDai9YmmSKQxZSI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

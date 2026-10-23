@@ -399,6 +399,12 @@ def normalized_gambit_runtime(
         producer_options,
         gambit_dynamic_link_options,
     )
+    # Gerbil's Darwin static compiler invokes the SDK helper beside GERBIL_GSC.
+    # Keep that upstream tool in the materialized compiler's declared closure.
+    repository_ctx.symlink(
+        repository_ctx.path("{}/gambuild-C".format(gambit_bin)),
+        "gambuild-C",
+    )
     executable_linker = gambit_executable_linker if gambit_executable_linker else str(compiler.path)
     gcc = _materialized_executable_linker(repository_ctx, executable_linker)
     output = dict(environment)

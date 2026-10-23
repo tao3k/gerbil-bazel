@@ -207,6 +207,14 @@ mode flags, implicit or explicit dynamic compilation restores the complete
 complete `FLAGS_OBJ` value. `-c`, `-link`, and `-exe` pass through without a
 wrapper-added compiler override.
 
+The materialized compiler also declares the unchanged SDK `gambuild-C` beside
+`GERBIL_GSC` and includes it in toolchain runfiles for both local and prebuilt
+repositories. Gerbil's Darwin static-object path locates that helper beside its
+compiler driver. Merely having it in the installed SDK does not put it in a
+Bazel action's declared input closure. `toolchain_environment_test` checks the
+helper runfile; `static_compiler_test` uses native `std/make` to compile, link
+and run a minimal executable under the existing 60-second project guard.
+
 On Darwin, dynamic compilation appends `-Wl,-undefined,dynamic_lookup` after
 the installed producer flags, and Gerbil's public `GERBIL_GCC` boundary selects
 the Xcode Clang driver for the final executable link. Linux restores the same

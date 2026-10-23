@@ -45,6 +45,7 @@ def _gerbil_toolchain_impl(ctx):
         ctx.file.receipt,
         ctx.attr.native_scheme_env[DefaultInfo].files_to_run.executable,
     ]
+    direct_files.extend(ctx.files.compiler_support_files)
     transitive = [
         ctx.attr.dependency_libraries[DefaultInfo].files,
         ctx.attr.native_scheme_env[DefaultInfo].default_runfiles.files,
@@ -88,6 +89,7 @@ gerbil_toolchain = rule(
         "gerbil_gcc": attr.label(allow_single_file = True, mandatory = True),
         "gerbil_ld": attr.string(mandatory = True),
         "gerbil_gsc": attr.label(allow_single_file = True, mandatory = True),
+        "compiler_support_files": attr.label_list(allow_files = True),
         "gxc": attr.label(cfg = "exec", executable = True, mandatory = True),
         "gxi": attr.label(cfg = "exec", executable = True, mandatory = True),
         "gxpkg": attr.label(cfg = "exec", executable = True, mandatory = True),
