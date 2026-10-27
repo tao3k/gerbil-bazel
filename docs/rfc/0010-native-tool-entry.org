@@ -49,3 +49,15 @@ is removed, restoring the original producer policy. Parser's existing2GiB
 compile/3GiB test limits and two workers remain. Failed logs and source artifact
 are preserved; the corresponding Darwin run was cancelled rather than used for
 publication. A subsequent build is a changed-input experiment, not a retry fix.
+
+* Published artifacts and consumer alignment
+Producer7e1ddc4 completed Linux40559760040 and Darwin40559766825. Both native
+installed and relocated entry controls passed before immutable publication.
+The delivered receipts retain Gerbil2591dcd/Gambitdcd677c and original platform
+flags. Linux SHA256 is88d08d3d10e297164191a9b31ee309d215a01727877c9e1c19b0d7dc737a5744;
+Darwin SHA256 isc53d62f26ff382f8956576963edc3eb9193098dc48de78d44b8a3df63636bd18.
+Consumer CI now uses those actual archives instead of unavailable f0badc7 hosts
+and an old Homebrew bottle. The explicit Darwin release fixture uses the same
+published source and bytes. Native Bazel lock refresh40561021241 generated and
+verified both platform extensions; only its actual normalized lock was retained.
+Consumer CI and Parser cold/restored qualification are independent remaining gates.
