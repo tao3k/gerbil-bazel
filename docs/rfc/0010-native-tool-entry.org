@@ -1,0 +1,41 @@
+#+title: Native tool entry maintenance for Parser's validated compiler
+
+* Exact release baseline
+The base is distribution e5296bf8c2c183c5e647d58fbb389570341a743d, the
+published Parser compiler's target commit. Upstream Gerbil stays at
+2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb. Its source gitlink/configure owns
+Gambit dcd677cd3e40860bdd27dfbdbf5e3ce46ab03813. Original per-platform
+configure flags and runtime patches remain unchanged; multiple-VM and
+multiple-threaded-VM flags are not introduced. The original patchset identifier
+f5cedd8168cb is a content hash, not a source commit.
+
+The earlier repair incorrectly inherited main's newer compiler/VM profile.
+Those failures are preserved separately, not attributed to this maintenance
+cohort. This branch neither changes main's feature profile nor upgrades Parser.
+
+* Tool and construction entry changes
+Upstream unified Gerbil command aliases replace the distribution's extra Darwin
+whole-program AOT tools. The inactive historical patch remains in the base tree.
+Gxtest's existing getopt execution callback exits with the native Harness result:
+0 for success, 42 for failure. Help stays outside that callback and returns0.
+The small build.sh change preserves caller GAMBOPT resource options while
+appending the build's own native paths. The compiler-construction step sets2GiB;
+this is not exported to later package indexers. No compiler/runtime algorithm,
+loader, replacement test runner, package environment or output-status parser is
+added. The existing publication workflow fixes native build capacity at2.
+
+* Validation and immutable publication
+The original publication workflow checks source identity, patches, native builds,
+upstream runtime controls and relocated bytes. Installed gxtags/gerbil tags must
+produce meaningful default-format indexes. Gxtest/gerbil test must run passing
+and intentionally failing Suites, preserve help, and reject missing sources.
+Controls run before packaging and again from relocated archive bytes, before
+immutable release publication. Failed Suite fixtures and logs plus source
+configuration/generated C and build timings are uploaded without changing status.
+
+The full source build and these installed/relocated controls qualify this
+maintenance artifact. The old prebuilt SDK consumer CI is a separate check;
+it must not be represented as a test of the newly built compiler.
+Parser then pins each actual platform archive and SHA256, completes native
+build/test plus cold/restored consumer checks with existing limits, and submits
+the consolidated change to its existing PR. Until then full qualification is open.
