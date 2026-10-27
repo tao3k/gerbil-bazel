@@ -18,9 +18,9 @@ Upstream unified Gerbil command aliases replace the distribution's extra Darwin
 whole-program AOT tools. The inactive historical patch remains in the base tree.
 Gxtest's existing getopt execution callback exits with the native Harness result:
 0 for success, 42 for failure. Help stays outside that callback and returns0.
-The small build.sh change preserves caller GAMBOPT resource options while
-appending the build's own native paths. The compiler-construction step sets2GiB;
-this is not exported to later package indexers. No compiler/runtime algorithm,
+The original compiler self-build resource policy remains unchanged. Parser
+package compilation retains2GiB and its complete test process retains3GiB.
+No compiler/runtime algorithm,
 loader, replacement test runner, package environment or output-status parser is
 added. The existing publication workflow fixes native build capacity at2.
 
@@ -39,3 +39,13 @@ it must not be represented as a test of the newly built compiler.
 Parser then pins each actual platform archive and SHA256, completes native
 build/test plus cold/restored consumer checks with existing limits, and submits
 the consolidated change to its existing PR. Until then full qualification is open.
+
+* Rejected resource-scope experiment
+First Linux run40555274729 passed Gambit, bootstrap and Gerbil core, then
+failed standard-library construction with heap overflow. It did not reproduce
+##fxzero?. This candidate incorrectly extended Parser's2GiB process ceiling to
+Gerbil self-build through a new build.sh/GAMBOPT change. That unrelated change
+is removed, restoring the original producer policy. Parser's existing2GiB
+compile/3GiB test limits and two workers remain. Failed logs and source artifact
+are preserved; the corresponding Darwin run was cancelled rather than used for
+publication. A subsequent build is a changed-input experiment, not a retry fix.

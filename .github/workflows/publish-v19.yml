@@ -55,7 +55,6 @@ jobs:
               patches/gerbil-v19-bio-integer-growth-upstream.patch \
               patches/gerbil-v19-ffi-release-pkey-once.patch \
               patches/gerbil-v19-tool-entry.patch \
-              patches/gerbil-v19-build-options.patch \
               tools/ci/check_tool_entries.sh \
               patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
@@ -162,7 +161,6 @@ jobs:
           set -euo pipefail
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-tool-entry.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-build-options.patch"
 
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
@@ -180,7 +178,6 @@ jobs:
         shell: bash
         env:
           SINGLE_HOST_MODE: unlimited
-          GAMBOPT: max-heap=2G,debug=q
         run: |
           set -euo pipefail
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
