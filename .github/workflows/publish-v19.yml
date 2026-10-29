@@ -56,6 +56,8 @@ jobs:
               patches/gerbil-v19-bio-integer-growth-upstream.patch \
               patches/gerbil-v19-ffi-release-pkey-once.patch \
               patches/gerbil-v19-tool-entry.patch \
+              patches/gerbil-v19-tags-context-lifetime.patch \
+              t/tags-context-test.ss \
               tools/ci/check_tool_entries.sh \
               tools/ci/check_native_executable.sh \
               t/executable-closure-test.ss \
@@ -164,6 +166,7 @@ jobs:
           set -euo pipefail
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-tool-entry.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-tags-context-lifetime.patch"
           # The bounded executor is platform independent. Linux must overlap
           # native jobs with generation rather than retain the complete queue.
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
@@ -421,6 +424,12 @@ jobs:
           source "$GERBIL_PREFIX/activate"
           bash tools/ci/check_tool_entries.sh
           bash tools/ci/check_native_executable.sh
+          deadline="$(command -v timeout || command -v gtimeout)"
+          tag_root="$(mktemp -d)"
+          trap 'rm -rf "$tag_root"' EXIT
+          SDK_TAG_TEST_ROOT="$tag_root" \
+            "$deadline" --signal=TERM --kill-after=5s 180s \
+            gxi -:max-heap=2G t/tags-context-test.ss
 
       - name: Package relocatable capability
         shell: bash
@@ -491,6 +500,12 @@ jobs:
           /usr/bin/time -p gxtags --help >/dev/null
           bash tools/ci/check_tool_entries.sh
           bash tools/ci/check_native_executable.sh
+          deadline="$(command -v timeout || command -v gtimeout)"
+          tag_root="$(mktemp -d)"
+          trap 'rm -rf "$tag_root"' EXIT
+          SDK_TAG_TEST_ROOT="$tag_root" \
+            "$deadline" --signal=TERM --kill-after=5s 180s \
+            gxi -:max-heap=2G t/tags-context-test.ss
 
       - name: Publish immutable central release
         env:

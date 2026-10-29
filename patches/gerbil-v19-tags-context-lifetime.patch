@@ -1,0 +1,57 @@
+diff --git a/src/tools/gxtags.ss b/src/tools/gxtags.ss
+index 0516917..ea55d0f 100644
+--- a/src/tools/gxtags.ss
++++ b/src/tools/gxtags.ss
+@@ -48,6 +48,23 @@
+ (def (make-tags (inputs : :list) (tagfile : :string)
+                 (append? : :boolean := #f) (format : :symbol := 'emacs))
+   => :void
++  (let* ((registry __module-registry)
++         (saved (hash-copy registry)))
++    (unwind-protect
++      (make-tags/context inputs tagfile append? format)
++      (restore-tag-registry! registry saved))))
++
++(def (restore-tag-registry! (registry : HashTable) (saved : HashTable))
++  => :void
++  (hash-clear! registry)
++  (hash-for-each
++    (lambda (key value)
++      (hash-put! registry key value))
++    saved))
++
++(def (make-tags/context (inputs : :list) (tagfile : :string)
++                        (append? : :boolean) (format : :symbol))
++  => :void
+   ;; Validate before opening the destination so a bad format cannot truncate it.
+   (unless (memq format '(emacs vim))
+     (error "unknown TAGS index format" format))
+@@ -83,6 +100,28 @@
+       files)))
+ 
+ (def (tag-source-file (filename : :string) (output : :character-port))
++  => :void
++  ;; Tagging needs the expanded source only until its exported locations have
++  ;; been written. Keep the caller's registry, but do not retain every indexed
++  ;; source AST for the lifetime of a whole package scan.
++  (let* ((registry __module-registry)
++         (saved (hash-copy registry)))
++    (unwind-protect
++      (tag-source-file/context filename output)
++      (begin
++        ;; Compiled interfaces are reusable within this scan. Retain their
++        ;; small contexts so every source need not reload the same imports.
++        ;; The outer make-tags scope restores the caller's original registry.
++        (hash-for-each
++          (lambda (key value)
++            (when (and (module-context? value)
++                       (string? (module-context-path value))
++                       (equal? (path-extension (module-context-path value)) ".ssi"))
++              (hash-put! saved key value)))
++          registry)
++        (restore-tag-registry! registry saved)))))
++
++(def (tag-source-file/context (filename : :string) (output : :character-port))
+   => :void
+   (cond
+    ((try-import-module filename)
