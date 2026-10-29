@@ -18,3 +18,11 @@ parser: "Native gerbil build/test
 Full original Suite and negative controls
 Two-platform cold +restore qualification OPEN"
 baseline -> fix -> build -> controls -> release -> parser
+
+streaming: "Native compiler executor
+Linux and Darwin
+Start work before drain"
+streaming_probe: "Real executor contract
+Before-drain message / parameter capture
+Nested work / raised false / reopen"
+streaming -> streaming_probe: "release admission"

@@ -61,3 +61,24 @@ and an old Homebrew bottle. The explicit Darwin release fixture uses the same
 published source and bytes. Native Bazel lock refresh40561021241 generated and
 verified both platform extensions; only its actual normalized lock was retained.
 Consumer CI and Parser cold/restored qualification are independent remaining gates.
+
+* Native compiler queue admission on both release platforms
+
+The Aitia consumer cold gate at run 40937627805 refused POO after 180 seconds.
+The current Linux 1cfb032 release queues every backend job before drain, while
+the Darwin release already applies the bounded streaming compiler executor.
+Compiler capacity was correctly four at the consumer; this is a scheduling
+implementation difference rather than missing environment propagation.
+
+The existing platform-independent executor patch now applies to Linux release
+sources too. Its actual source hunk applies to the selected 2591dcd source.
+Darwin executable-link and platform ABI patches remain Darwin-specific. This
+does not introduce a consumer scheduler, alter the POO inventory, remove tests,
+or qualify a newly built SDK before its independent consumer gates finish.
+
+The existing executor contract now requires a worker message before drain is
+requested. The former capture/drain/error/reopen assertions alone could also
+pass under a deferred batch executor. Explicit one/three-worker runs are bounded
+contract probes; ordinary capacity derives from the runner and preserves caller
+limits. Each contract process retains a 2 GiB heap and 180-second outer deadline.
+Publication and consumer cold/full CI remain separate receipts.
