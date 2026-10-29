@@ -262,15 +262,15 @@ diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
 @@ -397,8 +445,13 @@
            (if (current-compile-parallel)
              (cond-expand
-               (darwin
+               ((or darwin linux)
 -               (prepare-link)
--               (schedule-darwin-objects-and-link))
+-               (schedule-executable-objects-and-link))
 +               (add-compile-dependent-job!
 +                (filter current-compile-output-produced?
 +                        [src-deps-runtime-c ... src-bin-runtime-c])
 +                (lambda ()
 +                  (prepare-link)
-+                  (schedule-darwin-objects-and-link))
++                  (schedule-executable-objects-and-link))
 +                `(prepare-executable-link ,output-bin)))
                (else
                 (add-compile-job! compile-it)))

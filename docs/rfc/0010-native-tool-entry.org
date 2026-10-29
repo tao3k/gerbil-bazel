@@ -82,3 +82,22 @@ pass under a deferred batch executor. Explicit one/three-worker runs are bounded
 contract probes; ordinary capacity derives from the runner and preserves caller
 limits. Each contract process retains a 2 GiB heap and 180-second outer deadline.
 Publication and consumer cold/full CI remain separate receipts.
+
+* Executable object closure as a second native tail
+
+Consumer run 40947415483 used the published streaming Linux SDK and still reached
+the unchanged 180-second cold limit. Backend job events progressed from 298 to
+499, but this is not successful package admission. The Linux executable driver
+still compiled its complete static object closure serially inside one job.
+
+The existing native executable-object DAG now covers Linux and Darwin. Object
+locks, compiler inputs, the failure flag and the final successful-object barrier
+remain unchanged. The Darwin runtime-C reuse candidate is not selected for the
+Linux producer. No alternate scheduler or compiler flag relaxation is added.
+
+The producer now also runs the actual standard Make executable consumer. It must
+compile and run with output 42, and reject an object compiler failure without
+publishing an executable. The local installed Darwin SDK passed both branches;
+its first attempts refused a nonexecutable build entry and a stale external
+OpenSSL path, which are not counted as successful compilation. The real Linux
+producer and complete POO cold gate remain mandatory after this source change.

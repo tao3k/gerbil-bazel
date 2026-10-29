@@ -10,3 +10,7 @@ baseline -> fix -> build -> controls -> release -> parser
 streaming: "Native compiler executor\nLinux and Darwin\nStart work before drain"
 streaming_probe: "Real executor contract\nBefore-drain message / parameter capture\nNested work / raised false / reopen"
 streaming -> streaming_probe: "release admission"
+
+object_dag: "Native executable object DAG\nLinux and Darwin\nLink only after every object succeeds"
+object_test: "Actual Make / compiler / executable\nOutput 42\nObject failure leaves no executable"
+streaming -> object_dag -> object_test

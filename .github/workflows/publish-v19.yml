@@ -57,6 +57,8 @@ jobs:
               patches/gerbil-v19-ffi-release-pkey-once.patch \
               patches/gerbil-v19-tool-entry.patch \
               tools/ci/check_tool_entries.sh \
+              tools/ci/check_native_executable.sh \
+              t/executable-closure-test.ss \
               patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
               patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
@@ -165,13 +167,13 @@ jobs:
           # The bounded executor is platform independent. Linux must overlap
           # native jobs with generation rather than retain the complete queue.
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
 
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
         shell: bash
         run: |
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
@@ -418,6 +420,7 @@ jobs:
         run: |
           source "$GERBIL_PREFIX/activate"
           bash tools/ci/check_tool_entries.sh
+          bash tools/ci/check_native_executable.sh
 
       - name: Package relocatable capability
         shell: bash
@@ -487,6 +490,7 @@ jobs:
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
           bash tools/ci/check_tool_entries.sh
+          bash tools/ci/check_native_executable.sh
 
       - name: Publish immutable central release
         env:
