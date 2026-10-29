@@ -1,28 +1,12 @@
 direction: right
-baseline: "Published distribution e5296bf8
-Gerbil2591dcd /native Gambit dcd677c
-Original flags and runtime patches"
-fix: "Tool entries only
-Upstream unified aliases
-Harness0/42 and help0
-Preserve caller compiler heap options"
-build: "Original formal publication workflow
-2 workers /original producer memory policy
-No VM upgrade or compiler algorithm edits"
-controls: "Installed +relocated native commands
-Default tags; pass/fail/help/missing
-Keep failed source and logs"
-release: "Immutable platform archive +SHA256
-Actual source/gitlink/build receipt"
-parser: "Native gerbil build/test
-Full original Suite and negative controls
-Two-platform cold +restore qualification OPEN"
+baseline: "Published distribution e5296bf8\nGerbil2591dcd /native Gambit dcd677c\nOriginal flags and runtime patches"
+fix: "Tool entries only\nUpstream unified aliases\nHarness0/42 and help0\nPreserve caller compiler heap options"
+build: "Original formal publication workflow\nMachine-derived workers / per-process heap\nNative streaming executor; no VM upgrade"
+controls: "Installed +relocated native commands\nDefault tags; pass/fail/help/missing\nKeep failed source and logs"
+release: "Immutable platform archive +SHA256\nActual source/gitlink/build receipt"
+parser: "Native gerbil build/test\nFull original Suite and negative controls\nTwo-platform cold +restore qualification OPEN"
 baseline -> fix -> build -> controls -> release -> parser
 
-streaming: "Native compiler executor
-Linux and Darwin
-Start work before drain"
-streaming_probe: "Real executor contract
-Before-drain message / parameter capture
-Nested work / raised false / reopen"
+streaming: "Native compiler executor\nLinux and Darwin\nStart work before drain"
+streaming_probe: "Real executor contract\nBefore-drain message / parameter capture\nNested work / raised false / reopen"
 streaming -> streaming_probe: "release admission"
