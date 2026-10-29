@@ -58,6 +58,7 @@ jobs:
               patches/gerbil-v19-tool-entry.patch \
               patches/gerbil-v19-tags-context-lifetime.patch \
               t/tags-context-test.ss \
+              t/tags-parallel-test.ss \
               tools/ci/check_tool_entries.sh \
               tools/ci/check_native_executable.sh \
               t/executable-closure-test.ss \
@@ -427,9 +428,11 @@ jobs:
           deadline="$(command -v timeout || command -v gtimeout)"
           tag_root="$(mktemp -d)"
           trap 'rm -rf "$tag_root"' EXIT
-          SDK_TAG_TEST_ROOT="$tag_root" \
-            "$deadline" --signal=TERM --kill-after=5s 180s \
-            gxi -:max-heap=2G t/tags-context-test.ss
+          for contract in t/tags-context-test.ss t/tags-parallel-test.ss; do
+            SDK_TAG_TEST_ROOT="$tag_root" \
+              "$deadline" --signal=TERM --kill-after=5s 180s \
+              gxi -:max-heap=2G "$contract"
+          done
 
       - name: Package relocatable capability
         shell: bash
@@ -503,9 +506,11 @@ jobs:
           deadline="$(command -v timeout || command -v gtimeout)"
           tag_root="$(mktemp -d)"
           trap 'rm -rf "$tag_root"' EXIT
-          SDK_TAG_TEST_ROOT="$tag_root" \
-            "$deadline" --signal=TERM --kill-after=5s 180s \
-            gxi -:max-heap=2G t/tags-context-test.ss
+          for contract in t/tags-context-test.ss t/tags-parallel-test.ss; do
+            SDK_TAG_TEST_ROOT="$tag_root" \
+              "$deadline" --signal=TERM --kill-after=5s 180s \
+              gxi -:max-heap=2G "$contract"
+          done
 
       - name: Publish immutable central release
         env:
