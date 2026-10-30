@@ -1,6 +1,6 @@
 ;;; Real package regression: empty prefix, complete owner build and native index.
 (import (only-in :std/io/tempfile call-with-temporary-directory)
-        (only-in :std/misc/process run-process)
+        (only-in :std/misc/process run-process/batch)
         (only-in :std/misc/ports read-all-as-string))
 
 (def (require! value message) (unless value (error message)))
@@ -16,7 +16,7 @@
     (require! (not (file-exists? manifest)) "cold prefix has a package manifest")
     ;; The immutable client is the actual Aitia cold regression, not a fixture.
     ;; The SDK CLI owns acquisition, every declared build target and the manifest.
-    (run-process
+    (run-process/batch
       (list "gxpkg" "install"
         "github.com/tao3k/gerbil-poo@6500bce55dbb2493ad385d261f3a9b106dfdab92"))
     (require! (file-exists? manifest) "native package manifest is missing")
@@ -27,7 +27,7 @@
               "native tag index omitted the real object source")
     (require! (string-contains index ":clan/poo/object")
               "native tag index omitted the object module identity")
-    (run-process
+    (run-process/batch
       (list "gxi" "-:max-heap=2G,debug=q" "-e"
         "(import :clan/poo/object) (def value (.o answer: 42)) (unless (= (.get value answer) 42) (error \"compiled cold client mismatch\")) (displayln \"NATIVE-POO-COLD-CONSUMER-OK\")"))))
 (displayln "NATIVE-POO-COLD-CLIENT-OK")

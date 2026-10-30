@@ -1,20 +1,21 @@
 From: tao3k team and Contributors
-Subject: [PATCH] make: project native identities and prioritize shared dependencies
+Subject: Native source identity and declaration-guided build ordering
 
-Native default-package identity reads one form, preserving cached imports for
-explicit headers and opaque readers. Reuse the actual import graph to order the
-existing coordinators by direct consumers; preserve stable declaration ties.
-No new queue, worker limit, source omission or dependency-wait path is added.
+Read source identity without expanding ordinary or explicit-header bodies.
+Scheduling hints come from unexpanded native declarations; actual expanded
+imports retain authority for dependency eligibility. Keep existing queues,
+waits and machine capacity. Opaque reader effects remain cached exactly once.
 
+diff --git a/src/gerbil/expander/module.ss b/src/gerbil/expander/module.ss
 --- a/src/gerbil/expander/module.ss
 +++ b/src/gerbil/expander/module.ss
-@@ -207,6 +207,26 @@
+@@ -207,6 +207,36 @@
        (cond
         ((and (not reload?) (hash-get __module-registry npath)))
         (else (import-source npath)))))))
 +
-+;; Observe default package identity without expanding a module body. Native
-+;; headers and opaque readers retain their original cached import semantics.
++;; Read default package identities cheaply. Explicit native headers use the
++;; canonical unexpanded reader; only opaque readers need the cached importer.
 +(def (core-read-module-id rpath)
 +  (let* ((path (core-resolve-module-path rpath))
 +         (head (call-with-input-source-file path
@@ -22,20 +23,30 @@ No new queue, worker limit, source omission or dependency-wait path is added.
 +                   (if (eqv? (peek-char port) #\#)
 +                     #f
 +                     (read-syntax port))))))
-+    (if (or (not head)
-+            (memq (stx-e head) '(prelude: namespace: package:)))
-+      (expander-context-id (core-import-module path))
++    (cond
++     ((not head) (expander-context-id (core-import-module path)))
++     ((memq (stx-e head) '(prelude: namespace: package:))
++      (let-values (((pre id ns body) (core-read-module path))) id))
++     (else
 +      (let-values (((pre ns pkg) (core-read-module-package path #f #f)))
-+        (core-module-package-id path pkg)))))
++        (core-module-package-id path pkg))))))
 +
 +(def (core-module-package-id path pkg)
 +  (let* ((path-id (core-module-path->namespace path))
 +         (pkg-id (if pkg (string-append pkg "/" path-id) path-id)))
 +    (string->symbol pkg-id)))
- 
++
++;; Advisory source declarations only: never run an opaque/custom reader twice.
++;; Expansion remains the authority for actual dependency eligibility.
++(def (core-read-module-declaration rpath)
++  (let (path (core-resolve-module-path rpath))
++    (and (not (call-with-input-source-file path
++                (lambda (port) (eqv? (peek-char port) #\#))))
++         (let-values (((pre id ns body) (core-read-module path))) body))))
+
  (def (core-read-module path)
    (with-catch
-@@ -268,7 +288,7 @@
+@@ -268,7 +298,7 @@
                   (stx-e pre))))
                (path-id   (core-module-path->namespace path))
                (pkg-id (if pkg (string-append pkg "/" path-id) path-id))
@@ -43,8 +54,8 @@ No new queue, worker limit, source omission or dependency-wait path is added.
 +              (module-id (core-module-package-id path pkg))
                (module-ns (if (void? ns) #f (or ns pkg-id))))
           (values prelude module-id module-ns body))))))
- 
-@@ -304,7 +324,7 @@
+
+@@ -304,7 +334,7 @@
               (else default-read-module-body)))
             (path-id (core-module-path->namespace path))
             (pkg-id (if pkg (string-append pkg "/" path-id) path-id))
@@ -53,37 +64,73 @@ No new queue, worker limit, source omission or dependency-wait path is added.
             (module-ns (or ns pkg-id))
             (body
              (parameterize ((current-module-reader-path path)
+diff --git a/src/std/make.ss b/src/std/make.ss
 --- a/src/std/make.ss
 +++ b/src/std/make.ss
-@@ -203,6 +203,48 @@
-     (make-build buildspec settings))
+@@ -204,6 +204,84 @@
    (when (> (settings-parallelize settings) 1)
      (execute-pending-compile-jobs!)))
-+
-+;; Reuse the actual import graph to put shared dependencies into the existing
-+;; coordinator stream first. This changes no wait, target or worker capacity.
-+(def (dependency-build-order specs module-id import-source source-path)
+
++;; Source declarations supply scheduling hints, never dependency authority.
++;; Actual expanded imports and the original completion waits remain unchanged.
++(def (dependency-build-order specs module-id source-path)
 +  (def consumers (make-hash-table-eq))
 +  (def positions (make-hash-table-eq))
++  (def source-ids (make-hash-table))
 +  (for-each (lambda (spec position)
-+              (let (id (module-id spec))
++              (let ((id (module-id spec)) (path (source-path spec)))
 +                (hash-put! consumers id 0)
-+                (hash-put! positions id position)))
++                (hash-put! positions id position)
++                (when (member (path-extension path) '(".ss" ".ssi"))
++                  (hash-put! source-ids
++                             (path-normalize (core-resolve-module-path path))
++                             id))))
 +            specs (iota (length specs)))
++  (def (source-hints path)
++    (def seen (make-hash-table-eq))
++    (def (hint! datum)
++      (cond
++       ((symbol? datum)
++        (let (text (symbol->string datum))
++          (when (and (> (string-length text) 1)
++                     (eqv? (string-ref text 0) #\:))
++            (hash-put! seen (module-strip-nesting
++                            (string->symbol (substring text 1 (string-length text)))) #t))))
++       ((string? datum)
++        (alet (resolved
++               (with-catch false
++                 (lambda () (core-resolve-module-path datum path))))
++          (alet (id (hash-get source-ids (path-normalize resolved)))
++            (hash-put! seen id #t))))
++       ((pair? datum) (for-each hint! datum))))
++    ;; Inspect only declaration heads; do not copy unrelated function bodies.
++    (def (form! syntax)
++      (when (stx-pair? syntax)
++        (case (stx-e (stx-car syntax))
++          ((import) (for-each hint! (syntax->datum (stx-cdr syntax))))
++          ((begin) (for-each form! (syntax->list (stx-cdr syntax))))
++          ((module)
++           (for-each form! (syntax->list (stx-cdr (stx-cdr syntax)))))
++          ((cond-expand)
++           (for-each
++             (lambda (branch)
++               (when (stx-pair? branch)
++                 (for-each form! (syntax->list (stx-cdr branch)))))
++             (syntax->list (stx-cdr syntax)))))))
++    (when (and (member (path-extension path) '(".ss" ".ssi"))
++               (hash-key? source-ids
++                          (path-normalize (core-resolve-module-path path))))
++      (alet (body (core-read-module-declaration path))
++        (for-each form! (syntax->list body))))
++    (hash-keys seen))
 +  (for-each
 +    (lambda (spec)
-+      (def self (module-id spec))
-+      (def seen (make-hash-table-eq))
-+      (for-each
-+        (lambda (entry)
-+          (alet (id (expander-context-id (build-import-context entry)))
-+            (def dependency (module-strip-nesting id))
-+            (when (and (not (eq? dependency self))
-+                       (hash-key? consumers dependency)
-+                       (not (hash-key? seen dependency)))
-+              (hash-put! seen dependency #t)
-+              (hash-update! consumers dependency 1+ 0))))
-+        (module-context-import (import-source (source-path spec)))))
++      (let (self (module-id spec))
++        (for-each
++          (lambda (dependency)
++            (when (and (not (eq? dependency self)) (hash-key? consumers dependency))
++              (hash-update! consumers dependency 1+ 0)))
++          (source-hints (source-path spec)))))
 +    specs)
 +  (list-sort
 +    (lambda (left right)
@@ -101,10 +148,11 @@ No new queue, worker limit, source omission or dependency-wait path is added.
 +    ((module-export? entry) (build-import-context (module-export-context entry)))
 +    ((import-set? entry) (build-import-context (import-set-source entry)))
 +    (else (error "unexpected import" entry))))
- 
++
  (def (make-build buildspec-in settings)
    (parameterize ((current-compilation-target (settings-target settings)))
-@@ -233,13 +275,19 @@
+     (def buildspec (normalize-buildspec buildspec-in))
+@@ -233,13 +311,19 @@
      ;; import with mutex
      (def (import/mx mod)
        (with-lock import-mx (cut import-module mod #f #f)))
@@ -124,8 +172,8 @@ No new queue, worker limit, source omission or dependency-wait path is added.
 +                     id)))))
            (else
             (string->symbol file)))))
- 
-@@ -302,6 +350,9 @@
+
+@@ -302,6 +386,9 @@
      (def (build-coordinator spec)
        (let* ((file (spec-file spec settings))
               (mod (import/mx file)))
@@ -135,9 +183,9 @@ No new queue, worker limit, source omission or dependency-wait path is added.
          (for (in (module-context-import mod))
            (consider in (expander-context-id mod)))
          (if (or (build? spec)
-@@ -314,14 +365,7 @@
+@@ -314,14 +401,7 @@
          (barrier-post! build-barrier)))
- 
+
      (def (consider in self)
 -      (cond
 -       ((module-context? in)  (wait-for in self))
@@ -148,16 +196,16 @@ No new queue, worker limit, source omission or dependency-wait path is added.
 -       (else
 -        (error "unexpected import" in))))
 +      (wait-for (build-import-context in) self))
- 
+
      (def (wait-for ctx self)
        (alet* ((id (expander-context-id ctx)) ; :<root> prelude has no id
-@@ -344,7 +388,8 @@
- 
+@@ -344,7 +424,8 @@
+
      ;; spawn a thread for each spec that waits for the dependency completions
      ;; and pushes to the work channel if necessary.
 -    (for (spec buildspec)
-+    (for (spec (dependency-build-order buildspec module-id import/mx
++    (for (spec (dependency-build-order buildspec module-id
 +                                      (cut spec-file <> settings)))
        (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
- 
+
      ;; spawn the workers and wait
