@@ -7,7 +7,7 @@
 (call-with-temporary-directory "sdk-poo-cold"
   (lambda (prefix)
     (setenv "GERBIL_PATH" prefix)
-    (unsetenv "GERBIL_LOADPATH")
+    (require! (not (getenv "GERBIL_LOADPATH" #f)) "cold caller has a load-path override")
     (def repository "github.com/tao3k/gerbil-poo")
     (def package-root (path-expand repository (path-expand "pkg" prefix)))
     (def manifest (string-append package-root ".manifest"))

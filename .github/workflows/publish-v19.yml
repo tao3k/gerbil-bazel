@@ -444,6 +444,7 @@ jobs:
         shell: bash
         run: |
           source "$GERBIL_PREFIX/activate"
+          unset GERBIL_LOADPATH
           timeout --signal=TERM --kill-after=5s 180s \
             gxi -:max-heap=2G,debug=q t/poo-cold-client-test.ss
 
