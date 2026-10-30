@@ -1,0 +1,103 @@
+#+title: Native tool entry maintenance for Parser's validated compiler
+
+* Exact release baseline
+The base is distribution e5296bf8c2c183c5e647d58fbb389570341a743d, the
+published Parser compiler's target commit. Upstream Gerbil stays at
+2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb. Its source gitlink/configure owns
+Gambit dcd677cd3e40860bdd27dfbdbf5e3ce46ab03813. Original per-platform
+configure flags and runtime patches remain unchanged; multiple-VM and
+multiple-threaded-VM flags are not introduced. The original patchset identifier
+f5cedd8168cb is a content hash, not a source commit.
+
+The earlier repair incorrectly inherited main's newer compiler/VM profile.
+Those failures are preserved separately, not attributed to this maintenance
+cohort. This branch neither changes main's feature profile nor upgrades Parser.
+
+* Tool and construction entry changes
+Upstream unified Gerbil command aliases replace the distribution's extra Darwin
+whole-program AOT tools. The inactive historical patch remains in the base tree.
+Gxtest's existing getopt execution callback exits with the native Harness result:
+0 for success, 42 for failure. Help stays outside that callback and returns0.
+The original compiler self-build resource policy remains unchanged. Parser
+package compilation retains2GiB and its complete test process retains3GiB.
+No compiler/runtime algorithm,
+loader, replacement test runner, package environment or output-status parser is
+added. The existing publication workflow fixes native build capacity at2.
+
+* Validation and immutable publication
+The original publication workflow checks source identity, patches, native builds,
+upstream runtime controls and relocated bytes. Installed gxtags/gerbil tags must
+produce meaningful default-format indexes. Gxtest/gerbil test must run passing
+and intentionally failing Suites, preserve help, and reject missing sources.
+Controls run before packaging and again from relocated archive bytes, before
+immutable release publication. Failed Suite fixtures and logs plus source
+configuration/generated C and build timings are uploaded without changing status.
+
+The full source build and these installed/relocated controls qualify this
+maintenance artifact. The old prebuilt SDK consumer CI is a separate check;
+it must not be represented as a test of the newly built compiler.
+Parser then pins each actual platform archive and SHA256, completes native
+build/test plus cold/restored consumer checks with existing limits, and submits
+the consolidated change to its existing PR. Until then full qualification is open.
+
+* Rejected resource-scope experiment
+First Linux run40555274729 passed Gambit, bootstrap and Gerbil core, then
+failed standard-library construction with heap overflow. It did not reproduce
+##fxzero?. This candidate incorrectly extended Parser's2GiB process ceiling to
+Gerbil self-build through a new build.sh/GAMBOPT change. That unrelated change
+is removed, restoring the original producer policy. Parser's existing2GiB
+compile/3GiB test limits and two workers remain. Failed logs and source artifact
+are preserved; the corresponding Darwin run was cancelled rather than used for
+publication. A subsequent build is a changed-input experiment, not a retry fix.
+
+* Published artifacts and consumer alignment
+Producer7e1ddc4 completed Linux40559760040 and Darwin40559766825. Both native
+installed and relocated entry controls passed before immutable publication.
+The delivered receipts retain Gerbil2591dcd/Gambitdcd677c and original platform
+flags. Linux SHA256 is88d08d3d10e297164191a9b31ee309d215a01727877c9e1c19b0d7dc737a5744;
+Darwin SHA256 isc53d62f26ff382f8956576963edc3eb9193098dc48de78d44b8a3df63636bd18.
+Consumer CI now uses those actual archives instead of unavailable f0badc7 hosts
+and an old Homebrew bottle. The explicit Darwin release fixture uses the same
+published source and bytes. Native Bazel lock refresh40561021241 generated and
+verified both platform extensions; only its actual normalized lock was retained.
+Consumer CI and Parser cold/restored qualification are independent remaining gates.
+
+* Native compiler queue admission on both release platforms
+
+The Aitia consumer cold gate at run 40937627805 refused POO after 180 seconds.
+The current Linux 1cfb032 release queues every backend job before drain, while
+the Darwin release already applies the bounded streaming compiler executor.
+Compiler capacity was correctly four at the consumer; this is a scheduling
+implementation difference rather than missing environment propagation.
+
+The existing platform-independent executor patch now applies to Linux release
+sources too. Its actual source hunk applies to the selected 2591dcd source.
+Darwin executable-link and platform ABI patches remain Darwin-specific. This
+does not introduce a consumer scheduler, alter the POO inventory, remove tests,
+or qualify a newly built SDK before its independent consumer gates finish.
+
+The existing executor contract now requires a worker message before drain is
+requested. The former capture/drain/error/reopen assertions alone could also
+pass under a deferred batch executor. Explicit one/three-worker runs are bounded
+contract probes; ordinary capacity derives from the runner and preserves caller
+limits. Each contract process retains a 2 GiB heap and 180-second outer deadline.
+Publication and consumer cold/full CI remain separate receipts.
+
+* Executable object closure as a second native tail
+
+Consumer run 40947415483 used the published streaming Linux SDK and still reached
+the unchanged 180-second cold limit. Backend job events progressed from 298 to
+499, but this is not successful package admission. The Linux executable driver
+still compiled its complete static object closure serially inside one job.
+
+The existing native executable-object DAG now covers Linux and Darwin. Object
+locks, compiler inputs, the failure flag and the final successful-object barrier
+remain unchanged. The Darwin runtime-C reuse candidate is not selected for the
+Linux producer. No alternate scheduler or compiler flag relaxation is added.
+
+The producer now also runs the actual standard Make executable consumer. It must
+compile and run with output 42, and reject an object compiler failure without
+publishing an executable. The local installed Darwin SDK passed both branches;
+its first attempts refused a nonexecutable build entry and a stale external
+OpenSSL path, which are not counted as successful compilation. The real Linux
+producer and complete POO cold gate remain mandatory after this source change.

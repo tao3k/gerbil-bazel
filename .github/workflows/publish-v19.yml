@@ -28,6 +28,9 @@ jobs:
     name: Publish (${{ inputs.platform }})
     runs-on: ${{ inputs.platform == 'linux-x86_64' && 'ubuntu-latest' || 'macos-26' }}
     timeout-minutes: 360
+    env:
+      # Heap is per Scheme process; compiler capacity follows the actual runner.
+      GAMBOPT: max-heap=2G,debug=q
     steps:
       - name: Check out gerbil-bazel
         uses: actions/checkout@v7
@@ -40,6 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$UPSTREAM_REF" == 2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb ]]
           git init upstream-gerbil
           git -C upstream-gerbil remote add origin https://git.cons.io/mighty-gerbils/gerbil.git
           git -C upstream-gerbil fetch --depth=256 origin "$UPSTREAM_REF"
@@ -51,7 +55,17 @@ jobs:
               .github/workflows/publish-v19.yml \
               patches/gerbil-v19-bio-integer-growth-upstream.patch \
               patches/gerbil-v19-ffi-release-pkey-once.patch \
-              patches/gerbil-v19-darwin-aot-tools.patch \
+              patches/gerbil-v19-tool-entry.patch \
+              patches/gerbil-v19-tags-context-lifetime.patch \
+              patches/gerbil-v19-make-source-identity.patch \
+              t/make-source-identity-test.ss \
+              t/poo-cold-client-test.ss \
+              .github/workflows/publish-v19.yml \
+              t/tags-context-test.ss \
+              t/tags-parallel-test.ss \
+              tools/ci/check_tool_entries.sh \
+              tools/ci/check_native_executable.sh \
+              t/executable-closure-test.ss \
               patches/gerbil-v19-darwin/0001-gambit-darwin-posix-spawn.patch \
               patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch \
               patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch \
@@ -71,7 +85,7 @@ jobs:
             darwin-aarch64)
               release_os=darwin
               release_arch=aarch64
-              build_profile=gcc16-arm64-aot-tools-single-host-unlimited
+              build_profile=gcc16-arm64-single-host-unlimited
               ;;
             *)
               echo "unsupported release platform: $TARGET_PLATFORM" >&2
@@ -128,7 +142,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dependencies=(pkg-config openssl@3 sqlite zlib)
+          dependencies=(coreutils pkg-config openssl@3 sqlite zlib)
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
             dependencies+=(gcc)
           fi
@@ -139,11 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ runner.os }}" == macOS ]]; then
-            cores="$(sysctl -n hw.logicalcpu)"
-          else
-            cores="$(getconf _NPROCESSORS_ONLN)"
-          fi
+          cores="${GERBIL_BUILD_CORES:-$(getconf _NPROCESSORS_ONLN)}"
           [[ "$cores" =~ ^[1-9][0-9]*$ ]]
           echo "GERBIL_BUILD_CORES=$cores" >> "$GITHUB_ENV"
 
@@ -160,15 +170,19 @@ jobs:
         run: |
           set -euo pipefail
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-bio-integer-growth-upstream.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-tool-entry.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-tags-context-lifetime.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-make-source-identity.patch"
+          # The bounded executor is platform independent. Linux must overlap
+          # native jobs with generation rather than retain the complete queue.
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
+          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
 
       - name: Apply audited Darwin whole-program patches
         if: steps.gerbil-cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
         shell: bash
         run: |
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-ffi-release-pkey-once.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin-aot-tools.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0002-gerbil-streaming-compile-executor.patch"
-          git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0003-gerbil-darwin-executable-closure-dag.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0010-gerbil-darwin-socket-address-contract.patch"
           git -C upstream-gerbil apply "$GITHUB_WORKSPACE/patches/gerbil-v19-darwin/0011-gerbil-darwin-release-dynamic-linkage.patch"
 
@@ -178,7 +192,6 @@ jobs:
         shell: bash
         env:
           SINGLE_HOST_MODE: unlimited
-          GERBIL_BUILD_AOT_TOOLS: ${{ runner.os == 'macOS' && 'yes' || 'no' }}
         run: |
           set -euo pipefail
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
@@ -217,8 +230,11 @@ jobs:
             linker="$(command -v ld) $(ld --version 2>&1)"
             configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
+          unset GERBIL_BUILD_AOT_TOOLS
+          gambit_revision="$(git -C src/gambit rev-parse HEAD)"
           configure_args+=(--enable-single-host=0)
           ./configure "${configure_args[@]}"
+          [[ "$(git -C src/gambit rev-parse HEAD)" == "$gambit_revision" ]]
           if grep -F -- '-march=native' src/gambit/bin/gambuild-C.unix; then
             echo "release build must not use runner-specific -march=native" >&2
             exit 1
@@ -267,6 +283,7 @@ jobs:
             --arg sourceRevision "${{ steps.upstream.outputs.sha }}" \
             --arg stagingRevision "${{ steps.upstream.outputs.staging_sha }}" \
             --arg ensembleRevision "${{ steps.upstream.outputs.ensemble_sha }}" \
+            --arg gambitRevision "$gambit_revision" \
             --arg profile "$GERBIL_BUILD_PROFILE" \
             --arg patchsetSha "$GERBIL_PATCHSET_SHA" \
             --arg compiler "$cc $("$cc" -dumpfullversion)" \
@@ -278,7 +295,7 @@ jobs:
             --arg pkgConfigPath "${PKG_CONFIG_PATH:-}" \
             --argjson cores "$GERBIL_BUILD_CORES" \
             '{schema: $schema,
-              sourceRevision: $sourceRevision,
+              sourceRevision: $sourceRevision, gambitRevision: $gambitRevision,
               stagingRevision: $stagingRevision,
               ensembleRevision: $ensembleRevision,
               profile: $profile, patchsetSha: $patchsetSha,
@@ -397,14 +414,39 @@ jobs:
                            (equal? (string->json encoded) value))
                 (error "buffered JSON memory writer regression")))
             (displayln "buffered JSON memory writer ready"))'
-          if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            for cores in 1 3; do
-              GERBIL_BUILD_CORES="$cores" \
-                gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
-            done
-            env -u GERBIL_BUILD_CORES \
-              gxi patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
-          fi
+          deadline="$(command -v timeout || command -v gtimeout)"
+          for cores in 1 3; do
+            GERBIL_BUILD_CORES="$cores" \
+              "$deadline" --signal=TERM --kill-after=5s 180s \
+              gxi -:max-heap=2G patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+          done
+          env -u GERBIL_BUILD_CORES \
+            "$deadline" --signal=TERM --kill-after=5s 180s \
+            gxi -:max-heap=2G patches/gerbil-v19-darwin/tests/compiler-executor-contract.ss
+
+      - name: Verify native tool entries before publication
+        shell: bash
+        run: |
+          source "$GERBIL_PREFIX/activate"
+          bash tools/ci/check_tool_entries.sh
+          bash tools/ci/check_native_executable.sh
+          deadline="$(command -v timeout || command -v gtimeout)"
+          tag_root="$(mktemp -d)"
+          trap 'rm -rf "$tag_root"' EXIT
+          for contract in t/tags-context-test.ss t/tags-parallel-test.ss t/make-source-identity-test.ss; do
+            SDK_NATIVE_TIMEOUT_PROGRAM="$deadline" SDK_TAG_TEST_ROOT="$tag_root" \
+              "$deadline" --signal=TERM --kill-after=5s 180s \
+              gxi -:max-heap=2G "$contract"
+          done
+
+      - name: Qualify the actual uncached POO consumer
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source "$GERBIL_PREFIX/activate"
+          unset GERBIL_LOADPATH
+          timeout --signal=TERM --kill-after=5s 180s \
+            gxi -:max-heap=2G,debug=q t/poo-cold-client-test.ss
 
       - name: Package relocatable capability
         shell: bash
@@ -473,6 +515,16 @@ jobs:
           gxi -e '(begin (import :std/make) (displayln "relocated std/make ready"))'
           /usr/bin/time -p gxpkg version
           /usr/bin/time -p gxtags --help >/dev/null
+          bash tools/ci/check_tool_entries.sh
+          bash tools/ci/check_native_executable.sh
+          deadline="$(command -v timeout || command -v gtimeout)"
+          tag_root="$(mktemp -d)"
+          trap 'rm -rf "$tag_root"' EXIT
+          for contract in t/tags-context-test.ss t/tags-parallel-test.ss t/make-source-identity-test.ss; do
+            SDK_NATIVE_TIMEOUT_PROGRAM="$deadline" SDK_TAG_TEST_ROOT="$tag_root" \
+              "$deadline" --signal=TERM --kill-after=5s 180s \
+              gxi -:max-heap=2G "$contract"
+          done
 
       - name: Publish immutable central release
         env:
@@ -490,3 +542,19 @@ jobs:
             --target "${{ github.sha }}" \
             --title "$RELEASE_TAG" \
             --notes "Central Gerbil v0.19 ${{ inputs.platform }} capability at ${{ steps.upstream.outputs.sha }} using profile $GERBIL_BUILD_PROFILE. Source the bundled activate file after extraction; inspect gerbil-build-receipt.json for the exact compiler and configure arguments."
+
+      - name: Preserve failed source and native tool controls
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-tool-failure-${{ inputs.platform }}-${{ github.run_id }}
+          include-hidden-files: true
+          path: |
+            .ci/receipts/**
+            upstream-gerbil/src/gambit/config.log
+            upstream-gerbil/src/gambit/include/config.h
+            upstream-gerbil/src/gambit/lib/_num.c
+            upstream-gerbil/src/gambit/lib/_io.c
+            upstream-gerbil/src/gambit/gsc/_t-c-2.c
+            ${{ runner.temp }}/gerbil-v19-build-timings.txt
+          if-no-files-found: warn

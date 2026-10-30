@@ -1,17 +1,12 @@
 From: tao3k team and Contributors
-Subject: [PATCH 3/4] compiler: parallelize Darwin executable object closure
+Subject: compiler: parallelize native executable object closure
 
-Darwin cold executable builds spend their dominant tail compiling the second,
-static object family serially inside one executor job. Submit those independent
-objects to the existing compiler executor and queue one dependency-barrier link.
-Keep the official V19 closure job unchanged on non-Darwin platforms.
-Track object-job success explicitly because a Scheme exception can be #f.
----
- src/gerbil/compiler/driver.ss | 115 ++++++++++++++++++++++++++--------
- 1 file changed, 90 insertions(+), 25 deletions(-)
+Linux and Darwin submit independent executable objects to the existing bounded
+compiler executor and retain one success barrier before the native linker.
+Preserve object locks, compiler inputs and failure propagation; no new scheduler.
 
 diff --git a/src/gerbil/compiler/driver.ss b/src/gerbil/compiler/driver.ss
-index ab45133..f124e83 100644
+index ab45133..10adec5 100644
 --- a/src/gerbil/compiler/driver.ss
 +++ b/src/gerbil/compiler/driver.ss
 @@ -310,32 +310,97 @@ namespace: gxc
@@ -80,13 +75,13 @@ index ab45133..f124e83 100644
 +            (for-each (lambda (job) ((car job))) jobs)
 +            (link-executable))
 +          (cond-expand
-+            (darwin
-+             (def (schedule-darwin-objects-and-link)
++            ((or darwin linux)
++             (def (schedule-executable-objects-and-link)
 +               ;; Submit the complete static closure before returning. The
 +               ;; final queued job is the dependency barrier and links only
 +               ;; after every object completed successfully.
-+               (let ((mx (make-mutex 'darwin-executable-objects))
-+                     (cv (make-condition-variable 'darwin-executable-objects))
++               (let ((mx (make-mutex 'executable-objects))
++                     (cv (make-condition-variable 'executable-objects))
 +                     (remaining (length jobs))
 +                     (failed? #f))
 +                 (def (complete! succeeded?)
@@ -129,13 +124,11 @@ index ab45133..f124e83 100644
            (if (current-compile-parallel)
 -            (add-compile-job! compile-it)
 +            (cond-expand
-+              (darwin
++              ((or darwin linux)
 +               (prepare-link)
-+               (schedule-darwin-objects-and-link))
++               (schedule-executable-objects-and-link))
 +              (else
 +               (add-compile-job! compile-it)))
              (compile-it))))))
  
    (let* ((output-bin (compile-exe-output-file ctx opts))
--- 
-2.51.0
