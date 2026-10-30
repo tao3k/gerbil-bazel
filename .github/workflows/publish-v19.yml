@@ -59,6 +59,8 @@ jobs:
               patches/gerbil-v19-tags-context-lifetime.patch \
               patches/gerbil-v19-make-source-identity.patch \
               t/make-source-identity-test.ss \
+              t/poo-cold-client-test.ss \
+              .github/workflows/publish-v19.yml \
               t/tags-context-test.ss \
               t/tags-parallel-test.ss \
               tools/ci/check_tool_entries.sh \
@@ -436,6 +438,14 @@ jobs:
               "$deadline" --signal=TERM --kill-after=5s 180s \
               gxi -:max-heap=2G "$contract"
           done
+
+      - name: Qualify the actual uncached POO consumer
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source "$GERBIL_PREFIX/activate"
+          timeout --signal=TERM --kill-after=5s 180s \
+            gxi -:max-heap=2G,debug=q t/poo-cold-client-test.ss
 
       - name: Package relocatable capability
         shell: bash
