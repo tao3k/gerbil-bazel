@@ -1,0 +1,59 @@
+From: tao3k team and Contributors
+Subject: [PATCH] make: discover target identities without eager body expansion
+
+Use the native reader for the invocation-local completion identity map. Resolve
+paths through the native module owner. Opaque/custom readers retain the existing
+cached import, so metadata discovery does not execute their reader twice.
+The coordinator still imports and validates every actual module identity before
+scheduling work. Preserve all targets, source checks and worker capacity.
+
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -203,6 +203,14 @@
+     (make-build buildspec settings))
+   (when (> (settings-parallelize settings) 1)
+     (execute-pending-compile-jobs!)))
++
++(def (source-module-id file)
++  (let (path (core-resolve-module-path file))
++    ;; Opaque/custom readers may have effects. Keep their original cached import,
++    ;; rather than invoke a #lang reader once for metadata and again for expansion.
++    (if (call-with-input-file path (lambda (port) (eqv? (peek-char port) #\#)))
++      (expander-context-id (import-module path #f #f))
++      (let-values (((prelude id namespace body) (core-read-module path))) id))))
+ 
+ (def (make-build buildspec-in settings)
+   (parameterize ((current-compilation-target (settings-target settings)))
+@@ -233,13 +241,22 @@
+     ;; import with mutex
+     (def (import/mx mod)
+       (with-lock import-mx (cut import-module mod #f #f)))
++    ;; Identity observation must not expand every target before any worker starts.
++    ;; Keep only native reader identities for this invocation. Compilation still
++    ;; imports and validates the actual module before scheduling its work.
++    (def source-identities (make-hash-table))
+     ;; spec module id
+     (def (module-id spec)
+       (let* ((file (spec-file spec settings))
+              (ext (path-extension file)))
+         (case ext
+           ((".ss" ".ssi")
+-           (expander-context-id (import/mx file)))
++           (with-lock import-mx
++             (lambda ()
++               (or (hash-get source-identities file)
++                   (let (id (source-module-id file))
++                     (hash-put! source-identities file id)
++                     id)))))
+           (else
+            (string->symbol file)))))
+ 
+@@ -302,6 +319,8 @@
+     (def (build-coordinator spec)
+       (let* ((file (spec-file spec settings))
+              (mod (import/mx file)))
++        (unless (eq? (module-id spec) (expander-context-id mod))
++          (error "module identity changed between native read and expansion" file))
+         (for (in (module-context-import mod))
+           (consider in (expander-context-id mod)))
+         (if (or (build? spec)
