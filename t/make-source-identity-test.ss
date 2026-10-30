@@ -1,6 +1,7 @@
 ;;; Native metadata preserves expansion, linked identities and compiled consumers.
 (import (prefix-in :std/make native.)
         :gerbil/compiler :gerbil/expander
+        (only-in :std/sync/barrier make-barrier barrier-error! barrier-wait!)
         (only-in :std/io/tempfile call-with-temporary-directory)
         (only-in :std/misc/process run-process)
         (only-in :std/misc/ports read-all-as-string))
@@ -78,6 +79,62 @@
               "cached custom reader identity mismatch")
     (require! (equal? (call-with-input-file marker read-all-as-string) "read\n")
               "custom reader was executed more than once")
+    ;; Failure presence is independent of its Scheme value, including #f.
+    ;; Completion and a later error must not overwrite the first failure.
+    (for-each
+      (lambda (limit)
+        (def barrier (make-barrier limit))
+        (def seen? #f)
+        (def observed 'missing)
+        (barrier-error! barrier #f)
+        (barrier-error! barrier 'later-error)
+        (with-catch
+          (lambda (error) (set! seen? #t) (set! observed error))
+          (lambda () (barrier-wait! barrier)))
+        (require! (and seen? (eq? observed #f))
+                  "the first false barrier failure was lost or replaced"))
+      '(0 1))
+    ;; A source expansion failure must reach Make's caller, not its watchdog.
+    ;; Write Scheme data so paths and source forms keep their native meaning.
+    (for-each
+      (lambda (entry)
+        (def name (car entry))
+        (write! (string-append name ".ss") (cadr entry))
+        (def runner (path-expand (string-append name "-runner.ss") root))
+        (call-with-output-file runner
+          (lambda (port)
+            (write
+              `(begin
+                 (import (prefix-in :std/make native.))
+                 (def (main)
+                   (def rejected? #f)
+                   (with-catch
+                     (lambda (error) (set! rejected? #t))
+                     (lambda ()
+                       (native.make (list ,name)
+                         srcdir: ,root
+                         libdir: ,(path-expand (string-append name "-lib") root)
+                         bindir: ,(path-expand (string-append name "-bin") root)
+                         parallelize: 1)))
+                   (unless rejected? (error "source failure was admitted"))
+                   (displayln "NATIVE-SOURCE-FAILURE-CAUGHT")))
+              port)))
+        (def output
+          (run-process
+            (list (getenv "SDK_NATIVE_TIMEOUT_PROGRAM" "timeout")
+                  "--signal=TERM" "--kill-after=2s" "10s"
+                  "gxi" "-:max-heap=2G,debug=q" runner)
+            stderr-redirection: #t
+            coprocess: (lambda (process)
+                         (close-output-port process)
+                         (read-all-as-string process))))
+        (require! (and (string-contains output "NATIVE-SOURCE-FAILURE-BODY")
+                       (string-contains output "NATIVE-SOURCE-FAILURE-CAUGHT"))
+                  "source failure did not execute and reach the caller"))
+      '(("coordinator-error"
+         "(begin-syntax (displayln \"NATIVE-SOURCE-FAILURE-BODY\") (error \"native-source-error\"))\n")
+        ("coordinator-false"
+         "(begin-syntax (displayln \"NATIVE-SOURCE-FAILURE-BODY\") (raise #f))\n")))
     ;; Trace real compiler processes for an independent-source-first declaration.
     ;; Shared work has two consumers; its compilation should precede that leaf.
     (create-directory (path-expand "schedule" root))

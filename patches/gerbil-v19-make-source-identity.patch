@@ -1,10 +1,11 @@
 From: tao3k team and Contributors
-Subject: Native source identity and declaration-guided build ordering
+Subject: Native module frontier, worker readiness and failure propagation
 
 Read source identity without expanding ordinary or explicit-header bodies.
-Scheduling hints come from unexpanded native declarations; actual expanded
-imports retain authority for dependency eligibility. Keep existing queues,
-waits and machine capacity. Opaque reader effects remain cached exactly once.
+Use declaration hints only for ordering; actual expanded imports own dependency
+eligibility. Ready native workers before source coordinators and reuse native
+barrier error handling for both. Preserve the first arbitrary Scheme failure,
+including #f, independently from its presence. Keep all targets and capacity.
 
 diff --git a/src/gerbil/expander/module.ss b/src/gerbil/expander/module.ss
 --- a/src/gerbil/expander/module.ss
@@ -67,10 +68,11 @@ diff --git a/src/gerbil/expander/module.ss b/src/gerbil/expander/module.ss
 diff --git a/src/std/make.ss b/src/std/make.ss
 --- a/src/std/make.ss
 +++ b/src/std/make.ss
-@@ -204,6 +204,84 @@
+@@ -203,6 +203,84 @@
+     (make-build buildspec settings))
    (when (> (settings-parallelize settings) 1)
      (execute-pending-compile-jobs!)))
-
++
 +;; Source declarations supply scheduling hints, never dependency authority.
 +;; Actual expanded imports and the original completion waits remain unchanged.
 +(def (dependency-build-order specs module-id source-path)
@@ -148,10 +150,9 @@ diff --git a/src/std/make.ss b/src/std/make.ss
 +    ((module-export? entry) (build-import-context (module-export-context entry)))
 +    ((import-set? entry) (build-import-context (import-set-source entry)))
 +    (else (error "unexpected import" entry))))
-+
+
  (def (make-build buildspec-in settings)
    (parameterize ((current-compilation-target (settings-target settings)))
-     (def buildspec (normalize-buildspec buildspec-in))
 @@ -233,13 +311,19 @@
      ;; import with mutex
      (def (import/mx mod)
@@ -173,18 +174,52 @@ diff --git a/src/std/make.ss b/src/std/make.ss
            (else
             (string->symbol file)))))
 
-@@ -302,6 +386,9 @@
+@@ -290,38 +374,32 @@
+
+     ;; the build worker itself
+     (def (build-worker)
+-      (try
+-       (for (spec workch)
+-         (build spec settings)
+-         (completion-post! (hash-ref completions (module-id spec)) 'done))
+-       (catch (e)
+-         (barrier-error! build-barrier e)
+-         (raise e))))
++      (with-barrier-error build-barrier
++        (for (spec workch)
++          (build spec settings)
++          (completion-post! (hash-ref completions (module-id spec)) 'done))))
+
+     ;; the build coordinator
      (def (build-coordinator spec)
-       (let* ((file (spec-file spec settings))
-              (mod (import/mx file)))
-+        (when (hash-key? source-identities file)
-+          (unless (eq? (module-id spec) (expander-context-id mod))
-+            (error "module identity changed between native read and expansion" file)))
-         (for (in (module-context-import mod))
-           (consider in (expander-context-id mod)))
-         (if (or (build? spec)
-@@ -314,14 +401,7 @@
-         (barrier-post! build-barrier)))
+-      (let* ((file (spec-file spec settings))
+-             (mod (import/mx file)))
+-        (for (in (module-context-import mod))
+-          (consider in (expander-context-id mod)))
+-        (if (or (build? spec)
+-                (build-dependent? spec mod))
+-          ;; it needs to be built, put it to the work channel
+-          (channel-put workch spec)
+-          ;; no need to build, unblock dependents
+-          (completion-post! (hash-ref completions (module-id spec)) 'done))
+-        ;; clear the barrrier
+-        (barrier-post! build-barrier)))
++      (with-barrier-error build-barrier
++        (let* ((file (spec-file spec settings))
++               (mod (import/mx file)))
++          (when (hash-key? source-identities file)
++            (unless (eq? (module-id spec) (expander-context-id mod))
++              (error "module identity changed between native read and expansion" file)))
++          (for (in (module-context-import mod))
++            (consider in (expander-context-id mod)))
++          (if (or (build? spec)
++                  (build-dependent? spec mod))
++            ;; it needs to be built, put it to the work channel
++            (channel-put workch spec)
++            ;; no need to build, unblock dependents
++            (completion-post! (hash-ref completions (module-id spec)) 'done))
++          ;; clear the barrrier
++          (barrier-post! build-barrier))))
 
      (def (consider in self)
 -      (cond
@@ -199,13 +234,85 @@ diff --git a/src/std/make.ss b/src/std/make.ss
 
      (def (wait-for ctx self)
        (alet* ((id (expander-context-id ctx)) ; :<root> prelude has no id
-@@ -344,7 +424,8 @@
+@@ -342,19 +420,19 @@
+       (let (id (module-id spec))
+         (hash-put! completions id (make-completion `(build ,id)))))
 
-     ;; spawn a thread for each spec that waits for the dependency completions
-     ;; and pushes to the work channel if necessary.
+-    ;; spawn a thread for each spec that waits for the dependency completions
+-    ;; and pushes to the work channel if necessary.
 -    (for (spec buildspec)
-+    (for (spec (dependency-build-order buildspec module-id
-+                                      (cut spec-file <> settings)))
-       (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
+-      (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
+-
+-    ;; spawn the workers and wait
+-    (let (workers (map (lambda (i) (spawn/name `(worker ,i) build-worker))
+-                       (iota build-worker-count)))
+-      ;; wait for the coordinators to complete
++    ;; Finish advisory discovery before allocating tasks. Start consumers before
++    ;; coordinators so a scheduler yield during source expansion cannot defer
++    ;; creation of the workers needed by already-ready work.
++    (let* ((ordered-specs
++            (dependency-build-order buildspec module-id
++                                    (cut spec-file <> settings)))
++           (workers
++            (map (lambda (i) (spawn/name `(worker ,i) build-worker))
++                 (iota build-worker-count))))
++      (for (spec ordered-specs)
++        (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
+       (barrier-wait! build-barrier)
+-      ;; close the channel (no more work)
+       (channel-close workch)
+-      ;; and wait for the workers to complete
+       (for-each thread-join! workers))))
 
-     ;; spawn the workers and wait
+ ;; Dependencies may have been rebuilt since an earlier freshness check, including
+diff --git a/src/std/sync/barrier.ss b/src/std/sync/barrier.ss
+--- a/src/std/sync/barrier.ss
++++ b/src/std/sync/barrier.ss
+@@ -9,11 +9,13 @@
+         barrier-error!
+         with-barrier-error)
+
++;; Scheme can raise #f; failure presence must not depend on payload truth.
+ (defstruct Barrier ((mx    :- :mutex)
+                     (cv    :- :condvar)
+                     (count :- :fixnum)
+                     (limit :- :fixnum)
+-                    exn)
++                    exn
++                    (failed? :- :boolean))
+   constructor: :init! final: #t )
+
+ (defmethod {:init! Barrier}
+@@ -21,7 +23,8 @@
+     (set! self.mx (make-mutex 'barrier))
+     (set! self.cv (make-condition-variable 'barrier))
+     (set! self.count 0)
+-    (set! self.limit limit)))
++    (set! self.limit limit)
++    (set! self.failed? #f)))
+
+ (def (barrier-wait! (b : Barrier))
+   => :void
+@@ -29,7 +32,7 @@
+     => :void
+     (mutex-lock! b.mx)
+     (cond
+-     (b.exn
++     (b.failed?
+       (mutex-unlock! b.mx)
+       (abort! (raise b.exn)))
+      ((fx< b.count b.limit)
+@@ -50,10 +53,12 @@
+     (mutex-unlock! b.mx)
+     (void)))
+
++;; Preserve the first failure even when its value is #f.
+ (def (barrier-error! (b : Barrier) exn)
+   => :void
+   (mutex-lock! b.mx)
+-  (unless b.exn
++  (unless b.failed?
++    (set! b.failed? #t)
+     (set! b.exn exn))
+   (condition-variable-broadcast! b.cv)
+   (mutex-unlock! b.mx)
