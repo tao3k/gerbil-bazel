@@ -125,6 +125,10 @@ producer_compiler={producer_compiler}
 producer_object_options={producer_object_options}
 producer_dynamic_options={producer_dynamic_options}
 platform_dynamic_link_options={platform_dynamic_link_options}
+# A standalone identity query has no compilation mode or producer options.
+if [[ $# == 1 && $1 == -v ]]; then
+  exec "$raw_gsc" "$@"
+fi
 mode=dynamic
 for argument in "$@"; do
   case "$argument" in

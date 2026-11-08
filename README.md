@@ -196,6 +196,10 @@ mode flags, implicit or explicit dynamic compilation restores the complete
 complete `FLAGS_OBJ` value. `-c`, `-link`, and `-exe` pass through without a
 wrapper-added compiler override.
 
+A standalone `gsc -v` identity query passes directly to the installed compiler,
+preserving stdout, stderr, and exit status. A mixed argument list containing
+`-v` still follows the ordinary compilation-mode rules above.
+
 On Darwin, dynamic compilation appends `-Wl,-undefined,dynamic_lookup` after
 the installed producer flags, and Gerbil's public `GERBIL_GCC` boundary selects
 the Xcode Clang driver for the final executable link. Linux restores the same
