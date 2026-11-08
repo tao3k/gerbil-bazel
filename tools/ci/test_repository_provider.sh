@@ -404,6 +404,8 @@ fi
       '.gambitProducerOptions == {dynamic: "-bundle", object: "-fPIC"}' \
       "$output_base/$receipt_relative" >/dev/null
   fi
+  environment_launcher="$(dirname "$output_base/$receipt_relative")/native_scheme_env.sh"
+  bash "$provider_fixture/budget_handoff_test.sh" "$environment_launcher"
   tool_started_at="$SECONDS"
   observed_version="$(
     "$bazel_bin" --output_user_root="$test_root/bazel" run \

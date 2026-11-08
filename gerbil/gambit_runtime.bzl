@@ -10,6 +10,37 @@ def _append_runtime_option(options, option):
 def _shell_quote(value):
     return "'{}'".format(value.replace("'", "'\"'\"'"))
 
+def tool_environment_exports(environment):
+    """Bind tool identities without replacing invocation-owned resource leases."""
+    lines = []
+    for key in sorted(environment.keys()):
+        value = _shell_quote(environment[key])
+        if key == "GERBIL_BUILD_CORES":
+            lines.extend([
+                "if [[ ${GERBIL_BUILD_CORES+x} != x ]]; then",
+                "  export GERBIL_BUILD_CORES={}".format(value),
+                "fi",
+            ])
+        elif key == "GAMBOPT" and environment.get("GERBIL_HOME", ""):
+            home = environment["GERBIL_HOME"]
+            mappings = "~~={},~~bin={}/bin,~~lib={}/lib".format(home, home, home)
+            lines.extend([
+                "if [[ ${GAMBOPT+x} == x ]]; then",
+                "  gambit_runtime_mappings={}".format(_shell_quote(mappings)),
+                '  case "$GAMBOPT" in',
+                '    "$gambit_runtime_mappings"|*",$gambit_runtime_mappings") ;;',
+                '    *) GAMBOPT="${GAMBOPT:+${GAMBOPT},}${gambit_runtime_mappings}" ;;',
+                "  esac",
+                "  export GAMBOPT",
+                "  unset gambit_runtime_mappings",
+                "else",
+                "  export GAMBOPT={}".format(value),
+                "fi",
+            ])
+        else:
+            lines.append("export {}={}".format(key, value))
+    return "\n".join(lines)
+
 def _gambuild_value(repository_ctx, gerbil_home, variable):
     gambuild = repository_ctx.path("{}/bin/gambuild-C".format(gerbil_home))
     if not gambuild.exists:

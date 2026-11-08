@@ -94,6 +94,12 @@ an unconditional `gxpkg list`. A dependency installation can make
 previously missing project packages ready; the next Bazel command then
 re-evaluates the watched project-library view.
 
+Generated launchers preserve invocation-owned `GERBIL_BUILD_CORES` and
+`GAMBOPT` resource settings. Provider runtime mappings remain authoritative
+and nested launcher entry does not duplicate them. Deadline and memory
+refusals retain their original exit codes and report only the owned process
+tree, with bounded diagnostics that omit arguments and environment values.
+
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")
 bazel_dep(name = "platforms", version = "1.0.0")
