@@ -448,7 +448,7 @@ fi
               (compile-module (getenv "GERBIL_PROVIDER_PROBE_SOURCE")
                 (list output-dir: (getenv "GERBIL_PROVIDER_PROBE_OUTPUT")
                       static: #t invoke-gsc: #t)))'
-    test -s "$static_probe_output/static/compiler-driver-probe.o"
+    test -s "$static_probe_output/static/compiler-driver-probe.scm"
     test -s "$static_probe_output/compiler-driver-probe.o1" ||
       test -s "$static_probe_output/compiler-driver-probe~0.o1"
   fi
