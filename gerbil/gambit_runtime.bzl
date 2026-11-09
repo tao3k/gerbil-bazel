@@ -434,6 +434,25 @@ def normalized_gambit_runtime(
         producer_options,
         gambit_dynamic_link_options,
     )
+    # Gerbil's Darwin dynamic-object path invokes gambuild-C next to GERBIL_GSC.
+    # Keep that invocation in the same compiler family as the GSC wrapper.
+    repository_ctx.file(
+        "gambuild-C",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${{1:-}} == dyn ]]; then
+  export BUILD_DYN_CC_PARAM="${{BASH_SOURCE[0]%/*}}/gerbil-cc"
+  export BUILD_DYN_CC_OPTIONS_PARAM={producer_dynamic_options}$'\n'"${{BUILD_DYN_CC_OPTIONS_PARAM:-}}"
+  export BUILD_DYN_LD_OPTIONS_PARAM={platform_dynamic_link_options}$'\n'"${{BUILD_DYN_LD_OPTIONS_PARAM:-}}"
+fi
+exec {raw_gambuild} "$@"
+""".format(
+            raw_gambuild = _shell_quote(str(gambit_bin) + "/gambuild-C"),
+            producer_dynamic_options = _shell_quote(producer_options.dynamic),
+            platform_dynamic_link_options = _shell_quote(gambit_dynamic_link_options),
+        ),
+        executable = True,
+    )
     executable_linker = gambit_executable_linker if gambit_executable_linker else str(compiler.path)
     gcc = _materialized_executable_linker(repository_ctx, executable_linker)
     output = dict(environment)
