@@ -14,15 +14,13 @@ gerbil = use_extension(
 gerbil.host(
     name = "local_gerbil",
     expected_version_prefixes = [
-        "Gerbil f0badc7",
-        "Gerbil d801e7a",
+        "Gerbil 2591dcd",
     ],
 )
 gerbil.host(
     name = "project_gerbil",
     expected_version_prefixes = [
-        "Gerbil f0badc7",
-        "Gerbil d801e7a",
+        "Gerbil 2591dcd",
     ],
     project_dependency_source_packages = ["clan"],
     project_library_relative_path = "project-library",

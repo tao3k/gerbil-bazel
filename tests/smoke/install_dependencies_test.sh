@@ -84,7 +84,7 @@ chmod +x "$fake_gxpkg"
 sed \
   -e "s|{{GXI}}|'$fake_gxi'|g" \
   -e "s|{{GXPKG}}|'$fake_gxpkg'|g" \
-  -e "s|{{NATIVE_ENVIRONMENT_ARGS}}|'CC=fake-cc' 'GERBIL_BUILD_CORES=6' 'GERBIL_BAZEL_CPU_COUNT=7' 'GERBIL_BAZEL_MEMORY_BYTES=17179869184'|g" \
+  -e "s|{{ENVIRONMENT}}|export CC=fake-cc GERBIL_BUILD_CORES=6 GERBIL_BAZEL_CPU_COUNT=7 GERBIL_BAZEL_MEMORY_BYTES=17179869184|g" \
   -e "s|{{RESOURCE_GUARD}}|'$fake_guard'|g" \
   "$template" >"$rendered"
 chmod +x "$rendered"

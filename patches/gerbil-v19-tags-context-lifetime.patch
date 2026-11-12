@@ -1,0 +1,203 @@
+diff --git a/src/tools/gxtags.ss b/src/tools/gxtags.ss
+index 0516917..62c69a4 100644
+--- a/src/tools/gxtags.ss
++++ b/src/tools/gxtags.ss
+@@ -5,12 +5,14 @@
+ ;;; Usage: gxtags [-a] [-o tags-file] file-or-directory ...
+ 
+ (import :gerbil/expander
+-        (only-in :gerbil/compiler/base ast-case)
++        (only-in :gerbil/compiler/base ast-case available-build-cores)
+         (only-in :gerbil/core/expander syntax)
+         :std/cli/getopt
+         :std/io/tempfile
+-        (only-in :std/list/list delete-duplicates/hash)
++        (only-in :std/misc/process run-process/batch)
++        (only-in :std/list/list delete-duplicates/hash take drop)
+         :std/string/utf8
++        (only-in :std/string/path path-default-extension)
+         ./env)
+ (export main make-tags)
+ 
+@@ -28,17 +30,42 @@
+       help: "TAGS index format; emacs or vim; uses the GERBIL_TAGS_FORMAT environment variable, with default value of emacs if it is not set"
+       value: string->symbol
+       default: (string->symbol (getenv "GERBIL_TAGS_FORMAT" "emacs")))
++    (option 'jobs "-j" "--jobs"
++      help: "parallel source-index workers; defaults to native build capacity"
++      value: string->number
++      default: (max 1 (available-build-cores)))
++    (option 'source-list "--source-list"
++      help: "read an ordered Scheme list of source paths")
+     (rest-arguments 'input
+       help: "source file or directory")))
+ 
+ (def (gxtags-main (opt : HashTable))
+   => :void
+   (setup-local-env! opt)
+-  (let (inputs (hash-ref opt 'input []))
+-    (make-tags (if (null? inputs) ["."] inputs)
+-               (hash-get opt 'output)
+-               (hash-get opt 'append)
+-               (hash-get opt 'format))))
++  (def jobs (hash-ref opt 'jobs))
++  (unless (and (integer? jobs) (> jobs 0))
++    (error "invalid source-index worker count" jobs))
++  (def listed
++    (cond
++     ((hash-get opt 'source-list)
++      => (lambda (path)
++           (call-with-input-file path
++             (lambda (input)
++               (let (paths (read input))
++                 (unless (and (list? paths) (andmap string? paths)
++                              (eof-object? (read input)))
++                   (error "invalid source path list" path))
++                 paths)))))
++     (else [])))
++  (def inputs (append listed (hash-ref opt 'input [])))
++  (def selected
++    (if (and (null? inputs) (not (hash-get opt 'source-list))) ["."] inputs))
++  (def output (hash-get opt 'output))
++  (def append? (hash-get opt 'append))
++  (def format (hash-get opt 'format))
++  (if (= jobs 1)
++    (make-tags selected output append? format)
++    (make-tags/parallel selected output append? format jobs)))
+ 
+ (def current-tags-path
+   (make-parameter #f))
+@@ -48,6 +75,23 @@
+ (def (make-tags (inputs : :list) (tagfile : :string)
+                 (append? : :boolean := #f) (format : :symbol := 'emacs))
+   => :void
++  (let* ((registry __module-registry)
++         (saved (hash-copy registry)))
++    (unwind-protect
++      (make-tags/context inputs tagfile append? format)
++      (restore-tag-registry! registry saved))))
++
++(def (restore-tag-registry! (registry : HashTable) (saved : HashTable))
++  => :void
++  (hash-clear! registry)
++  (hash-for-each
++    (lambda (key value)
++      (hash-put! registry key value))
++    saved))
++
++(def (make-tags/context (inputs : :list) (tagfile : :string)
++                        (append? : :boolean) (format : :symbol))
++  => :void
+   ;; Validate before opening the destination so a bad format cannot truncate it.
+   (unless (memq format '(emacs vim))
+     (error "unknown TAGS index format" format))
+@@ -65,24 +109,99 @@
+ 
+ (def (tag-input (input : :string) (output : :character-port))
+   => :void
+-  (if (file-exists? input)
+-    (if (file-directory? input)
+-      (tag-directory input output)
+-      (tag-source-file input output))
+-    (error "No such file or directory" input)))
++  (walk-tag-input input (cut tag-source-file <> output)))
+ 
+-(def (tag-directory (dirname : :string) (output : :character-port))
++(def (walk-tag-input (input : :string) (visit : :procedure))
+   => :void
+-  (let (files (list-sort string<? (directory-files dirname)))
++  (cond
++   ((not (file-exists? input)) (error "No such file or directory" input))
++   ((not (file-directory? input)) (visit input))
++   (else
+     (for-each
+       (lambda (file)
+-        (let (path (path-expand file dirname))
++        (let (path (path-expand file input))
+           (when (or (file-directory? path)
+                     (member (path-extension path) '(".ss" ".ssi")))
+-            (tag-input path output))))
+-      files)))
++            (walk-tag-input path visit))))
++      (list-sort string<? (directory-files input))))))
++
++(def (make-tags/parallel (inputs : :list) (tagfile : :string)
++                         (append? : :boolean) (format : :symbol) (jobs : :integer))
++  => :void
++  ;; Workers own separate expanders. Only ordered tag bytes cross the process
++  ;; boundary; the parent never shares or concurrently mutates a registry.
++  (unless (memq format '(emacs vim))
++    (error "unknown TAGS index format" format))
++  (def sources [])
++  (for-each (cut walk-tag-input <> (lambda (path) (set! sources (cons path sources)))) inputs)
++  (set! sources (reverse sources))
++  (if (< (length sources) 2)
++    (make-tags sources tagfile append? format)
++    (let* ((workers (min jobs (length sources)))
++           (width (quotient (+ (length sources) workers -1) workers))
++           (root (make-temporary-file-name "gxtags-workers-")))
++      (create-directory root)
++      (unwind-protect
++        (let ()
++          (def parts
++            (let loop ((remaining sources) (index 0) (result []))
++              (if (null? remaining) (reverse result)
++                (let* ((size (min width (length remaining)))
++                       (stem (path-expand (number->string index) root))
++                       (input (path-default-extension stem ".inputs"))
++                       (output (path-default-extension stem ".tags")))
++                  (call-with-output-file input (cut write (take remaining size) <>))
++                  (loop (drop remaining size) (+ index 1)
++                        (cons (cons input output) result))))))
++          (def tasks
++            (map
++              (lambda (part)
++                (thread-start!
++                  (make-thread
++                    (lambda ()
++                      (with-catch
++                        (lambda (failure) (cons #f failure))
++                        (lambda ()
++                          (run-process/batch
++                            ["gxtags" "--global-env" "--jobs" "1" "--source-list" (car part)
++                             "-o" (cdr part) "-t" (symbol->string format)])
++                          (cons #t #f)))))))
++              parts))
++          ;; Join every bounded worker before cleanup or publication. A raised
++          ;; #f is still failure; never use the exception value as a predicate.
++          (def results (map thread-join! tasks))
++          (for-each (lambda (result) (unless (car result) (raise (cdr result)))) results)
++          (call-with-output-file [path: tagfile append: append?]
++            (lambda (output)
++              (for-each
++                (lambda (part) (display (read-file-string (cdr part)) output))
++                parts)))
++          (when (eq? format 'vim) (sort-tags! tagfile)))
++        (clear-temporary-file! root)))))
+ 
+ (def (tag-source-file (filename : :string) (output : :character-port))
++  => :void
++  ;; Tagging needs the expanded source only until its exported locations have
++  ;; been written. Keep the caller's registry, but do not retain every indexed
++  ;; source AST for the lifetime of a whole package scan.
++  (let* ((registry __module-registry)
++         (saved (hash-copy registry)))
++    (unwind-protect
++      (tag-source-file/context filename output)
++      (begin
++        ;; Compiled interfaces are reusable within this scan. Retain their
++        ;; small contexts so every source need not reload the same imports.
++        ;; The outer make-tags scope restores the caller's original registry.
++        (hash-for-each
++          (lambda (key value)
++            (when (and (module-context? value)
++                       (string? (module-context-path value))
++                       (equal? (path-extension (module-context-path value)) ".ssi"))
++              (hash-put! saved key value)))
++          registry)
++        (restore-tag-registry! registry saved)))))
++
++(def (tag-source-file/context (filename : :string) (output : :character-port))
+   => :void
+   (cond
+    ((try-import-module filename)

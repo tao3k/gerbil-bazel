@@ -10,6 +10,37 @@ def _append_runtime_option(options, option):
 def _shell_quote(value):
     return "'{}'".format(value.replace("'", "'\"'\"'"))
 
+def tool_environment_exports(environment):
+    """Bind tool identities without replacing invocation-owned resource leases."""
+    lines = []
+    for key in sorted(environment.keys()):
+        value = _shell_quote(environment[key])
+        if key == "GERBIL_BUILD_CORES":
+            lines.extend([
+                "if [[ ${GERBIL_BUILD_CORES+x} != x ]]; then",
+                "  export GERBIL_BUILD_CORES={}".format(value),
+                "fi",
+            ])
+        elif key == "GAMBOPT" and environment.get("GERBIL_HOME", ""):
+            home = environment["GERBIL_HOME"]
+            mappings = "~~={},~~bin={}/bin,~~lib={}/lib".format(home, home, home)
+            lines.extend([
+                "if [[ ${GAMBOPT+x} == x ]]; then",
+                "  gambit_runtime_mappings={}".format(_shell_quote(mappings)),
+                '  case "$GAMBOPT" in',
+                '    "$gambit_runtime_mappings"|*",$gambit_runtime_mappings") ;;',
+                '    *) GAMBOPT="${GAMBOPT:+${GAMBOPT},}${gambit_runtime_mappings}" ;;',
+                "  esac",
+                "  export GAMBOPT",
+                "  unset gambit_runtime_mappings",
+                "else",
+                "  export GAMBOPT={}".format(value),
+                "fi",
+            ])
+        else:
+            lines.append("export {}={}".format(key, value))
+    return "\n".join(lines)
+
 def _gambuild_value(repository_ctx, gerbil_home, variable):
     gambuild = repository_ctx.path("{}/bin/gambuild-C".format(gerbil_home))
     if not gambuild.exists:
@@ -125,6 +156,10 @@ producer_compiler={producer_compiler}
 producer_object_options={producer_object_options}
 producer_dynamic_options={producer_dynamic_options}
 platform_dynamic_link_options={platform_dynamic_link_options}
+# A standalone identity query has no compilation mode or producer options.
+if [[ $# == 1 && $1 == -v ]]; then
+  exec "$raw_gsc" "$@"
+fi
 mode=dynamic
 for argument in "$@"; do
   case "$argument" in
@@ -398,6 +433,25 @@ def normalized_gambit_runtime(
         compiler.path,
         producer_options,
         gambit_dynamic_link_options,
+    )
+    # Gerbil's Darwin dynamic-object path invokes gambuild-C next to GERBIL_GSC.
+    # Keep that invocation in the same compiler family as the GSC wrapper.
+    repository_ctx.file(
+        "gambuild-C",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${{1:-}} == dyn ]]; then
+  export BUILD_DYN_CC_PARAM="${{BASH_SOURCE[0]%/*}}/gerbil-cc"
+  export BUILD_DYN_CC_OPTIONS_PARAM={producer_dynamic_options}$'\n'"${{BUILD_DYN_CC_OPTIONS_PARAM:-}}"
+  export BUILD_DYN_LD_OPTIONS_PARAM={platform_dynamic_link_options}$'\n'"${{BUILD_DYN_LD_OPTIONS_PARAM:-}}"
+fi
+exec {raw_gambuild} "$@"
+""".format(
+            raw_gambuild = _shell_quote(str(gambit_bin) + "/gambuild-C"),
+            producer_dynamic_options = _shell_quote(producer_options.dynamic),
+            platform_dynamic_link_options = _shell_quote(gambit_dynamic_link_options),
+        ),
+        executable = True,
     )
     executable_linker = gambit_executable_linker if gambit_executable_linker else str(compiler.path)
     gcc = _materialized_executable_linker(repository_ctx, executable_linker)

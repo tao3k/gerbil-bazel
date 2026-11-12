@@ -1,0 +1,16 @@
+direction: right
+baseline: "Published distribution e5296bf8\nGerbil2591dcd /native Gambit dcd677c\nOriginal flags and runtime patches"
+fix: "Tool entries only\nUpstream unified aliases\nHarness0/42 and help0\nPreserve caller compiler heap options"
+build: "Original formal publication workflow\nMachine-derived workers / per-process heap\nNative streaming executor; no VM upgrade"
+controls: "Installed +relocated native commands\nDefault tags; pass/fail/help/missing\nKeep failed source and logs"
+release: "Immutable platform archive +SHA256\nActual source/gitlink/build receipt"
+parser: "Native gerbil build/test\nFull original Suite and negative controls\nTwo-platform cold +restore qualification OPEN"
+baseline -> fix -> build -> controls -> release -> parser
+
+streaming: "Native compiler executor\nLinux and Darwin\nStart work before drain"
+streaming_probe: "Real executor contract\nBefore-drain message / parameter capture\nNested work / raised false / reopen"
+streaming -> streaming_probe: "release admission"
+
+object_dag: "Native executable object DAG\nLinux and Darwin\nLink only after every object succeeds"
+object_test: "Actual Make / compiler / executable\nOutput 42\nObject failure leaves no executable"
+streaming -> object_dag -> object_test

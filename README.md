@@ -94,6 +94,12 @@ an unconditional `gxpkg list`. A dependency installation can make
 previously missing project packages ready; the next Bazel command then
 re-evaluates the watched project-library view.
 
+Generated launchers preserve invocation-owned `GERBIL_BUILD_CORES` and
+`GAMBOPT` resource settings. Provider runtime mappings remain authoritative
+and nested launcher entry does not duplicate them. Deadline and memory
+refusals retain their original exit codes and report only the owned process
+tree, with bounded diagnostics that omit arguments and environment values.
+
 ```starlark
 bazel_dep(name = "gerbil_bazel", version = "0.1.0")
 bazel_dep(name = "platforms", version = "1.0.0")
@@ -195,6 +201,10 @@ mode flags, implicit or explicit dynamic compilation restores the complete
 `FLAGS_DYN` value before adding any platform option, while `-obj` restores the
 complete `FLAGS_OBJ` value. `-c`, `-link`, and `-exe` pass through without a
 wrapper-added compiler override.
+
+A standalone `gsc -v` identity query passes directly to the installed compiler,
+preserving stdout, stderr, and exit status. A mixed argument list containing
+`-v` still follows the ordinary compilation-mode rules above.
 
 On Darwin, dynamic compilation appends `-Wl,-undefined,dynamic_lookup` after
 the installed producer flags, and Gerbil's public `GERBIL_GCC` boundary selects
