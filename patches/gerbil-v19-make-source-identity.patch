@@ -68,42 +68,7 @@ diff --git a/src/gerbil/expander/module.ss b/src/gerbil/expander/module.ss
 diff --git a/src/std/make.ss b/src/std/make.ss
 --- a/src/std/make.ss
 +++ b/src/std/make.ss
-@@ -4,6 +4,7 @@
- ;;; build-spec: see documentation in doc/reference/make.md
-
- (import :gerbil/compiler
-+        (only-in :gerbil/compiler/base module-id->path-string)
-         :gerbil/expander
-         :std/sync/completion
-         :std/sync/channel
-@@ -70,7 +71,7 @@
-    full-program-optimization
-    build-release
-    build-optimized
--   target)
-+   target output-identities output-identities-mx)
-   transparent: #t constructor: :init!)
-
- (defmethod {:init! settings}
-@@ -111,7 +112,7 @@
-       full-program-optimization
-       build-release
-       build-optimized
--      target)))
-+      target (make-hash-table) (make-mutex 'make-output-identities))))
-
- (def (gerbil-build-cores (cpu-count-spec #t))
-   ;; TODO: for the default (catch) case, use something like
-@@ -190,7 +191,7 @@
-                                (append-map (cut spec-outputs <> settings) submodules) ...])
-     ([(or exe: static-exe: optimized-exe: optimized-static-exe:) modf . opts]
-      [(binary-path modf opts settings)
--      (static-path modf settings)])
-+      (cadr (gxc-outputs modf #f settings))])
-     ([static-include: file] [(static-file-path file settings)])
-     ([copy: file] [(library-path file #f settings)])
-     (else (error "unknwon buildspec" spec))))
-@@ -203,6 +204,84 @@
+@@ -203,6 +203,84 @@
      (make-build buildspec settings))
    (when (> (settings-parallelize settings) 1)
      (execute-pending-compile-jobs!)))
@@ -188,7 +153,7 @@ diff --git a/src/std/make.ss b/src/std/make.ss
 
  (def (make-build buildspec-in settings)
    (parameterize ((current-compilation-target (settings-target settings)))
-@@ -233,13 +312,19 @@
+@@ -233,13 +311,19 @@
      ;; import with mutex
      (def (import/mx mod)
        (with-lock import-mx (cut import-module mod #f #f)))
@@ -209,7 +174,7 @@ diff --git a/src/std/make.ss b/src/std/make.ss
            (else
             (string->symbol file)))))
 
-@@ -290,38 +375,32 @@
+@@ -290,38 +374,32 @@
 
      ;; the build worker itself
      (def (build-worker)
@@ -269,7 +234,7 @@ diff --git a/src/std/make.ss b/src/std/make.ss
 
      (def (wait-for ctx self)
        (alet* ((id (expander-context-id ctx)) ; :<root> prelude has no id
-@@ -342,19 +421,19 @@
+@@ -342,19 +420,19 @@
        (let (id (module-id spec))
          (hash-put! completions id (make-completion `(build ,id)))))
 
@@ -300,42 +265,6 @@ diff --git a/src/std/make.ss b/src/std/make.ss
        (for-each thread-join! workers))))
 
  ;; Dependencies may have been rebuilt since an earlier freshness check, including
-@@ -491,8 +570,25 @@
-      (error "Bad buildspec" spec))))
-
- (def (gxc-outputs mod opts settings)
--  [(library-path mod ".ssi" settings)
--   (static-path mod settings)])
-+  (def id (gxc-output-id mod settings))
-+  (def path (module-id->path-string id))
-+  (def base (string-join (string-split path #\/) "__"))
-+  [(path-expand (string-append path ".ssi") (settings-libdir settings))
-+   (path-expand (string-append base ".scm")
-+                (path-expand "static" (settings-libdir settings)))])
-+
-+;; Reuse the native identity reader; its opaque-reader path retains the
-+;; ordinary expander's single invocation. This index belongs to one Make call.
-+(def (gxc-output-id mod settings)
-+  (def source (source-path mod ".ss" settings))
-+  (with-lock (settings-output-identities-mx settings)
-+    (lambda ()
-+      (or (hash-get (settings-output-identities settings) source)
-+          (let (id (if (file-exists? source)
-+                     (core-read-module-id source)
-+                     (string->symbol (prefix/ (settings-prefix settings) mod))))
-+            (hash-put! (settings-output-identities settings) source id)
-+            id)))))
-
- (def (gsc-compile-opts opts)
-   (match opts
-@@ -602,6 +698,7 @@
-   (def gsc-opts (compile-exe-gsc-opts opts))
-   (def gxc-opts
-     [invoke-gsc: #t
-+     output-dir: (settings-libdir settings)
-      output-file: binpath
-      verbose: (settings-verbose>=? settings 9)
-      debug: (settings-debug settings)
 diff --git a/src/std/sync/barrier.ss b/src/std/sync/barrier.ss
 --- a/src/std/sync/barrier.ss
 +++ b/src/std/sync/barrier.ss

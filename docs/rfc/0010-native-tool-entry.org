@@ -101,34 +101,3 @@ publishing an executable. The local installed Darwin SDK passed both branches;
 its first attempts refused a nonexecutable build entry and a stale external
 OpenSSL path, which are not counted as successful compilation. The real Linux
 producer and complete POO cold gate remain mandatory after this source change.
-
-* Dynamic module loading performance qualification
-
-Dynamic loading remains owned by Gerbil's runtime loader, module registry and
-initialization protocol. Performance work must not introduce a project loader,
-parallel module registry, successful-admission cache or replacement initializer.
-Use the existing bounded benchmark runner and official Gerbil operations.
-
-Keep three observations distinct: fresh CLI startup, native expansion/import
-metadata, and runtime module loading. Report the first load and repeated loads
-in the same process separately. New processes do not establish cold filesystem
-or OS code-signature caches; record that limitation rather than purging host
-state or warming a consumer before its measured first load.
-
-Compare SDK candidates in adjacent alternating runs with identical immutable
-source/products, dependency revisions, module order, heap policy and deadlines.
-Record the SDK and native binary identities, environment, host load, elapsed
-wall time and native user/system/GC samples. Harness imports belong outside
-operation samples and remain part of independently reported process totals.
-Use native load/import operations without open source observers or business
-scope preparation. Keep timeouts, refusal and incomplete-output samples in the
-receipt; a failed sample cannot be silently excluded from latency summaries.
-
-The Yuanxu repair encountered a 60-second idle refusal in an independent module
-admission control and a 120-second startup timeout after copying a complete
-SDK. These are failed local observations, not evidence that the Scheme loader
-itself is slow. A live process sample of the original SDK showed dyld waiting
-in dynamic-library mapping/fcntl. Native signatures checked valid on disk.
-The allocation of that waiting time among OS validation, library loading and
-Scheme initialization remains unqualified. Benchmarks must resolve that
-boundary before attributing a speedup to the loader or changing its design.
