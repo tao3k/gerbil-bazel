@@ -156,6 +156,28 @@
       prefix: "native-make-contract/schedule" parallelize: 1 verbose: #t)
     (require! (equal? (call-with-input-file trace read-line) "shared")
               "shared dependency was queued behind an unrelated leaf")
+    ;; The authored header owns outputs even when the directory package differs.
+    (def header-out (path-expand "header-out" root))
+    (def header-spec '("explicit"))
+    (def (build-header!)
+      (native.make header-spec srcdir: root libdir: header-out
+        prefix: "native-make-contract" parallelize: 1 verbose: #t))
+    (build-header!)
+    (def header-interface (path-expand "another/package/explicit.ssi" header-out))
+    (def header-static (path-expand "static/another__package__explicit.scm" header-out))
+    (require! (and (file-exists? header-interface) (file-exists? header-static))
+              "explicit header products were not emitted at native identities")
+    (def header-time (time->seconds (file-info-last-modification-time (file-info header-interface))))
+    (def hot-header (call-with-output-string
+                      (lambda (port) (parameterize ((current-output-port port)) (build-header!)))))
+    (require! (not (string-contains hot-header "... compile "))
+              "explicit header no-op recompiled")
+    (require! (equal? header-time (time->seconds (file-info-last-modification-time (file-info header-interface))))
+              "explicit header no-op replaced its product")
+    (native.make-clean header-spec srcdir: root libdir: header-out prefix: "native-make-contract")
+    (require! (not (or (file-exists? header-interface) (file-exists? header-static)))
+              "standard clean retained explicit header products")
+    (build-header!)
     (write! "consumer.ss" "(import \"./plain.ss\") (export result) (def result (+ answer 1))\n")
     (def output (path-expand "out" root))
     (native.make '("plain" "consumer") srcdir: root libdir: output
