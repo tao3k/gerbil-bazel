@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Pinned tao3k/gerbil darwin-acceleration revision
-        default: 812d24ea59f5deb6cda91c7475c1912c5dba47e9
+        default: e013f6750dd5006bf948955f73145b4d9ad2f7b2
         required: true
         type: string
       platform:
@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$UPSTREAM_REF" == 812d24ea59f5deb6cda91c7475c1912c5dba47e9 ]]
+          [[ "$UPSTREAM_REF" == e013f6750dd5006bf948955f73145b4d9ad2f7b2 ]]
           source_sha="$UPSTREAM_REF"
           staging_sha=cbe8ee7363c7554cf0abf47479d49aa515d182cb
           git init upstream-gerbil
