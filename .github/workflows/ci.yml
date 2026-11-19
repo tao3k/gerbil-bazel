@@ -20,13 +20,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GERBIL_FORMULA_REF: refs/heads/v0.19
-  GERBIL_FORMULA_REVISION: 20e7bc74a780e04a78798d21516a924249483895
+  GERBIL_BUILD_CORES: 2
 
 jobs:
   bazel:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.refresh_lock }}
-    name: Bazel (${{ matrix.runner }}, ${{ matrix.gerbil_provider }})
+    name: Bazel (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -34,11 +33,13 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            gerbil_provider: released-host
-            gerbil_version_label: v0.19-f0badc7
+            release_tag: gerbil-v0.19-2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb-linux-x86_64-portable-full-single-host-unlimited-patche35312b4a951
+            release_sha256: 88d08d3d10e297164191a9b31ee309d215a01727877c9e1c19b0d7dc737a5744
+            release_root: gerbil-v0.19-linux-x86_64
           - runner: macos-26
-            gerbil_provider: homebrew-host
-            gerbil_version_label: v0.19-f0badc7
+            release_tag: gerbil-v0.19-2591dcd9b7c6d2c4e9dd8611a17c5b1a5d82bbdb-darwin-aarch64-gcc16-arm64-single-host-unlimited-patche35312b4a951
+            release_sha256: c53d62f26ff382f8956576963edc3eb9193098dc48de78d44b8a3df63636bd18
+            release_root: gerbil-v0.19-darwin-aarch64
 
     steps:
       - name: Check out gerbil-bazel
@@ -76,84 +77,42 @@ jobs:
             sqlite3 \
             zlib1g-dev
 
-      - name: Install pinned v0.19 Linux release
-        if: matrix.gerbil_provider == 'released-host'
+      - name: Install macOS consumer dependencies
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: brew install gcc jq openssl@3 pkg-config sqlite zlib
+
+      - name: Activate the exact published compiler archive
         shell: bash
+        env:
+          RELEASE_TAG: ${{ matrix.release_tag }}
+          RELEASE_SHA256: ${{ matrix.release_sha256 }}
+          RELEASE_ROOT: ${{ matrix.release_root }}
         run: |
           set -euo pipefail
-          release=gerbil-v0.19-f0badc77836ef6f4b83d8d222a4a159f71b9c592-linux-x86_64-portable-full
-          archive="$RUNNER_TEMP/$release.tar.gz"
+          archive="$RUNNER_TEMP/$RELEASE_TAG.tar.gz"
           curl --fail --location --retry 3 --output "$archive" \
-            "https://github.com/tao3k/gerbil-bazel/releases/download/$release/$release.tar.gz"
-          printf '%s  %s\n' \
-            81734f52334e514296955e577a23011663097482261698272da3136a9e628a9f \
-            "$archive" | sha256sum --check -
+            "https://github.com/tao3k/gerbil-bazel/releases/download/$RELEASE_TAG/$RELEASE_TAG.tar.gz"
+          printf '%s  %s\n' "$RELEASE_SHA256" "$archive" | shasum -a 256 --check -
           tar -xzf "$archive" -C "$RUNNER_TEMP"
-          source "$RUNNER_TEMP/gerbil-v0.19-linux-x86_64/activate"
-          printf 'Activated Gerbil release at %s\n' "$GERBIL_PREFIX"
-          ls -l "$GERBIL_PREFIX/bin/gxi"
+          source "$RUNNER_TEMP/$RELEASE_ROOT/activate"
+          gxi -v
           echo "$GERBIL_PREFIX/bin" >> "$GITHUB_PATH"
           {
             echo "GERBIL_PREFIX=$GERBIL_PREFIX"
             echo "GERBIL_HOME=$GERBIL_HOME"
             echo "GAMBOPT=$GAMBOPT"
           } >> "$GITHUB_ENV"
-          set +e
-          version_output="$(gxi -v 2>&1)"
-          version_status=$?
-          set -e
-          printf 'Gerbil version exit=%s output=%s\n' "$version_status" "$version_output"
-          if (( version_status != 0 )); then
-            ldd "$GERBIL_PREFIX/bin/gerbil" || true
-            exit "$version_status"
-          fi
-          grep -F 'Gerbil f0badc7' <<< "$version_output"
-
-      - name: Set up Homebrew
-        if: matrix.gerbil_provider == 'homebrew-host'
-        uses: Homebrew/actions/setup-homebrew@18fcb8e3e06b4247c676c506750dc95ea7226479
-
-      - name: Install macOS V19 provider dependencies
-        if: matrix.gerbil_provider == 'homebrew-host'
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: brew install gcc jq openssl pkg-config sqlite zlib
-
-      - name: Install the tao3k Gerbil bottle
-        if: matrix.gerbil_provider == 'homebrew-host'
-        timeout-minutes: 2
-        env:
-          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme@0.19
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-          HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "1"
-          HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: |
-          brew tap tao3k/gerbil
-          tap_repository="$(brew --repository tao3k/gerbil)"
-          git -C "$tap_repository" fetch --depth=1 origin "$GERBIL_FORMULA_REF"
-          [[ "$(git -C "$tap_repository" rev-parse FETCH_HEAD)" == "$GERBIL_FORMULA_REVISION" ]]
-          git -C "$tap_repository" checkout --detach "$GERBIL_FORMULA_REVISION"
-          brew install "$GERBIL_FORMULA"
-          brew test "$GERBIL_FORMULA"
-          "$(brew --prefix "$GERBIL_FORMULA")/bin/gxi" -v 2>&1 \
-            | grep -F f0badc7
-
-      - name: Activate the Homebrew host capability
-        if: matrix.gerbil_provider == 'homebrew-host'
-        env:
-          GERBIL_FORMULA: tao3k/gerbil/gerbil-scheme@0.19
-        run: |
-          gerbil_prefix="$(brew --prefix "$GERBIL_FORMULA")"
-          echo "$gerbil_prefix/bin" >> "$GITHUB_PATH"
-          echo "GERBIL_PREFIX=$gerbil_prefix" >> "$GITHUB_ENV"
+          bash tools/ci/check_tool_entries.sh
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.gerbil_version_label }}
+          disk-cache: gerbil-bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.release_sha256 }}
 
       - name: Validate the prebuilt repository provider
         run: |

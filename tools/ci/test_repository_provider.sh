@@ -70,6 +70,11 @@ if [[ -z "$archive" ]]; then
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
+    'if [[ $# == 1 && $1 == -v ]]; then' \
+    '  printf "v4.9.99\\n"' \
+    '  printf "synthetic compiler identity\\n" >&2' \
+    '  exit "${GERBIL_PROVIDER_GSC_QUERY_STATUS:-0}"' \
+    'fi' \
     'compiler=' \
     'cc_options=' \
     'link_options=' \
@@ -107,6 +112,10 @@ if [[ -z "$archive" ]]; then
     'if [[ "${1:-}" == C_COMPILER ]]; then printf "%s\\n" "$C_COMPILER"; fi' \
     'if [[ "${1:-}" == FLAGS_OBJ ]]; then printf "%s\\n" "$FLAGS_OBJ"; fi' \
     'if [[ "${1:-}" == FLAGS_DYN ]]; then printf "%s\\n" "$FLAGS_DYN"; fi' \
+    'if [[ "${1:-}" == dyn ]]; then' \
+    '  printf "%s\n" "$BUILD_DYN_CC_PARAM" "$BUILD_DYN_CC_OPTIONS_PARAM" "$BUILD_DYN_LD_OPTIONS_PARAM"' \
+    '  exit "${GERBIL_PROVIDER_GAMBUILD_STATUS:-0}"' \
+    'fi' \
     'exit 0' >"$payload/prefix/bin/gambuild-C"
   chmod +x "$payload/prefix/bin/gambuild-C"
 
@@ -165,14 +174,36 @@ if [[ -z "$archive" ]]; then
         '[[ "$("$gambit_bin/gambuild-C" FLAGS_DYN)" == -bundle ]]' \
         '[[ -x "$GERBIL_GSC" ]]' \
         '[[ -x "$GERBIL_GCC" ]]' \
+        'query_stdout=$(mktemp)' \
+        'query_stderr=$(mktemp)' \
+        'if ! "$GERBIL_GSC" -v >"$query_stdout" 2>"$query_stderr"; then' \
+        '  printf "GSC-IDENTITY-QUERY-REFUSED\\n" >&2; exit 79' \
+        'fi' \
+        '[[ "$(cat "$query_stdout")" == v4.9.99 ]]' \
+        '[[ "$(cat "$query_stderr")" == "synthetic compiler identity" ]]' \
+        'set +e' \
+        'GERBIL_PROVIDER_GSC_QUERY_STATUS=7 "$GERBIL_GSC" -v >"$query_stdout" 2>"$query_stderr"' \
+        'query_status=$?' \
+        'set -e' \
+        '[[ "$query_status" == 7 ]]' \
+        '[[ "$(cat "$query_stdout")" == v4.9.99 ]]' \
+        '[[ "$(cat "$query_stderr")" == "synthetic compiler identity" ]]' \
+        'rm -f "$query_stdout" "$query_stderr"' \
         'case "$(uname -s)" in' \
         '  Darwin) expected_dynamic_link_options="-bundle -Wl,-undefined,dynamic_lookup" ;;' \
         '  Linux) expected_dynamic_link_options=-bundle ;;' \
         '  *) exit 64 ;;' \
         'esac' \
+        'gambuild_link_options="${expected_dynamic_link_options#-bundle}"' \
+        'gambuild_link_options="${gambuild_link_options# }"' \
+        'expected_gambuild=$(printf "%s\n" "$CC" -bundle "-caller-cc-option" "$gambuild_link_options" "-caller-ld-option")' \
+        'gambuild="${GERBIL_GSC%/*}/gambuild-C"' \
+        '[[ "$(BUILD_DYN_CC_OPTIONS_PARAM=-caller-cc-option BUILD_DYN_LD_OPTIONS_PARAM=-caller-ld-option "$gambuild" dyn)" == "$expected_gambuild" ]]' \
+        'if GERBIL_PROVIDER_GAMBUILD_STATUS=7 "$gambuild" dyn >/dev/null; then exit 80; else [[ $? == 7 ]]; fi' \
         'expected_dynamic_probe=$(printf "mode=dynamic\\ncompiler=%s\\nccOptions=\\nlinkOptions=%s" "$CC" "$expected_dynamic_link_options")' \
         '[[ "$("$GERBIL_GSC" --synthetic-driver-probe)" == "$expected_dynamic_probe" ]]' \
         '[[ "$("$GERBIL_GSC" -dynamic --synthetic-driver-probe)" == "$expected_dynamic_probe" ]]' \
+        '[[ "$("$GERBIL_GSC" -v --synthetic-driver-probe)" == "$expected_dynamic_probe" ]]' \
         'expected_object_probe=$(printf "mode=obj\\ncompiler=%s\\nccOptions=-fPIC\\nlinkOptions=" "$CC")' \
         '[[ "$("$GERBIL_GSC" -obj --synthetic-driver-probe)" == "$expected_object_probe" ]]' \
         'for pass_through_mode in c link exe; do' \
@@ -383,6 +414,8 @@ fi
       '.gambitProducerOptions == {dynamic: "-bundle", object: "-fPIC"}' \
       "$output_base/$receipt_relative" >/dev/null
   fi
+  environment_launcher="$(dirname "$output_base/$receipt_relative")/native_scheme_env.sh"
+  bash "$provider_fixture/budget_handoff_test.sh" "$environment_launcher"
   tool_started_at="$SECONDS"
   observed_version="$(
     "$bazel_bin" --output_user_root="$test_root/bazel" run \
@@ -405,6 +438,20 @@ fi
     "@$repository_name//:gxc" -- \
     -d "$compiler_probe_output" "$compiler_probe_source" >/dev/null
   compiler_driver_verified=true
+  if [[ "$system" == darwin && "$selected_provider" == host ]]; then
+    static_probe_output="$test_root/consumer/compiler-static-probe-lib"
+    GERBIL_PROVIDER_PROBE_SOURCE="$compiler_probe_source" \
+      GERBIL_PROVIDER_PROBE_OUTPUT="$static_probe_output" \
+      "$bazel_bin" --output_user_root="$test_root/bazel" run \
+      "@$repository_name//:gxi" -- -e \
+      '(begin (import :gerbil/compiler)
+              (compile-module (getenv "GERBIL_PROVIDER_PROBE_SOURCE")
+                (list output-dir: (getenv "GERBIL_PROVIDER_PROBE_OUTPUT")
+                      static: #t invoke-gsc: #t)))'
+    test -s "$static_probe_output/static/compiler-driver-probe.scm"
+    test -s "$static_probe_output/compiler-driver-probe.o1" ||
+      test -s "$static_probe_output/compiler-driver-probe~0.o1"
+  fi
   if [[ "$selected_provider" == prebuilt && "$fixture" == synthetic ]]; then
     gxc_failure_dir="$test_root/gxc-failure-receipts"
     mkdir -p "$gxc_failure_dir"

@@ -1,6 +1,6 @@
 """Repository rule for importing an immutable Gerbil toolchain capability."""
 
-load(":gambit_runtime.bzl", "normalized_gambit_runtime")
+load(":gambit_runtime.bzl", "normalized_gambit_runtime", _environment_exports = "tool_environment_exports")
 load(
     ":host_system.bzl",
     "resolve_gerbil_build_cores",
@@ -31,18 +31,6 @@ _RELEASE_SCHEMA = "gerbil-bazel.toolchain-release.v1"
 
 def _shell_quote(value):
     return "'{}'".format(value.replace("'", "'\"'\"'"))
-
-def _environment_exports(environment):
-    return "\n".join([
-        "export {}={}".format(key, _shell_quote(environment[key]))
-        for key in sorted(environment.keys())
-    ])
-
-def _environment_args(environment):
-    return " ".join([
-        _shell_quote("{}={}".format(key, environment[key]))
-        for key in sorted(environment.keys())
-    ])
 
 def _environment_dict(environment):
     entries = [
@@ -458,7 +446,6 @@ def _prebuilt_gerbil_repository_impl(repository_ctx):
         "{{GXI}}": _shell_quote(tools.absolute["gxi"]),
         "{{GXPKG}}": _shell_quote(tools.absolute["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(native_abi),
-        "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
         "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard_v19 if release else repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(

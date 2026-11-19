@@ -459,10 +459,13 @@ grep -F '"admissionReasons":["process-tree-rss-unavailable"]' \
 set +e
 env "${common_environment[@]}" \
   "$gxi" "$guard" "$root/timeout.json" timeout "$timeout_guard_seconds" \
-  /bin/sleep "$timeout_child_seconds"
+  /bin/sleep "$timeout_child_seconds" 2>"$root/timeout-diagnostics.log"
 timeout_status=$?
 set -e
 [[ "$timeout_status" -eq "$timeout_exit_code" ]]
+grep -F 'RESOURCE-GUARD-PROCESS pid,ppid,state,cpu-time,rss-kib,executable:' \
+  "$root/timeout-diagnostics.log" >/dev/null
+[[ $(grep -c '^RESOURCE-GUARD-PROCESS ' "$root/timeout-diagnostics.log") -le 32 ]]
 grep -F '"outcome":"timeout"' "$root/timeout.json" >/dev/null
 grep -F "\"timeoutMs\":$((timeout_guard_seconds * 1000))" \
   "$root/timeout.json" >/dev/null

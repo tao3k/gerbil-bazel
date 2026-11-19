@@ -3,3 +3,6 @@ common --lockfile_mode=error
 
 # Dependency maintenance is an explicit, reviewable operation.
 common:lock_update --lockfile_mode=update
+
+# Match the native build capacity used by this maintenance qualification.
+build --jobs=2

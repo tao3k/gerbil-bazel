@@ -1,0 +1,13 @@
+diff --git a/src/tools/gxtest.ss b/src/tools/gxtest.ss
+index 9feac1b..b3af450 100644
+--- a/src/tools/gxtest.ss
++++ b/src/tools/gxtest.ss
+@@ -14,7 +14,7 @@
+   (map string->symbol (string-split features #\,)))
+ 
+ (def (main . args)
+-  (call-with-getopt gxtest-main args
++  (call-with-getopt (lambda (opt) (exit (gxtest-main opt))) args
+     program: "gxtest"
+     help: "run Gerbil tests"
+     global-env-flag
