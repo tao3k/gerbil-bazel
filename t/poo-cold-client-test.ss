@@ -9,16 +9,21 @@
     (setenv "GERBIL_PATH" prefix)
     (require! (not (getenv "GERBIL_LOADPATH" #f)) "cold caller has a load-path override")
     (def repository "github.com/tao3k/gerbil-poo")
+    (def revision "6500bce55dbb2493ad385d261f3a9b106dfdab92")
+    (def source-objects (path-expand "locked-source.git" prefix))
     (def package-root (path-expand repository (path-expand "pkg" prefix)))
     (def manifest (string-append package-root ".manifest"))
     (def tags (path-expand "pkg/TAGS" prefix))
     (require! (not (file-exists? (path-expand "lib" prefix))) "cold prefix has products")
     (require! (not (file-exists? manifest)) "cold prefix has a package manifest")
-    ;; The immutable client is the actual Aitia cold regression, not a fixture.
-    ;; The SDK CLI owns acquisition, every declared build target and the manifest.
+    ;; The locked commit may no longer be advertised by the default clone.
+    ;; Fetch its Git objects without preparing a package checkout or products.
+    (run-process/batch (list "git" "init" "--bare" "--quiet" source-objects))
     (run-process/batch
-      (list "gxpkg" "install"
-        "github.com/tao3k/gerbil-poo@6500bce55dbb2493ad385d261f3a9b106dfdab92"))
+      (list "git" "-C" source-objects "fetch" "--no-tags" "--quiet"
+        (string-append "https://" repository ".git") revision))
+    (setenv "GIT_ALTERNATE_OBJECT_DIRECTORIES" (path-expand "objects" source-objects))
+    (run-process/batch (list "gxpkg" "install" (string-append repository "@" revision)))
     (require! (file-exists? manifest) "native package manifest is missing")
     (require! (file-exists? (path-expand "bin/representation-main" prefix))
               "complete package executable is missing")
