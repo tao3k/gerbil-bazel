@@ -5,6 +5,7 @@ load(
     "discover_gambit_compiler_command",
     "discover_gambit_home",
     "normalized_gambit_runtime",
+    _environment_exports = "tool_environment_exports",
 )
 load(
     ":host_system.bzl",
@@ -60,18 +61,6 @@ def _gerbil_version(repository_ctx, tools):
                 expected,
             ))
     return version
-
-def _environment_exports(environment):
-    lines = []
-    for key in sorted(environment.keys()):
-        lines.append("export {}={}".format(key, _shell_quote(environment[key])))
-    return "\n".join(lines)
-
-def _environment_args(environment):
-    return " ".join([
-        _shell_quote("{}={}".format(key, environment[key]))
-        for key in sorted(environment.keys())
-    ])
 
 def _environment_dict(environment):
     entries = []
@@ -304,7 +293,6 @@ def _local_gerbil_repository_impl(repository_ctx):
         "{{GXI}}": _shell_quote(tools["gxi"]),
         "{{GXPKG}}": _shell_quote(tools["gxpkg"]),
         "{{NATIVE_ABI}}": _shell_quote(fingerprint),
-        "{{NATIVE_ENVIRONMENT_ARGS}}": _environment_args(environment),
         "{{RESOURCE_GUARD}}": _shell_quote(str(repository_ctx.path(repository_ctx.attr._resource_guard_v19 if version.startswith("Gerbil d") or version.startswith("Gerbil v0.19") else repository_ctx.attr._resource_guard))),
     }
     repository_ctx.template(

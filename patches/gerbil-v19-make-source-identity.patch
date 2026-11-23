@@ -1,0 +1,318 @@
+From: tao3k team and Contributors
+Subject: Native module frontier, worker readiness and failure propagation
+
+Read source identity without expanding ordinary or explicit-header bodies.
+Use declaration hints only for ordering; actual expanded imports own dependency
+eligibility. Ready native workers before source coordinators and reuse native
+barrier error handling for both. Preserve the first arbitrary Scheme failure,
+including #f, independently from its presence. Keep all targets and capacity.
+
+diff --git a/src/gerbil/expander/module.ss b/src/gerbil/expander/module.ss
+--- a/src/gerbil/expander/module.ss
++++ b/src/gerbil/expander/module.ss
+@@ -207,6 +207,36 @@
+       (cond
+        ((and (not reload?) (hash-get __module-registry npath)))
+        (else (import-source npath)))))))
++
++;; Read default package identities cheaply. Explicit native headers use the
++;; canonical unexpanded reader; only opaque readers need the cached importer.
++(def (core-read-module-id rpath)
++  (let* ((path (core-resolve-module-path rpath))
++         (head (call-with-input-source-file path
++                 (lambda (port)
++                   (if (eqv? (peek-char port) #\#)
++                     #f
++                     (read-syntax port))))))
++    (cond
++     ((not head) (expander-context-id (core-import-module path)))
++     ((memq (stx-e head) '(prelude: namespace: package:))
++      (let-values (((pre id ns body) (core-read-module path))) id))
++     (else
++      (let-values (((pre ns pkg) (core-read-module-package path #f #f)))
++        (core-module-package-id path pkg))))))
++
++(def (core-module-package-id path pkg)
++  (let* ((path-id (core-module-path->namespace path))
++         (pkg-id (if pkg (string-append pkg "/" path-id) path-id)))
++    (string->symbol pkg-id)))
++
++;; Advisory source declarations only: never run an opaque/custom reader twice.
++;; Expansion remains the authority for actual dependency eligibility.
++(def (core-read-module-declaration rpath)
++  (let (path (core-resolve-module-path rpath))
++    (and (not (call-with-input-source-file path
++                (lambda (port) (eqv? (peek-char port) #\#))))
++         (let-values (((pre id ns body) (core-read-module path))) body))))
+
+ (def (core-read-module path)
+   (with-catch
+@@ -268,7 +298,7 @@
+                  (stx-e pre))))
+               (path-id   (core-module-path->namespace path))
+               (pkg-id (if pkg (string-append pkg "/" path-id) path-id))
+-              (module-id (string->symbol pkg-id))
++              (module-id (core-module-package-id path pkg))
+               (module-ns (if (void? ns) #f (or ns pkg-id))))
+          (values prelude module-id module-ns body))))))
+
+@@ -304,7 +334,7 @@
+              (else default-read-module-body)))
+            (path-id (core-module-path->namespace path))
+            (pkg-id (if pkg (string-append pkg "/" path-id) path-id))
+-           (module-id (string->symbol pkg-id))
++           (module-id (core-module-package-id path pkg))
+            (module-ns (or ns pkg-id))
+            (body
+             (parameterize ((current-module-reader-path path)
+diff --git a/src/std/make.ss b/src/std/make.ss
+--- a/src/std/make.ss
++++ b/src/std/make.ss
+@@ -203,6 +203,84 @@
+     (make-build buildspec settings))
+   (when (> (settings-parallelize settings) 1)
+     (execute-pending-compile-jobs!)))
++
++;; Source declarations supply scheduling hints, never dependency authority.
++;; Actual expanded imports and the original completion waits remain unchanged.
++(def (dependency-build-order specs module-id source-path)
++  (def consumers (make-hash-table-eq))
++  (def positions (make-hash-table-eq))
++  (def source-ids (make-hash-table))
++  (for-each (lambda (spec position)
++              (let ((id (module-id spec)) (path (source-path spec)))
++                (hash-put! consumers id 0)
++                (hash-put! positions id position)
++                (when (member (path-extension path) '(".ss" ".ssi"))
++                  (hash-put! source-ids
++                             (path-normalize (core-resolve-module-path path))
++                             id))))
++            specs (iota (length specs)))
++  (def (source-hints path)
++    (def seen (make-hash-table-eq))
++    (def (hint! datum)
++      (cond
++       ((symbol? datum)
++        (let (text (symbol->string datum))
++          (when (and (> (string-length text) 1)
++                     (eqv? (string-ref text 0) #\:))
++            (hash-put! seen (module-strip-nesting
++                            (string->symbol (substring text 1 (string-length text)))) #t))))
++       ((string? datum)
++        (alet (resolved
++               (with-catch false
++                 (lambda () (core-resolve-module-path datum path))))
++          (alet (id (hash-get source-ids (path-normalize resolved)))
++            (hash-put! seen id #t))))
++       ((pair? datum) (for-each hint! datum))))
++    ;; Inspect only declaration heads; do not copy unrelated function bodies.
++    (def (form! syntax)
++      (when (stx-pair? syntax)
++        (case (stx-e (stx-car syntax))
++          ((import) (for-each hint! (syntax->datum (stx-cdr syntax))))
++          ((begin) (for-each form! (syntax->list (stx-cdr syntax))))
++          ((module)
++           (for-each form! (syntax->list (stx-cdr (stx-cdr syntax)))))
++          ((cond-expand)
++           (for-each
++             (lambda (branch)
++               (when (stx-pair? branch)
++                 (for-each form! (syntax->list (stx-cdr branch)))))
++             (syntax->list (stx-cdr syntax)))))))
++    (when (and (member (path-extension path) '(".ss" ".ssi"))
++               (hash-key? source-ids
++                          (path-normalize (core-resolve-module-path path))))
++      (alet (body (core-read-module-declaration path))
++        (for-each form! (syntax->list body))))
++    (hash-keys seen))
++  (for-each
++    (lambda (spec)
++      (let (self (module-id spec))
++        (for-each
++          (lambda (dependency)
++            (when (and (not (eq? dependency self)) (hash-key? consumers dependency))
++              (hash-update! consumers dependency 1+ 0)))
++          (source-hints (source-path spec)))))
++    specs)
++  (list-sort
++    (lambda (left right)
++      (let* ((left-id (module-id left)) (right-id (module-id right))
++             (a (hash-ref consumers left-id)) (b (hash-ref consumers right-id)))
++        (if (= a b)
++          (< (hash-ref positions left-id) (hash-ref positions right-id))
++          (> a b))))
++    specs))
++
++(def (build-import-context entry)
++  (cond
++    ((or (module-context? entry) (prelude-context? entry)) entry)
++    ((module-import? entry) (build-import-context (module-import-source entry)))
++    ((module-export? entry) (build-import-context (module-export-context entry)))
++    ((import-set? entry) (build-import-context (import-set-source entry)))
++    (else (error "unexpected import" entry))))
+
+ (def (make-build buildspec-in settings)
+   (parameterize ((current-compilation-target (settings-target settings)))
+@@ -233,13 +311,19 @@
+     ;; import with mutex
+     (def (import/mx mod)
+       (with-lock import-mx (cut import-module mod #f #f)))
++    (def source-identities (make-hash-table))
+     ;; spec module id
+     (def (module-id spec)
+       (let* ((file (spec-file spec settings))
+              (ext (path-extension file)))
+         (case ext
+           ((".ss" ".ssi")
+-           (expander-context-id (import/mx file)))
++           (with-lock import-mx
++             (lambda ()
++               (or (hash-get source-identities file)
++                   (let (id (core-read-module-id file))
++                     (hash-put! source-identities file id)
++                     id)))))
+           (else
+            (string->symbol file)))))
+
+@@ -290,38 +374,32 @@
+
+     ;; the build worker itself
+     (def (build-worker)
+-      (try
+-       (for (spec workch)
+-         (build spec settings)
+-         (completion-post! (hash-ref completions (module-id spec)) 'done))
+-       (catch (e)
+-         (barrier-error! build-barrier e)
+-         (raise e))))
++      (with-barrier-error build-barrier
++        (for (spec workch)
++          (build spec settings)
++          (completion-post! (hash-ref completions (module-id spec)) 'done))))
+
+     ;; the build coordinator
+     (def (build-coordinator spec)
+-      (let* ((file (spec-file spec settings))
+-             (mod (import/mx file)))
+-        (for (in (module-context-import mod))
+-          (consider in (expander-context-id mod)))
+-        (if (or (build? spec)
+-                (build-dependent? spec mod))
+-          ;; it needs to be built, put it to the work channel
+-          (channel-put workch spec)
+-          ;; no need to build, unblock dependents
+-          (completion-post! (hash-ref completions (module-id spec)) 'done))
+-        ;; clear the barrrier
+-        (barrier-post! build-barrier)))
++      (with-barrier-error build-barrier
++        (let* ((file (spec-file spec settings))
++               (mod (import/mx file)))
++          (when (hash-key? source-identities file)
++            (unless (eq? (module-id spec) (expander-context-id mod))
++              (error "module identity changed between native read and expansion" file)))
++          (for (in (module-context-import mod))
++            (consider in (expander-context-id mod)))
++          (if (or (build? spec)
++                  (build-dependent? spec mod))
++            ;; it needs to be built, put it to the work channel
++            (channel-put workch spec)
++            ;; no need to build, unblock dependents
++            (completion-post! (hash-ref completions (module-id spec)) 'done))
++          ;; clear the barrrier
++          (barrier-post! build-barrier))))
+
+     (def (consider in self)
+-      (cond
+-       ((module-context? in)  (wait-for in self))
+-       ((prelude-context? in) (wait-for in self))
+-       ((module-import? in)   (consider (module-import-source in) self))
+-       ((module-export? in)   (consider (module-export-context in) self))
+-       ((import-set? in)      (consider (import-set-source in) self))
+-       (else
+-        (error "unexpected import" in))))
++      (wait-for (build-import-context in) self))
+
+     (def (wait-for ctx self)
+       (alet* ((id (expander-context-id ctx)) ; :<root> prelude has no id
+@@ -342,19 +420,19 @@
+       (let (id (module-id spec))
+         (hash-put! completions id (make-completion `(build ,id)))))
+
+-    ;; spawn a thread for each spec that waits for the dependency completions
+-    ;; and pushes to the work channel if necessary.
+-    (for (spec buildspec)
+-      (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
+-
+-    ;; spawn the workers and wait
+-    (let (workers (map (lambda (i) (spawn/name `(worker ,i) build-worker))
+-                       (iota build-worker-count)))
+-      ;; wait for the coordinators to complete
++    ;; Finish advisory discovery before allocating tasks. Start consumers before
++    ;; coordinators so a scheduler yield during source expansion cannot defer
++    ;; creation of the workers needed by already-ready work.
++    (let* ((ordered-specs
++            (dependency-build-order buildspec module-id
++                                    (cut spec-file <> settings)))
++           (workers
++            (map (lambda (i) (spawn/name `(worker ,i) build-worker))
++                 (iota build-worker-count))))
++      (for (spec ordered-specs)
++        (spawn/name `(build ,(spec-file spec settings)) build-coordinator spec))
+       (barrier-wait! build-barrier)
+-      ;; close the channel (no more work)
+       (channel-close workch)
+-      ;; and wait for the workers to complete
+       (for-each thread-join! workers))))
+
+ ;; Dependencies may have been rebuilt since an earlier freshness check, including
+diff --git a/src/std/sync/barrier.ss b/src/std/sync/barrier.ss
+--- a/src/std/sync/barrier.ss
++++ b/src/std/sync/barrier.ss
+@@ -9,11 +9,13 @@
+         barrier-error!
+         with-barrier-error)
+
++;; Scheme can raise #f; failure presence must not depend on payload truth.
+ (defstruct Barrier ((mx    :- :mutex)
+                     (cv    :- :condvar)
+                     (count :- :fixnum)
+                     (limit :- :fixnum)
+-                    exn)
++                    exn
++                    (failed? :- :boolean))
+   constructor: :init! final: #t )
+
+ (defmethod {:init! Barrier}
+@@ -21,7 +23,8 @@
+     (set! self.mx (make-mutex 'barrier))
+     (set! self.cv (make-condition-variable 'barrier))
+     (set! self.count 0)
+-    (set! self.limit limit)))
++    (set! self.limit limit)
++    (set! self.failed? #f)))
+
+ (def (barrier-wait! (b : Barrier))
+   => :void
+@@ -29,7 +32,7 @@
+     => :void
+     (mutex-lock! b.mx)
+     (cond
+-     (b.exn
++     (b.failed?
+       (mutex-unlock! b.mx)
+       (abort! (raise b.exn)))
+      ((fx< b.count b.limit)
+@@ -50,10 +53,12 @@
+     (mutex-unlock! b.mx)
+     (void)))
+
++;; Preserve the first failure even when its value is #f.
+ (def (barrier-error! (b : Barrier) exn)
+   => :void
+   (mutex-lock! b.mx)
+-  (unless b.exn
++  (unless b.failed?
++    (set! b.failed? #t)
+     (set! b.exn exn))
+   (condition-variable-broadcast! b.cv)
+   (mutex-unlock! b.mx)

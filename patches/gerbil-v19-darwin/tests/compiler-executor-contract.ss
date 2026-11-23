@@ -1,6 +1,15 @@
-;;; Atomic contract for the Darwin streaming compiler executor.
+;;; Atomic contract for the native streaming compiler executor.
 ;;; Run in a fresh gxi process for each GERBIL_BUILD_CORES value.
 (import :gerbil/compiler/base)
+
+(def owner (current-thread))
+(add-compile-job! (lambda () (thread-send owner 'streamed-before-drain))
+                  'stream-before-drain)
+;; A batch executor can pass the drain/error checks below. Require observable
+;; work before requesting drain, with a bounded wait rather than a speed ratio.
+(unless (eq? (thread-receive 2 'not-streaming) 'streamed-before-drain)
+  (error "compiler executor deferred all work until drain"))
+(execute-pending-compile-jobs!)
 
 (def submitted-context #f)
 (parameterize ((current-compile-context 'submitted))

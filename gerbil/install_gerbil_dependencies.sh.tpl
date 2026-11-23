@@ -6,7 +6,7 @@ gerbil_root=${GERBIL_PATH:-"$workspace/.gerbil"}
 gxi={{GXI}}
 gxpkg={{GXPKG}}
 resource_guard={{RESOURCE_GUARD}}
-native_environment=({{NATIVE_ENVIRONMENT_ARGS}})
+{{ENVIRONMENT}}
 phase=initialize
 
 report_failure() {
@@ -145,8 +145,7 @@ printf "gerbil-bazel install_dependencies resources: decision=%s cores=%s config
 exec /usr/bin/env "GERBIL_BUILD_CORES=$install_cores" "$@"
 '
 rm -f "$guard_receipt"
-/usr/bin/env "${native_environment[@]}" \
-  bash -c "$install_command" gerbil-bazel-install \
+bash -c "$install_command" gerbil-bazel-install \
   "$gxi" "$resource_guard" "$guard_receipt" install-dependencies \
   "$timeout_seconds" "$gxpkg" deps --install &
 install_pid=$!
