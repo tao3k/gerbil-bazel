@@ -24,10 +24,7 @@ for variant in positive object-failure; do
     > "$directory/build.log" 2>&1 || status=$?
   if [ "$variant" = positive ]; then
     test "$status" -eq 0
-    case "$(uname -s)" in
-      Darwin) grep -F 'compile-executable-object' "$directory/build.log" >/dev/null ;;
-      *) grep -F '(compile-exe ' "$directory/build.log" >/dev/null ;;
-    esac
+    grep -F 'compile-executable-object' "$directory/build.log" >/dev/null
     result=$("$deadline" --signal=TERM --kill-after=5s 180s "$directory/.gerbil/bin/closure-main" -:max-heap=2G)
     test "$result" = 42
   else
