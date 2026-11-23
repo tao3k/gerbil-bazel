@@ -147,7 +147,6 @@ jobs:
           brew install "${dependencies[@]}"
 
       - name: Resolve native build capacity
-        if: steps.gerbil-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
