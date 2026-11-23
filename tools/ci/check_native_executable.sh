@@ -19,7 +19,7 @@ for variant in positive object-failure; do
   printf '%s\n' '#!/usr/bin/env gxi' '(import :std/build-script)' "(defbuild-script '$spec)" > "$directory/build.ss"
   chmod +x "$directory/build.ss"
   status=0
-  (cd "$directory" && env GERBIL_PATH="$directory/.gerbil" GERBIL_BUILD_VERBOSE=3 GAMBOPT=max-heap=2G,debug=q \
+  (cd "$directory" && env GERBIL_PATH="$directory/.gerbil" GERBIL_BUILD_VERBOSE=3 "GAMBOPT=${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q" \
     "$deadline" --signal=TERM --kill-after=5s 180s gerbil -:max-heap=2G,debug=q build) \
     > "$directory/build.log" 2>&1 || status=$?
   if [ "$variant" = positive ]; then
