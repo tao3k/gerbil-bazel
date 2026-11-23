@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: Pinned tao3k/gerbil darwin-acceleration revision
-        default: e013f6750dd5006bf948955f73145b4d9ad2f7b2
+        default: ed1702a534d507b41fa5114bd78df256bc1af7f4
         required: true
         type: string
       platform:
@@ -16,6 +16,11 @@ on:
         options:
           - linux-x86_64
           - darwin-aarch64
+      validate_only:
+        description: Build and verify the capability without publishing a release
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: write
 
@@ -43,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$UPSTREAM_REF" == e013f6750dd5006bf948955f73145b4d9ad2f7b2 ]]
+          [[ "$UPSTREAM_REF" == ed1702a534d507b41fa5114bd78df256bc1af7f4 ]]
           source_sha="$UPSTREAM_REF"
           staging_sha=cbe8ee7363c7554cf0abf47479d49aa515d182cb
           git init upstream-gerbil
@@ -203,9 +208,7 @@ jobs:
             configure_args=("--prefix=$GERBIL_PREFIX" --enable-march=)
           fi
           if [[ "$GERBIL_BUILD_PROFILE" == gcc16-* ]]; then
-            export GERBIL_BUILD_AOT_TOOLS=yes
-          else
-            unset GERBIL_BUILD_AOT_TOOLS
+            configure_args+=(--enable-aot-tools)
           fi
           gambit_revision="$(git -C src/gambit rev-parse HEAD)"
           source_revision="${{ steps.upstream.outputs.sha }}"
@@ -498,6 +501,7 @@ jobs:
           done
 
       - name: Publish immutable central release
+        if: ${{ !inputs.validate_only }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
